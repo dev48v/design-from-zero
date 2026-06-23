@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 14 — Circular Progress Ring</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Circular Progress Ring ===== */
+  .ring-svg { transform:rotate(-90deg); }          /* start the arc at 12 o'clock */
+  .ring-track { fill:none; stroke:#e2e8f0; }        /* the faint groove behind */
+  .ring-prog  { fill:none; stroke-linecap:round;    /* the moving coloured arc */
+                transition:stroke-dashoffset .6s cubic-bezier(.4,0,.2,1), stroke .25s ease; }
+
+  /* indeterminate spinner: spin the whole svg + animate the dash so the arc "breathes" */
+  .spin-svg { animation:spin 1.4s linear infinite; transform-origin:center; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .spin-prog { fill:none; stroke-linecap:round; animation:dash 1.4s ease-in-out infinite; }
+  @keyframes dash {
+    0%   { stroke-dasharray:1, 200; stroke-dashoffset:0;    }
+    50%  { stroke-dasharray:90,200; stroke-dashoffset:-35;  }
+    100% { stroke-dasharray:90,200; stroke-dashoffset:-124; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 14</div>
+      <h1 class="text-xl font-bold">⭕ Circular Progress Ring — SVG, Animated</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">One circle, one number — progress you can feel</h2>
+      <p class="text-white/80 mb-2"><b>Drag the slider</b> to drive the big ring and watch the number count up. Tap a <b>preset</b> (0 / 25 / 75 / 100), pick a <b>colour</b>, or change the <b>size</b>. It's just two SVG circles and a tiny bit of dash math.</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-full w-full" style="max-width:560px;">
+      <!-- the hero ring -->
+      <div class="flex justify-center mb-5">
+        <div class="relative" id="heroWrap">
+          <svg id="heroSvg" class="ring-svg" width="220" height="220" viewBox="0 0 220 220">
+            <circle id="heroTrack" class="ring-track" cx="110" cy="110" r="92" stroke-width="16"></circle>
+            <circle id="heroProg"  class="ring-prog"  cx="110" cy="110" r="92" stroke-width="16" stroke="#6366f1"></circle>
+          </svg>
+          <!-- centered, counting-up label. Sits ON the rotated svg but is itself upright -->
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span id="heroNum" class="text-5xl font-extrabold text-slate-800 tabular-nums">0</span>
+            <span class="text-xs font-semibold text-slate-400 -mt-1">%&nbsp;complete</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- controls -->
+      <div class="space-y-4">
+        <div>
+          <div class="flex justify-between text-xs font-semibold text-slate-500 mb-1"><span>Progress</span><span id="sliderVal">0%</span></div>
+          <input id="slider" type="range" min="0" max="100" value="0" class="w-full accent-indigo-600">
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <span class="text-xs font-semibold text-slate-500 self-center mr-1">Presets:</span>
+          <button data-preset="0"   class="preset bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">0%</button>
+          <button data-preset="25"  class="preset bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">25%</button>
+          <button data-preset="75"  class="preset bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">75%</button>
+          <button data-preset="100" class="preset bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">100%</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="flex items-center gap-2 text-xs font-semibold text-slate-500">
+            Colour
+            <input id="colour" type="color" value="#6366f1" class="w-9 h-9 rounded cursor-pointer border border-slate-200 bg-white p-0.5">
+          </label>
+          <label class="flex items-center gap-2 text-xs font-semibold text-slate-500 flex-1 min-w-[160px]">
+            Size
+            <input id="size" type="range" min="120" max="260" value="220" class="flex-1 accent-indigo-600">
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- a row of small rings + the indeterminate spinner -->
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:560px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-4 text-center">More rings — different sizes &amp; colours</div>
+      <div class="flex flex-wrap items-center justify-center gap-8">
+        <!-- small ring -->
+        <div class="relative" style="width:88px;height:88px;">
+          <svg class="ring-svg" width="88" height="88" viewBox="0 0 88 88">
+            <circle class="ring-track" cx="44" cy="44" r="36" stroke-width="8"></circle>
+            <circle id="ringA" class="ring-prog" cx="44" cy="44" r="36" stroke-width="8" stroke="#10b981"></circle>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-700"><span id="numA">42</span>%</div>
+        </div>
+        <!-- medium ring -->
+        <div class="relative" style="width:120px;height:120px;">
+          <svg class="ring-svg" width="120" height="120" viewBox="0 0 120 120">
+            <circle class="ring-track" cx="60" cy="60" r="50" stroke-width="11"></circle>
+            <circle id="ringB" class="ring-prog" cx="60" cy="60" r="50" stroke-width="11" stroke="#f59e0b"></circle>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center text-lg font-bold text-slate-700"><span id="numB">68</span>%</div>
+        </div>
+        <!-- indeterminate spinner -->
+        <div class="flex flex-col items-center gap-2">
+          <svg class="spin-svg" width="64" height="64" viewBox="0 0 64 64">
+            <circle class="ring-track" cx="32" cy="32" r="26" stroke-width="6"></circle>
+            <circle class="spin-prog" cx="32" cy="32" r="26" stroke-width="6" stroke="#ec4899" stroke-dasharray="90 200"></circle>
+          </svg>
+          <span class="text-[11px] font-semibold text-slate-400">indeterminate</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole trick:</b> a circle's outline has a length —
+      <code>circumference = 2πr</code>. Make the dash <i>as long as</i> the whole circle, then
+      <i>hide</i> part of it with <code>stroke-dashoffset = C × (1 − percent)</code>. Offset shrinks → more arc shows.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How the progress ring works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Two SVG circles, one line of dash math, and a CSS transition. ~50 lines, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Two stacked circles — a track and a progress arc</h3></div>
+        <div class="relative"><pre>&lt;!-- both circles share the SAME centre &amp; radius --&gt;
+&lt;svg class="ring" width="220" height="220" viewBox="0 0 220 220"&gt;
+  &lt;!-- the faint groove behind --&gt;
+  &lt;circle class="track" cx="110" cy="110" r="92" stroke-width="16"/&gt;
+  &lt;!-- the coloured arc that we'll reveal --&gt;
+  &lt;circle class="prog"  cx="110" cy="110" r="92" stroke-width="16"/&gt;
+&lt;/svg&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Base styling — no fill, round caps, start at the top</h3></div>
+        <div class="relative"><pre>.ring  { transform: rotate(-90deg); }   /* arc begins at 12 o'clock */
+.track { fill:none; stroke:#e2e8f0; }    /* hollow circles only */
+.prog  {
+  fill:none;
+  stroke:#6366f1;
+  stroke-linecap:round;                   /* nicely rounded ends */
+  transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Measure the circle: circumference = 2πr</h3></div>
+        <div class="relative"><pre>const prog = document.querySelector(".prog");
+const r = prog.r.baseVal.value;          // 92
+const C = 2 * Math.PI * r;               // ≈ 578.05
+
+// make the dash exactly as long as the whole outline,
+// so one full dash == the full circle.
+prog.style.strokeDasharray = C;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Map percent → dashoffset (the reveal)</h3></div>
+        <div class="relative"><pre>// offset = how much of the dash to HIDE.
+//   percent 0   → hide all (offset = C)      → no arc
+//   percent 100 → hide none (offset = 0)     → full ring
+function setProgress(percent) {
+  const offset = C * (1 - percent / 100);
+  prog.style.strokeDashoffset = offset;   // CSS transition animates it
+}
+setProgress(75);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">A centred label that counts up</h3></div>
+        <div class="relative"><pre>&lt;div class="wrap" style="position:relative"&gt;
+  &lt;svg class="ring" ...&gt;...&lt;/svg&gt;
+  &lt;!-- overlay sits ON the svg but is NOT rotated --&gt;
+  &lt;div class="label"&gt;&lt;span id="num"&gt;0&lt;/span&gt;%&lt;/div&gt;
+&lt;/div&gt;
+
+.label { position:absolute; inset:0;
+         display:flex; align-items:center; justify-content:center; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Animate the number in JS to match the arc</h3></div>
+        <div class="relative"><pre>const num = document.getElementById("num");
+let shown = 0;
+function countTo(target) {
+  const step = () => {
+    shown += (target - shown) * 0.15;          // ease toward target
+    if (Math.abs(target - shown) &lt; 0.5) shown = target;
+    num.textContent = Math.round(shown);
+    if (shown !== target) requestAnimationFrame(step);
+  };
+  step();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Wire up the slider + presets + colour</h3></div>
+        <div class="relative"><pre>slider.addEventListener("input", e => {
+  const p = +e.target.value;
+  setProgress(p);      // moves the arc
+  countTo(p);          // counts the number
+});
+presets.forEach(b => b.onclick = () => {
+  slider.value = b.dataset.preset;
+  slider.dispatchEvent(new Event("input"));
+});
+colour.oninput = e => prog.style.stroke = e.target.value;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The indeterminate spinner (unknown progress)</h3></div>
+        <div class="relative"><pre>/* spin the svg AND animate the dash so the arc grows + shrinks */
+.spin-svg  { animation: spin 1.4s linear infinite; transform-origin:center; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spin-prog { fill:none; stroke-linecap:round;
+             animation: dash 1.4s ease-in-out infinite; }
+@keyframes dash {
+  0%   { stroke-dasharray:1,200;  stroke-dashoffset:0;   }
+  50%  { stroke-dasharray:90,200; stroke-dashoffset:-35; }
+  100% { stroke-dasharray:90,200; stroke-dashoffset:-124;}
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 14 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Two circles, 2πr, and one offset. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== CIRCULAR PROGRESS RING =====
+const heroSvg   = document.getElementById("heroSvg");
+const heroProg  = document.getElementById("heroProg");
+const heroTrack = document.getElementById("heroTrack");
+const heroNum   = document.getElementById("heroNum");
+const slider    = document.getElementById("slider");
+const sliderVal = document.getElementById("sliderVal");
+const colour    = document.getElementById("colour");
+const sizeInput = document.getElementById("size");
+
+// circumference of the hero ring: C = 2πr
+const R = heroProg.r.baseVal.value;          // 92
+const C = 2 * Math.PI * R;                   // ≈ 578.05
+heroProg.style.strokeDasharray = C;          // dash == whole outline
+heroProg.style.strokeDashoffset = C;         // start fully hidden (0%)
+
+// percent (0–100) → dashoffset. offset = C × (1 − p/100). 0%→hide all, 100%→hide none.
+function setHeroArc(percent) {
+  heroProg.style.strokeDashoffset = C * (1 - percent / 100);
+}
+
+// count-up number, eased toward the target with requestAnimationFrame
+let shown = 0, raf = null;
+function countTo(target) {
+  cancelAnimationFrame(raf);
+  const step = () => {
+    shown += (target - shown) * 0.15;
+    if (Math.abs(target - shown) < 0.5) shown = target;
+    heroNum.textContent = Math.round(shown);
+    if (shown !== target) raf = requestAnimationFrame(step);
+  };
+  step();
+}
+
+function setProgress(p) {
+  p = Math.max(0, Math.min(100, p));
+  slider.value = p;
+  sliderVal.textContent = p + "%";
+  setHeroArc(p);
+  countTo(p);
+}
+
+slider.addEventListener("input", e => setProgress(+e.target.value));
+
+document.querySelectorAll(".preset").forEach(b => {
+  b.onclick = () => setProgress(+b.dataset.preset);
+});
+
+colour.addEventListener("input", e => { heroProg.style.stroke = e.target.value; });
+
+// size control: resize the whole svg + the wrapper so the centred label tracks it
+sizeInput.addEventListener("input", e => {
+  const s = +e.target.value;
+  heroSvg.setAttribute("width", s);
+  heroSvg.setAttribute("height", s);
+});
+
+// --- the two extra small rings (static demo values) ---
+function paintRing(id, percent) {
+  const c = document.getElementById(id);
+  const r = c.r.baseVal.value;
+  const circ = 2 * Math.PI * r;
+  c.style.strokeDasharray = circ;
+  c.style.strokeDashoffset = circ;            // start hidden so it animates in
+  // next frame, reveal to the target (lets the CSS transition run)
+  requestAnimationFrame(() => {
+    c.style.strokeDashoffset = circ * (1 - percent / 100);
+  });
+}
+paintRing("ringA", 42);
+paintRing("ringB", 68);
+
+// kick the hero off with a satisfying sweep to 66%
+requestAnimationFrame(() => setProgress(66));
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. Why SVG (and not a div) for a ring", why:"A ring is a curved shape, and curves are exactly what SVG is built for. An SVG circle stays razor-sharp at any size because it is drawn from maths, not pixels, so it never blurs when you scale it up. Its outline (the stroke) is a real, measurable line we can partly hide — which is the whole trick behind the progress arc. SVG shapes also accept normal CSS, so we can colour and animate them like any element. That mix of crisp curves plus CSS control is why nearly every progress ring on the web is SVG.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">SVG = <b>maths, not pixels</b> · crisp at any size · its stroke is a line we can hide &amp; animate</div>`, code:`<!-- one circle, drawn from numbers, infinitely scalable -->
+<svg width="220" height="220" viewBox="0 0 220 220">
+  <circle cx="110" cy="110" r="92" stroke-width="16"/>
+</svg>` },
+
+  { title:"2. The circle element: cx, cy, r", why:"An SVG circle needs just three numbers. cx and cy are the coordinates of its centre, and r is its radius — how far the edge sits from that centre. We usually put the centre in the middle of the canvas, so for a 220-wide box the centre is (110, 110). The radius is a little smaller than half the box so the thick stroke does not get clipped at the edges. Get these three numbers right and the circle is perfectly placed; everything else is styling.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>cx=110 &nbsp; cy=110 &nbsp; (the centre)</div><div class="mt-1">r=92 &nbsp; (radius — leave room for the stroke)</div></div>`, code:`<circle cx="110" cy="110" r="92" stroke-width="16"/>
+<!-- centre in the middle; r < half the box so the
+     16px stroke isn't cut off at the edges -->` },
+
+  { title:"3. The key measurement: circumference = 2πr", why:"To control how much of the ring shows, we first need to know how long its outline is. The length of a circle's edge is its circumference, and the formula is circumference = 2 × π × radius. For our radius of 92 that comes out to about 578 units. This single number is the foundation of the whole effect: it is the full length of the stroke we can reveal or hide. Once you have the circumference, the rest is simple arithmetic.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-lg font-bold text-slate-700">C = 2 × π × r</div><div class="mt-1">= 2 × 3.14159 × 92 ≈ <b>578</b></div></div>`, code:`const r = circle.r.baseVal.value;   // 92
+const C = 2 * Math.PI * r;          // ≈ 578.05
+// C is the TOTAL length of the ring's outline.` },
+
+  { title:"4. stroke-dasharray — turning the line into one big dash", why:"Normally a stroke is a solid, unbroken line. stroke-dasharray lets us break it into a dash-then-gap pattern, like a dotted border. The clever move here is to set the dash length equal to the whole circumference. That makes the single dash exactly as long as the entire outline — so by default the line still looks solid, but now it is technically one dash we can slide around. This sets the stage for hiding part of it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">dash length = C → one dash that wraps the <b>whole</b> circle</div>`, code:`circle.style.strokeDasharray = C;
+// one dash, exactly C long. The gap after it is also C,
+// but we never see the gap unless we slide the dash.` },
+
+  { title:"5. stroke-dashoffset — how much of the dash to hide", why:"stroke-dashoffset shifts where the dash starts, which effectively hides part of the line by pushing it out of view. If the offset equals the full circumference, the entire dash is pushed away and you see nothing — that is 0% progress. If the offset is zero, the whole dash sits in place and you see the full ring — that is 100%. Every value in between reveals a matching slice of the arc. Offset is the dial we will turn.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>offset = C → arc fully hidden (0%)</div><div class="mt-1">offset = 0 → arc fully shown (100%)</div></div>`, code:`circle.style.strokeDashoffset = C;   // 0%  — hide everything
+circle.style.strokeDashoffset = 0;   // 100% — show everything` },
+
+  { title:"6. Mapping percent → offset", why:"Now we connect a human percentage to the dashoffset dial. The formula is offset = circumference × (1 − percent / 100). At 0 percent that gives offset = C, hiding all of the arc; at 100 percent it gives offset = 0, showing all of it; at 75 percent it hides a quarter and reveals three-quarters. It is a straight, linear mapping — no special cases. This one line is the heart of the entire component.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-bold text-slate-700">offset = C × (1 − percent / 100)</div><div class="mt-1">75% → offset = C × 0.25 → three-quarters shows</div></div>`, code:`function setProgress(percent) {
+  const offset = C * (1 - percent / 100);
+  circle.style.strokeDashoffset = offset;
+}` },
+
+  { title:"7. Rotating −90° so it starts at 12 o'clock", why:"By default an SVG circle's stroke begins at the 3 o'clock position (the right-hand side) and grows clockwise from there. That feels wrong for progress, which we expect to start at the top. The fix is to rotate the whole SVG by minus ninety degrees, which spins that starting point up to 12 o'clock. Now the arc fills from the top, just like a clock or a loading dial. It is a one-line transform that makes the ring feel natural.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>default start = 3 o'clock ↻</div><div class="mt-1">rotate(−90deg) → start = <b>12 o'clock</b> ↑</div></div>`, code:`.ring { transform: rotate(-90deg); }
+/* arc now begins at the top and fills clockwise */` },
+
+  { title:"8. stroke-linecap round + the two-circle trick", why:"Two finishing touches make it look professional. First, stroke-linecap: round gives the arc's tips a soft, rounded cap instead of a hard square edge — small detail, big polish. Second, we draw two identical circles stacked on top of each other: a faint grey track underneath that shows the full path, and the coloured progress arc on top. The track tells the user how far there is to go, while the bright arc shows how far they have come. Same centre, same radius, different roles.", concept:`<div class="flex items-center justify-center gap-4 w-full"><div class="text-xs text-slate-500">grey <b>track</b><br>(full path)</div><div class="text-2xl">＋</div><div class="text-xs text-slate-500">colour <b>arc</b><br>(progress)</div></div>`, code:`<circle class="track" .../>   <!-- faint, full circle -->
+<circle class="prog"  .../>   <!-- coloured, partial -->
+
+.prog { stroke-linecap: round; }  /* soft rounded tips */` },
+
+  { title:"9. Animating smoothly with a CSS transition", why:"We never jump the arc to its new length — we glide it. Adding transition: stroke-dashoffset .6s to the progress circle means any change to the offset animates over six-tenths of a second instead of snapping. Pairing that with an ease curve makes it start a touch fast and settle gently, which feels alive. Because the browser handles this on the GPU, it stays buttery even while you drag the slider. One CSS line turns a static gauge into a satisfying motion.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">change the offset → CSS <b>glides</b> it over .6s instead of snapping</div>`, code:`.prog {
+  transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1);
+}
+/* set a new offset in JS and it animates for free */` },
+
+  { title:"10. The count-up number + indeterminate spinner", why:"The arc shows progress, but a number makes it exact, so we animate a label in step with it. A tiny requestAnimationFrame loop nudges a counter toward the target each frame, so it ticks up smoothly rather than jumping. The label sits in a centred overlay that is not rotated, so the digits stay upright. Finally, when progress is unknown, we switch to an indeterminate spinner: we spin the whole SVG and animate the dash so a short arc endlessly grows and shrinks — the universal 'working…' signal.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">2πr · dashoffset · rotate −90° · round caps · transition · count-up.</p></div>`, code:`function countTo(t) {                  // smooth ticking number
+  shown += (t - shown) * 0.15;
+  num.textContent = Math.round(shown);
+  if (shown !== t) requestAnimationFrame(() => countTo(t));
+}
+/* spinner: animate spin + dash for the "working…" state */` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 13 — GitHub Contribution Graph</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== GitHub Contribution Graph ===== */
+  .gh-scroll { overflow-x:auto; padding-bottom:6px; }
+  .gh-graph {
+    display:inline-grid;
+    grid-template-rows:repeat(7, 12px);
+    grid-auto-flow:column;          /* fill TOP→BOTTOM down a week, then move to next column */
+    grid-auto-columns:12px;
+    gap:3px;
+  }
+  .gh-cell {
+    width:12px; height:12px;
+    border-radius:3px;
+    background:#ebedf0;             /* level 0 — empty */
+    outline:1px solid rgba(27,31,35,0.06);
+    outline-offset:-1px;
+    cursor:pointer;
+  }
+  /* GitHub's classic 5-level green scale */
+  .gh-cell[data-level="1"] { background:#9be9a8; }
+  .gh-cell[data-level="2"] { background:#40c463; }
+  .gh-cell[data-level="3"] { background:#30a14e; }
+  .gh-cell[data-level="4"] { background:#216e39; }
+  .gh-cell.future { background:#f6f8fa; cursor:default; }
+
+  .gh-months { display:grid; grid-auto-flow:column; gap:3px; font-size:10px; color:#57606a; height:13px; }
+  .gh-weekdays { display:grid; grid-template-rows:repeat(7,12px); gap:3px; font-size:9px; color:#57606a; margin-right:6px; }
+  .gh-weekdays span { line-height:12px; }
+
+  .gh-legend-cell { width:11px; height:11px; border-radius:3px; outline:1px solid rgba(27,31,35,0.06); outline-offset:-1px; }
+
+  .gh-tooltip {
+    position:fixed; z-index:60; pointer-events:none;
+    background:#1b1f24; color:#fff; font-size:11px; font-weight:600;
+    padding:5px 9px; border-radius:6px; white-space:nowrap;
+    opacity:0; transform:translate(-50%,-130%); transition:opacity .1s;
+    box-shadow:0 4px 14px rgba(0,0,0,0.3);
+  }
+  .gh-tooltip.show { opacity:1; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 13</div>
+      <h1 class="text-xl font-bold">🟩 GitHub Contribution Graph — A Year in One Grid</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">The contribution heatmap — your whole year, one glance</h2>
+      <p class="text-white/80 mb-2"><b>Click</b> a cell to cycle its level (0→4), or <b>click-and-drag</b> across the grid to paint a streak. Hover any day for its count. Then hit <b>🎲 randomize a year</b> to see a realistic-looking year fill in.</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-2xl p-5 max-w-full">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div class="text-sm text-slate-600"><b id="ghTotal">0</b> contributions in the last year</div>
+        <div class="flex gap-2">
+          <button id="ghRandom" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">🎲 randomize a year</button>
+          <button id="ghClear"  class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-lg">clear</button>
+        </div>
+      </div>
+
+      <div class="gh-scroll">
+        <div id="ghMonths" class="gh-months" style="margin-left:26px;"></div>
+        <div class="flex">
+          <div class="gh-weekdays" id="ghWeekdays">
+            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+          </div>
+          <div id="ghGraph" class="gh-graph" aria-label="Contribution graph"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-1.5 mt-3 text-xs text-slate-500">
+        <span>Less</span>
+        <span class="gh-legend-cell" style="background:#ebedf0;"></span>
+        <span class="gh-legend-cell" style="background:#9be9a8;"></span>
+        <span class="gh-legend-cell" style="background:#40c463;"></span>
+        <span class="gh-legend-cell" style="background:#30a14e;"></span>
+        <span class="gh-legend-cell" style="background:#216e39;"></span>
+        <span>More</span>
+      </div>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>What it really is:</b> a date-indexed grid where each cell's colour just encodes a <i>bucketed</i> commit count.
+      Map <code>0 → grey</code>, <code>1–3 → light</code>, … <code>10+ → darkest</code>. Dead simple, but instantly iconic.
+    </p>
+  </div>
+</section>
+<div id="ghTooltip" class="gh-tooltip"></div>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How the contribution graph works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A date loop, one CSS Grid, and a count→colour map. ~60 lines, pure CSS Grid + vanilla JS.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Build a year of dates (back to the first Sunday)</h3></div>
+        <div class="relative"><pre>// 53 weeks × 7 days. Walk back to the Sunday on/before "one year ago".
+const today = new Date();
+const start = new Date(today);
+start.setDate(start.getDate() - 364);
+start.setDate(start.getDate() - start.getDay());  // snap to Sunday
+
+const days = [];
+for (let d = new Date(start); d &lt;= today; d.setDate(d.getDate() + 1)) {
+  days.push({ date: new Date(d), count: 0 });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The grid: 7 rows, columns auto-flow</h3></div>
+        <div class="relative"><pre>.graph {
+  display:inline-grid;
+  grid-template-rows: repeat(7, 12px);  /* one row per weekday */
+  grid-auto-flow: column;               /* fill DOWN a week, then next col */
+  grid-auto-columns: 12px;              /* each column = one week */
+  gap: 3px;
+}
+.cell { width:12px; height:12px; border-radius:3px; background:#ebedf0; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Count → level → colour</h3></div>
+        <div class="relative"><pre>// bucket a raw commit count into 5 levels
+function levelFor(count) {
+  if (count === 0) return 0;
+  if (count &lt;= 3)  return 1;
+  if (count &lt;= 6)  return 2;
+  if (count &lt;= 9)  return 3;
+  return 4;
+}
+const COLORS = ["#ebedf0","#9be9a8","#40c463","#30a14e","#216e39"];</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Render one cell per day</h3></div>
+        <div class="relative"><pre>const graph = document.querySelector(".graph");
+days.forEach(day => {
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.style.background = COLORS[levelFor(day.count)];
+  cell.dataset.date = day.date.toISOString().slice(0, 10);
+  graph.appendChild(cell);
+});
+// grid-auto-flow: column places day 0..6 down column 1, 7..13 down column 2…</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Hover tooltip — "N contributions on date"</h3></div>
+        <div class="relative"><pre>graph.addEventListener("mouseover", e => {
+  const cell = e.target.closest(".cell");
+  if (!cell) return;
+  const n = cell.dataset.count || 0;
+  tooltip.textContent = `${n} contributions on ${cell.dataset.date}`;
+  const box = cell.getBoundingClientRect();
+  tooltip.style.left = box.left + box.width / 2 + "px";
+  tooltip.style.top  = box.top + "px";
+  tooltip.classList.add("show");
+});
+graph.addEventListener("mouseout", () => tooltip.classList.remove("show"));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Paint on click & drag</h3></div>
+        <div class="relative"><pre>let painting = false;
+function bump(cell) {
+  let lvl = (+cell.dataset.level + 1) % 5;   // cycle 0→1→2→3→4→0
+  cell.dataset.level = lvl;
+  cell.style.background = COLORS[lvl];
+}
+graph.addEventListener("mousedown", e => {
+  const c = e.target.closest(".cell"); if (!c) return;
+  painting = true; bump(c); e.preventDefault();
+});
+graph.addEventListener("mouseover", e => {
+  if (!painting) return;
+  const c = e.target.closest(".cell"); if (c) bump(c);
+});
+window.addEventListener("mouseup", () => painting = false);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Month labels + legend</h3></div>
+        <div class="relative"><pre>// a month label sits above the FIRST week-column of that month
+let lastMonth = -1;
+weeks.forEach((week, col) => {
+  const m = week[0].date.getMonth();
+  const label = document.createElement("div");
+  label.style.gridColumn = col + 1;          // align to its week column
+  label.textContent = (m !== lastMonth) ? MONTHS[m] : "";
+  lastMonth = m;
+  monthsRow.appendChild(label);
+});
+// Legend: 5 swatches between the words "Less" and "More".</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">A realistic randomizer + scroll on mobile</h3></div>
+        <div class="relative"><pre>// most days are quiet; weekdays busier; occasional streaks
+function randomYear() {
+  days.forEach(d => {
+    const weekend = [0,6].includes(d.date.getDay());
+    let n = Math.random() &lt; (weekend ? 0.35 : 0.7)
+          ? Math.floor(Math.random() * (weekend ? 4 : 12)) : 0;
+    setCell(d, n);
+  });
+}
+/* wrap the graph in a scroll container so 53 columns scroll on phones */
+.scroll { overflow-x: auto; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 13 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Tomorrow: a circular progress ring.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== GITHUB CONTRIBUTION GRAPH =====
+const COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const graphEl   = document.getElementById("ghGraph");
+const monthsEl  = document.getElementById("ghMonths");
+const totalEl   = document.getElementById("ghTotal");
+const tooltip   = document.getElementById("ghTooltip");
+
+// --- build a year of dates, snapped back to the Sunday on/before "one year ago" ---
+const today = new Date(); today.setHours(0,0,0,0);
+const start = new Date(today);
+start.setDate(start.getDate() - 364);
+start.setDate(start.getDate() - start.getDay());   // snap to Sunday (column boundary)
+
+const days = [];
+for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+  days.push({ date: new Date(d), count: 0, future: false });
+}
+
+function levelFor(count) {
+  if (count <= 0) return 0;
+  if (count <= 3) return 1;
+  if (count <= 6) return 2;
+  if (count <= 9) return 3;
+  return 4;
+}
+function fmtDate(d) {
+  return d.toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+}
+
+// --- render one cell per day ---
+const cells = [];
+days.forEach(day => {
+  const cell = document.createElement("div");
+  cell.className = "gh-cell";
+  cell.dataset.level = 0;
+  cell.dataset.count = 0;
+  cell.dataset.date  = fmtDate(day.date);
+  cell._day = day;
+  graphEl.appendChild(cell);
+  cells.push(cell);
+});
+
+// --- month labels: one per week-column, shown when the month changes ---
+function renderMonths() {
+  monthsEl.innerHTML = "";
+  const weekCount = Math.ceil(cells.length / 7);
+  let lastMonth = -1;
+  for (let col = 0; col < weekCount; col++) {
+    const firstDay = days[col * 7];
+    const lbl = document.createElement("div");
+    if (firstDay) {
+      const m = firstDay.date.getMonth();
+      if (m !== lastMonth) { lbl.textContent = MONTHS[m]; lastMonth = m; }
+    }
+    monthsEl.appendChild(lbl);
+  }
+}
+renderMonths();
+
+// --- keep one cell's count, colour, level, and tooltip text in sync ---
+function setCount(cell, count) {
+  count = Math.max(0, count);
+  const lvl = levelFor(count);
+  cell._day.count = count;
+  cell.dataset.count = count;
+  cell.dataset.level = lvl;
+  cell.dataset.date  = fmtDate(cell._day.date);
+}
+function recolorAll() {
+  cells.forEach(c => c.style.removeProperty("background")); // let [data-level] CSS drive colour
+}
+function updateTotal() {
+  const sum = days.reduce((a, d) => a + d.count, 0);
+  totalEl.textContent = sum.toLocaleString();
+}
+
+// --- painting: click cycles a level; drag paints across cells ---
+let painting = false;
+function bump(cell) {
+  let lvl = (+cell.dataset.level + 1) % 5;
+  // map the painted level back to a representative count so the total stays sensible
+  const repCount = [0, 2, 5, 8, 12][lvl];
+  setCount(cell, repCount);
+  updateTotal();
+}
+graphEl.addEventListener("mousedown", e => {
+  const c = e.target.closest(".gh-cell"); if (!c) return;
+  painting = true; bump(c); e.preventDefault();
+});
+graphEl.addEventListener("mouseover", e => {
+  const c = e.target.closest(".gh-cell"); if (!c) return;
+  // tooltip
+  const n = c.dataset.count;
+  tooltip.textContent = `${n} contribution${n == 1 ? "" : "s"} on ${c.dataset.date}`;
+  const box = c.getBoundingClientRect();
+  tooltip.style.left = (box.left + box.width / 2) + "px";
+  tooltip.style.top  = box.top + "px";
+  tooltip.classList.add("show");
+  // drag-paint
+  if (painting) bump(c);
+});
+graphEl.addEventListener("mouseout", () => tooltip.classList.remove("show"));
+window.addEventListener("mouseup", () => painting = false);
+
+// --- randomizer: most days quiet, weekdays busier, occasional streaks ---
+function randomYear() {
+  // baseline
+  cells.forEach(c => {
+    const weekend = [0, 6].includes(c._day.date.getDay());
+    const active  = Math.random() < (weekend ? 0.35 : 0.72);
+    const n = active ? Math.floor(Math.random() * (weekend ? 4 : 11)) + 1 : 0;
+    setCount(c, n);
+  });
+  // sprinkle a few hot streaks of consecutive heavy days
+  const streaks = 6;
+  for (let s = 0; s < streaks; s++) {
+    const startIdx = Math.floor(Math.random() * (cells.length - 10));
+    const len = 3 + Math.floor(Math.random() * 7);
+    for (let i = 0; i < len; i++) setCount(cells[startIdx + i], 8 + Math.floor(Math.random() * 8));
+  }
+  updateTotal();
+}
+function clearYear() {
+  cells.forEach(c => setCount(c, 0));
+  updateTotal();
+}
+document.getElementById("ghRandom").onclick = randomYear;
+document.getElementById("ghClear").onclick  = clearYear;
+
+recolorAll();
+randomYear();   // start with a filled, realistic-looking year
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. The big idea: a year you can read at a glance", why:"A contribution graph turns 365 numbers into one picture. Instead of reading a table of dates and commit counts, your eye sees green where you were active and grey where you were not. Patterns like a busy autumn or a two-week gap jump out instantly. That is the whole point: a heatmap trades exact numbers for an at-a-glance shape. It is one of the most copied data visuals on the web because it does so much with so little.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">365 numbers → <b>one green picture</b> · patterns pop out instantly</div>`, code:`// goal: turn { date → count } into a year-sized heatmap` },
+
+  { title:"2. The data shape: date → count", why:"Underneath, the graph is nothing more than a list of days, each with a number. The shape is simply { date, count }. GitHub gets the count by tallying your commits, pull requests and issues for that day, but the visual does not care where the number came from. Once you have one count per date, you have everything you need to draw. Keeping the data this plain is what makes the whole thing easy to build.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-left font-mono">[<br>&nbsp;&nbsp;{ date:"Jun 01", count:0 },<br>&nbsp;&nbsp;{ date:"Jun 02", count:7 },<br>&nbsp;&nbsp;{ date:"Jun 03", count:2 } …<br>]</div>`, code:`const days = [{ date: new Date(...), count: 7 }, ...];` },
+
+  { title:"3. CSS Grid for 53 × 7 (columns = weeks)", why:"The layout looks like a calendar but it is built with a single CSS Grid. We fix 7 rows, one per weekday, then let columns be created automatically. The trick is grid-auto-flow: column, which fills cells down a column first, then moves to the next column. So day 0–6 stack down week one, day 7–13 down week two, and so on. A full year is about 53 of those columns.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>grid-template-rows: repeat(7, 12px)</div><div class="mt-1"><b>grid-auto-flow: column</b> → fill down, then across</div></div>`, code:`.graph {
+  display:inline-grid;
+  grid-template-rows: repeat(7, 12px);
+  grid-auto-flow: column;     /* THE key line */
+  gap: 3px;
+}` },
+
+  { title:"4. Bucketing counts into 5 levels", why:"Real commit counts range from 0 to dozens, but the eye cannot tell 14 greens apart. So we bucket every count into just 5 levels: 0 is empty, then three rising bands, then a top band for the busiest days. This is the same idea as a histogram bin. Fewer levels means a cleaner, more honest picture — you read intensity, not exact numbers. You pick the thresholds; GitHub roughly uses quartiles of your own activity.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">0 → L0 · 1–3 → L1 · 4–6 → L2 · 7–9 → L3 · 10+ → L4</div>`, code:`function levelFor(count) {
+  if (count === 0) return 0;
+  if (count <= 3)  return 1;
+  if (count <= 6)  return 2;
+  if (count <= 9)  return 3;
+  return 4;
+}` },
+
+  { title:"5. The colour scale (and not relying on green alone)", why:"Each level maps to one colour, going from a neutral grey through four deepening greens. The darker the cell, the busier the day. But colour alone is risky: red-green colour-blind users can struggle with a green ramp. So we keep the levels ordered by lightness (light to dark), expose the real number in a tooltip, and could swap to a colour-blind-safe palette. Never let colour be the only carrier of meaning.", concept:`<div class="flex items-center justify-center gap-1 w-full"><span class="gh-legend-cell" style="background:#ebedf0;width:22px;height:22px;"></span><span class="gh-legend-cell" style="background:#9be9a8;width:22px;height:22px;"></span><span class="gh-legend-cell" style="background:#40c463;width:22px;height:22px;"></span><span class="gh-legend-cell" style="background:#30a14e;width:22px;height:22px;"></span><span class="gh-legend-cell" style="background:#216e39;width:22px;height:22px;"></span></div>`, code:`const COLORS =
+  ["#ebedf0","#9be9a8","#40c463","#30a14e","#216e39"];
+cell.style.background = COLORS[levelFor(count)];` },
+
+  { title:"6. Aligning month labels to week columns", why:"The month names along the top are not evenly spaced — they sit above the first week that belongs to each month. We walk the columns left to right, look at the first day of each week, and whenever its month differs from the previous column's, we print that month's name. Putting the labels in their own grid that shares the same column widths keeps everything lined up. It is a small detail that makes the graph feel like a real calendar.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">for each week-column → if month changed, print its name above</div>`, code:`let last = -1;
+weeks.forEach((week, col) => {
+  const m = week[0].date.getMonth();
+  if (m !== last) { printLabel(col, MONTHS[m]); last = m; }
+});` },
+
+  { title:"7. The hover tooltip", why:"Because the cells hide the exact number, hovering must reveal it. We listen for mouseover on the grid, find the cell under the pointer, and read its stored date and count from data- attributes. A small fixed-position box shows 'N contributions on <date>' and follows the cell. Using one listener on the container (event delegation) instead of one per cell keeps it fast even with 365 cells. On mouseout we just hide the box.", concept:`<div class="text-center w-full"><div class="inline-block bg-[#1b1f24] text-white text-xs font-semibold px-3 py-1.5 rounded-md">7 contributions on Jun 03, 2026</div><p class="text-slate-500 text-xs mt-2">one listener on the grid reads each cell's data-*</p></div>`, code:`graph.addEventListener("mouseover", e => {
+  const c = e.target.closest(".cell"); if (!c) return;
+  tip.textContent =
+    c.dataset.count + " contributions on " + c.dataset.date;
+});` },
+
+  { title:"8. Rendering from a real data array", why:"Drawing is a plain loop: for each day in the array we create one div, give it the colour for its level, and stash the date and count on it as data- attributes. Then we append it to the grid and the CSS handles all the positioning. Because the cells are appended in date order and the grid flows by column, they land in exactly the right week and weekday with zero position math. Render straight from data — never hard-code 365 cells.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">for each day → one &lt;div&gt; with its colour + data-date + data-count</div>`, code:`days.forEach(day => {
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.style.background = COLORS[levelFor(day.count)];
+  cell.dataset.date = fmt(day.date);
+  graph.appendChild(cell);
+});` },
+
+  { title:"9. Empty days, the leading week & future days", why:"A year rarely starts on a Sunday, so the first column has blank days before your start date, and the last week may run past today. We handle this by snapping the start back to the nearest Sunday, so columns always begin clean. Days with no activity simply get level 0 (the grey). Days in the future get a faint, non-interactive style so it is clear they have not happened yet. Edge days are what separate a sloppy grid from a polished one.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">snap start → Sunday · no-activity = grey · future = faint &amp; locked</div>`, code:`start.setDate(start.getDate() - start.getDay()); // back to Sunday
+if (day.date > today) cell.classList.add("future");` },
+
+  { title:"10. Making it responsive & scrollable", why:"Fifty-three fixed-width columns are wider than a phone screen, so we wrap the grid in a container with overflow-x: auto. On a narrow screen you swipe sideways to see the whole year, while the cell size stays crisp and consistent. We avoid squashing the cells, because tiny irregular squares read worse than a clean scroll. Put together — grid layout, bucketed colours, aligned labels, a tooltip, and a scroll wrapper — you get the iconic graph.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">date grid · 5-level colour · aligned months · tooltip · scrollable.</p></div>`, code:`.scroll { overflow-x: auto; }   /* swipe the year on mobile */
+/* keep cells a fixed 12px — never squash them */` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 4 — Arc Tabs</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .copy-btn:hover { background:#1e293b; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .arc-bg { background: linear-gradient(160deg, #fce7f3 0%, #ddd6fe 50%, #c7d2fe 100%); }
+  .arc-tab { transition: all .15s; cursor: pointer; }
+  .arc-tab:hover { background: rgba(255,255,255,0.5); }
+  .arc-tab.active { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-fuchsia-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-fuchsia-600 font-bold uppercase tracking-wider">DesignFromZero · Day 4</div>
+      <h1 class="text-xl font-bold">🎨 Arc Vertical Tabs Clone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- LOOK -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] arc-bg p-8">
+    <div class="max-w-6xl mx-auto">
+
+      <div class="bg-white/40 backdrop-blur rounded-2xl shadow-xl overflow-hidden flex" style="height: 540px;">
+
+        <!-- Sidebar -->
+        <aside class="w-60 p-3 flex flex-col gap-1">
+          <!-- Window controls (mac-style) -->
+          <div class="flex items-center gap-1.5 px-2 py-2">
+            <span class="w-3 h-3 rounded-full bg-red-400"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+          </div>
+
+          <!-- Address bar style -->
+          <div class="bg-white/60 rounded-lg px-3 py-2 mb-2 text-xs text-slate-500 flex items-center gap-2">
+            <span>🔍</span>
+            <span>Command bar</span>
+            <span class="ml-auto text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">⌘T</span>
+          </div>
+
+          <!-- Pinned -->
+          <div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mt-2 px-2">Pinned</div>
+          <div class="arc-tab active rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-slate-900 text-white rounded text-[10px] flex items-center justify-center font-bold">G</span>
+            <span class="font-semibold text-slate-900">Gmail</span>
+          </div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-rose-500 text-white rounded text-[10px] flex items-center justify-center font-bold">N</span>
+            <span class="text-slate-700">Notion</span>
+            <span class="ml-auto w-2 h-2 bg-rose-500 rounded-full"></span>
+          </div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-violet-500 text-white rounded text-[10px] flex items-center justify-center font-bold">F</span>
+            <span class="text-slate-700">Figma</span>
+          </div>
+
+          <!-- Today -->
+          <div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mt-3 px-2">Today</div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-emerald-500 text-white rounded text-[10px] flex items-center justify-center font-bold">S</span>
+            <span class="text-slate-700 truncate">Stripe — Dashboard</span>
+          </div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-orange-500 text-white rounded text-[10px] flex items-center justify-center font-bold">H</span>
+            <span class="text-slate-700">Hacker News</span>
+          </div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+            <span class="w-5 h-5 bg-blue-500 text-white rounded text-[10px] flex items-center justify-center font-bold">L</span>
+            <span class="text-slate-700 truncate">Linear — Sprint 14</span>
+          </div>
+
+          <!-- Folder -->
+          <div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold mt-3 px-2">📂 Side projects</div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm ml-3">
+            <span class="w-4 h-4 bg-fuchsia-500 text-white rounded text-[10px] flex items-center justify-center font-bold">D</span>
+            <span class="text-slate-700">dev48v.infy.uk</span>
+          </div>
+          <div class="arc-tab rounded-lg px-3 py-2 flex items-center gap-2 text-sm ml-3">
+            <span class="w-4 h-4 bg-amber-500 text-white rounded text-[10px] flex items-center justify-center font-bold">G</span>
+            <span class="text-slate-700">GitHub — dev48v</span>
+          </div>
+
+          <div class="mt-auto px-2 py-2 text-xs text-slate-500">+ New tab</div>
+        </aside>
+
+        <!-- Main view -->
+        <main class="flex-1 bg-white rounded-l-2xl m-2 ml-0 flex items-center justify-center text-slate-400">
+          <div class="text-center">
+            <div class="text-6xl mb-3">📧</div>
+            <div class="font-semibold text-slate-700">Gmail</div>
+            <div class="text-xs text-slate-500 mt-1">12 unread · Inbox</div>
+          </div>
+        </main>
+      </div>
+
+      <p class="text-xs text-slate-600 text-center mt-6">↑ Sidebar tabs · grouped by Pinned / Today / Folders · ⌘T command bar · mac window dots. Click <b>UNDERSTAND</b> for each piece.</p>
+    </div>
+  </div>
+</section>
+
+<!-- UNDERSTAND -->
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">Build the Arc sidebar step by step</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step. Read the WHY.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-fuchsia-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-fuchsia-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">PREVIEW</div>
+        <div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step on the left →</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">WHY</div>
+        <div id="why" class="text-slate-700">—</div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">CODE FOR THIS STEP</div>
+        <pre id="code"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILD -->
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Estimated time: <b>15 minutes</b>. One HTML file.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Make a file + paste</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>arc-tabs.html</code> · Tailwind CDN · ~50 lines for the whole sidebar.</p>
+<pre>&lt;body class="min-h-screen p-8"
+  style="background: linear-gradient(160deg, #fce7f3, #ddd6fe, #c7d2fe);"&gt;
+  &lt;div class="bg-white/40 backdrop-blur rounded-2xl flex shadow-xl"
+       style="height: 540px; max-width: 1100px; margin: auto;"&gt;
+
+    &lt;aside class="w-60 p-3 flex flex-col gap-1"&gt;
+      &lt;!-- mac window dots --&gt;
+      &lt;div class="flex gap-1.5 px-2 py-2"&gt;
+        &lt;span class="w-3 h-3 rounded-full bg-red-400"&gt;&lt;/span&gt;
+        &lt;span class="w-3 h-3 rounded-full bg-amber-400"&gt;&lt;/span&gt;
+        &lt;span class="w-3 h-3 rounded-full bg-emerald-400"&gt;&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;!-- command bar pill --&gt;
+      &lt;div class="bg-white/60 rounded-lg px-3 py-2 text-xs text-slate-500
+                  flex items-center gap-2 mb-2"&gt;
+        🔍 Command bar
+        &lt;span class="ml-auto bg-slate-200 px-1.5 rounded text-[10px]"&gt;⌘T&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;!-- section header --&gt;
+      &lt;div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 px-2"&gt;
+        Pinned
+      &lt;/div&gt;
+      &lt;!-- tab row --&gt;
+      &lt;div class="bg-white rounded-lg px-3 py-2 flex items-center gap-2 shadow"&gt;
+        &lt;span class="w-5 h-5 bg-slate-900 text-white rounded text-[10px]
+                     flex items-center justify-center font-bold"&gt;G&lt;/span&gt;
+        &lt;span class="font-semibold"&gt;Gmail&lt;/span&gt;
+      &lt;/div&gt;
+    &lt;/aside&gt;
+
+    &lt;main class="flex-1 bg-white rounded-l-2xl m-2 ml-0"&gt;&lt;/main&gt;
+  &lt;/div&gt;
+&lt;/body&gt;</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Open in browser</h3></div>
+        <p class="text-sm text-slate-600">Double-click. Pastel gradient bg, glass sidebar, mac dots, command-bar pill, tab rows with colored letter avatars.</p>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Tweaks to try</h3></div>
+        <ul class="text-sm text-slate-600 space-y-2 ml-4 list-disc">
+          <li>Different gradient: <code>from-slate-900 via-indigo-900 to-slate-900</code> = "Night mode Arc"</li>
+          <li>Add drag handle on hover (CSS grip dots)</li>
+          <li>Folder collapse: click → rotate chevron, hide children</li>
+          <li>Live favicon: scrape via <code>https://www.google.com/s2/favicons?domain=...</code></li>
+        </ul>
+      </li>
+    </ol>
+    <div class="mt-10 bg-fuchsia-50 border border-fuchsia-200 rounded-2xl p-6 text-center">
+      <h3 class="font-bold text-lg text-fuchsia-900">🎉 Day 4 of DesignFromZero done.</h3>
+      <p class="text-sm text-fuchsia-700 mt-2">Tomorrow: Notion calendar grid.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// UNDERSTAND steps
+const STEPS = [
+  { title:"1. Pastel gradient background", why:"Arc's signature look starts with the background, not the sidebar. A diagonal gradient through pink/purple/indigo gives the whole window a 'crafted' feel before any UI is drawn. Same trick used by Linear, Vercel, Cursor.", concept:`<div class="w-full h-32 rounded-xl" style="background: linear-gradient(160deg, #fce7f3 0%, #ddd6fe 50%, #c7d2fe 100%);"></div>`, code:`background: linear-gradient(160deg,
+  #fce7f3 0%,   /* pink-100 */
+  #ddd6fe 50%,  /* violet-200 */
+  #c7d2fe 100%  /* indigo-200 */
+);` },
+  { title:"2. Glass sidebar via backdrop-blur", why:"The sidebar uses `bg-white/40 backdrop-blur` — semi-transparent white with the gradient bleeding through. Native macOS look. Costs nothing once browsers support backdrop-filter (Safari + Chrome + Edge all fine).", concept:`<div class="w-full h-32 rounded-xl flex" style="background: linear-gradient(160deg, #fce7f3, #ddd6fe);"><div class="w-1/3 bg-white/40 backdrop-blur rounded-xl m-2 flex items-center justify-center text-xs text-slate-500">glass</div></div>`, code:`<aside class="bg-white/40 backdrop-blur rounded-2xl">
+  ...
+</aside>` },
+  { title:"3. macOS window dots", why:"Three colored dots (red/amber/green) say 'this is a desktop app, not a website'. Even in a web demo, they give the UI an instant 'native' feel. ~12px, rounded-full, fixed top-left.", concept:`<div class="flex items-center gap-2 bg-white/60 p-3 rounded"><span class="w-3 h-3 rounded-full bg-red-400"></span><span class="w-3 h-3 rounded-full bg-amber-400"></span><span class="w-3 h-3 rounded-full bg-emerald-400"></span></div>`, code:`<div class="flex items-center gap-1.5 px-2 py-2">
+  <span class="w-3 h-3 rounded-full bg-red-400"></span>
+  <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+  <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+</div>` },
+  { title:"4. Command bar pill", why:"Arc's killer feature = ⌘T opens a command bar that does navigation + actions + search. Visually: a single rounded pill at the top of the sidebar with a 🔍 icon and the ⌘T hint on the right. Always visible.", concept:`<div class="bg-white/60 rounded-lg px-3 py-2 text-xs text-slate-500 flex items-center gap-2 w-56">🔍 Command bar <span class="ml-auto bg-slate-200 px-1.5 py-0.5 rounded text-[10px]">⌘T</span></div>`, code:`<div class="bg-white/60 rounded-lg px-3 py-2 text-xs flex items-center gap-2">
+  🔍 Command bar
+  <span class="ml-auto bg-slate-200 px-1.5 rounded">⌘T</span>
+</div>` },
+  { title:"5. Section headers", why:"Pinned / Today / Folders — tiny uppercase labels group tabs by importance. Same `text-[10px] uppercase tracking-widest text-slate-500 font-bold` style across the whole app. Pure structure, no interaction.", concept:`<div class="space-y-2 w-full"><div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold px-2">Pinned</div><div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold px-2">Today</div><div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold px-2">📂 Side projects</div></div>`, code:`<div class="text-[10px] uppercase tracking-widest
+            text-slate-500 font-bold px-2">
+  Pinned
+</div>` },
+  { title:"6. Tab row pattern", why:"Each tab = colored letter avatar (5×5) + label. Active tab gets white bg + soft shadow to pop. Hover gets translucent white. ml-3 indents folder children.", concept:`<div class="space-y-1 w-full"><div class="bg-white rounded-lg px-3 py-2 flex items-center gap-2 text-sm shadow"><span class="w-5 h-5 bg-slate-900 text-white rounded text-[10px] flex items-center justify-center font-bold">G</span><span class="font-semibold">Gmail</span></div><div class="rounded-lg px-3 py-2 flex items-center gap-2 text-sm hover:bg-white/50"><span class="w-5 h-5 bg-rose-500 text-white rounded text-[10px] flex items-center justify-center font-bold">N</span><span>Notion</span><span class="ml-auto w-2 h-2 bg-rose-500 rounded-full"></span></div></div>`, code:`<div class="rounded-lg px-3 py-2 flex items-center gap-2
+            bg-white shadow">      <!-- active -->
+  <span class="w-5 h-5 bg-slate-900 text-white rounded
+               text-[10px] flex items-center justify-center
+               font-bold">G</span>
+  <span class="font-semibold">Gmail</span>
+</div>` },
+  { title:"7. Unread dot", why:"Tiny 2px colored dot at the right edge of a tab row signals 'something happened here'. Pushed via `ml-auto`. Same convention as Slack / Discord / Linear.", concept:`<div class="rounded-lg px-3 py-2 flex items-center gap-2 text-sm bg-white shadow w-56"><span class="w-5 h-5 bg-rose-500 text-white rounded text-[10px] flex items-center justify-center font-bold">N</span><span>Notion</span><span class="ml-auto w-2 h-2 bg-rose-500 rounded-full"></span></div>`, code:`<span class="ml-auto w-2 h-2 bg-rose-500 rounded-full"></span>` },
+  { title:"8. Rounded main content area", why:"The right pane is rounded-l-2xl (top-left + bottom-left rounded only), with margin around it to let the gradient peek through. Gives the 'app inside an app' feel that defines Arc.", concept:`<div class="w-full h-32 rounded-xl flex" style="background: linear-gradient(160deg, #fce7f3, #ddd6fe);"><div class="flex-1 bg-white rounded-l-xl m-2 ml-0 flex items-center justify-center text-slate-400 text-xs">main content</div></div>`, code:`<main class="flex-1 bg-white rounded-l-2xl m-2 ml-0">
+  <!-- the loaded page goes here -->
+</main>` },
+  { title:"9. Done!", why:"Arc's sidebar is just: gradient bg + glass sidebar + dots + command pill + section headers + tab rows + main pane. ~50 lines of HTML. Same skeleton works for: code editors with file tree, note apps with notebook list, music apps with playlist sidebar.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">You understand the Arc layout.</p></div>`, code:`// Reusable as: VS Code · Notion · Apple Music · Discord
+// Same outer shell, different middle content` }
+];
+const stepsEl = document.getElementById("steps");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next-btn");
+const auto = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm";
+  b.innerHTML = `<div class="font-semibold">${s.title}</div>`;
+  b.onclick = () => show(i);
+  stepsEl.appendChild(b);
+});
+function show(i) {
+  cur = i;
+  const s = STEPS[i];
+  document.getElementById("concept").innerHTML = `<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML = `<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent = s.code;
+  stepsEl.querySelectorAll("button").forEach((b, idx) => {
+    b.className = idx === i
+      ? "w-full text-left p-3 rounded-lg border-2 border-fuchsia-500 bg-fuchsia-50 text-sm font-semibold"
+      : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm";
+  });
+}
+prev.onclick = () => show(Math.max(0, cur - 1));
+next.onclick = () => show(Math.min(STEPS.length - 1, cur + 1));
+let timer = null;
+auto.onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; auto.textContent = "▶ Auto-play"; return; }
+  auto.textContent = "⏸ Pause";
+  show(0);
+  timer = setInterval(() => {
+    if (cur >= STEPS.length - 1) { clearInterval(timer); timer = null; auto.textContent = "▶ Replay"; return; }
+    show(cur + 1);
+  }, 2500);
+};
+show(0);
+</script>
+</body>
+</html>

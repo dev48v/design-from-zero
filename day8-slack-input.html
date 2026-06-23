@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 8 — Slack Input Bar</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .composer:focus-within { border-color:#4f46e5; box-shadow:0 0 0 1px #4f46e5; }
+  #editor { resize:none; max-height:200px; }
+  .tbtn { width:30px; height:30px; border-radius:6px; color:#616061; font-weight:700; }
+  .tbtn:hover { background:#f1f1f1; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 8</div>
+      <h1 class="text-xl font-bold">💬 Slack's Input Bar — Autogrow + Toolbar</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-1 text-center">The message box that grows as you type</h2>
+      <p class="text-slate-500 text-center mb-6">Type a multi-line message — the box grows, then scrolls. Select text and hit <b>B</b> / <b>I</b> / <b>code</b>. Enter sends; Shift+Enter makes a new line.</p>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-2 border-b border-slate-100 font-bold text-slate-700 text-sm"># design-team</div>
+        <div id="thread" class="p-4 space-y-3 h-64 overflow-y-auto text-sm"></div>
+        <div class="p-3">
+          <div class="composer border border-slate-300 rounded-lg overflow-hidden transition">
+            <div class="flex items-center gap-0.5 px-2 py-1 border-b border-slate-100">
+              <button class="tbtn" data-wrap="*" title="Bold">B</button>
+              <button class="tbtn italic" data-wrap="_" title="Italic">I</button>
+              <button class="tbtn line-through" data-wrap="~" title="Strike">S</button>
+              <button class="tbtn font-mono text-xs" data-wrap="\`" title="Code">&lt;/&gt;</button>
+              <span class="w-px h-5 bg-slate-200 mx-1"></span>
+              <button class="tbtn" data-prefix="&gt; " title="Quote">"</button>
+              <button class="tbtn" data-prefix="• " title="List">≡</button>
+              <button class="tbtn" data-insert="@" title="Mention">@</button>
+              <button class="tbtn" data-insert="😀" title="Emoji">☺</button>
+            </div>
+            <textarea id="editor" rows="1" placeholder="Message #design-team" class="w-full px-3 py-2 outline-none text-sm"></textarea>
+            <div class="flex items-center justify-between px-2 py-1.5">
+              <div class="flex gap-1 text-slate-400"><span class="tbtn flex items-center justify-center">+</span></div>
+              <button id="send" class="bg-indigo-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold px-3 py-1.5 rounded-md flex items-center gap-1">➤</button>
+            </div>
+          </div>
+          <div class="text-xs text-slate-400 mt-1 px-1"><b>Enter</b> to send · <b>Shift+Enter</b> for a new line</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How the composer works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A textarea that measures itself + a toolbar that wraps your selection. ~40 lines.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Autogrow: measure scrollHeight</h3></div><pre>editor.style.height = "auto";              // reset so it can shrink
+editor.style.height = editor.scrollHeight + "px";  // grow to fit
+// max-height + overflow-y:auto in CSS caps it, then scrolls</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Toolbar wraps the selected text</h3></div><pre>const { selectionStart: a, selectionEnd: b, value: v } = editor;
+const sel = v.slice(a, b) || "text";
+editor.value = v.slice(0,a) + mark + sel + mark + v.slice(b);  // *bold*</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Enter sends, Shift+Enter = newline</h3></div><pre>editor.onkeydown = e =&gt; {
+  if (e.key === "Enter" &amp;&amp; !e.shiftKey) { e.preventDefault(); send(); }
+};</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Render the markdown on send</h3></div><pre>text.replace(/\*(.+?)\*/g, "&lt;b&gt;$1&lt;/b&gt;")
+    .replace(/_(.+?)_/g, "&lt;i&gt;$1&lt;/i&gt;")
+    .replace(/\`(.+?)\`/g, "&lt;code&gt;$1&lt;/code&gt;");</pre></li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 8 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Tomorrow: Notion's slash-command menu.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SLACK COMPOSER =====
+const editor = document.getElementById("editor"), thread = document.getElementById("thread"), sendBtn = document.getElementById("send");
+function autogrow(){ editor.style.height="auto"; editor.style.height = Math.min(200, editor.scrollHeight) + "px"; sendBtn.disabled = !editor.value.trim(); }
+editor.addEventListener("input", autogrow);
+
+function wrap(mark){
+  const a=editor.selectionStart, b=editor.selectionEnd, v=editor.value;
+  const sel = v.slice(a,b) || "text";
+  editor.value = v.slice(0,a) + mark + sel + mark + v.slice(b);
+  editor.focus(); editor.selectionStart = a+mark.length; editor.selectionEnd = a+mark.length+sel.length;
+  autogrow();
+}
+function prefixLine(pre){ const a=editor.selectionStart, v=editor.value; const ls=v.lastIndexOf("\n",a-1)+1; editor.value = v.slice(0,ls)+pre+v.slice(ls); editor.focus(); autogrow(); }
+function insert(txt){ const a=editor.selectionStart, v=editor.value; editor.value=v.slice(0,a)+txt+v.slice(a); editor.focus(); editor.selectionStart=editor.selectionEnd=a+txt.length; autogrow(); }
+document.querySelectorAll(".tbtn[data-wrap]").forEach(b=>b.onclick=()=>wrap(b.dataset.wrap));
+document.querySelectorAll(".tbtn[data-prefix]").forEach(b=>b.onclick=()=>prefixLine(b.dataset.prefix));
+document.querySelectorAll(".tbtn[data-insert]").forEach(b=>b.onclick=()=>insert(b.dataset.insert));
+
+function render(t){
+  return t.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/\*(.+?)\*/g,"<b>$1</b>").replace(/_(.+?)_/g,"<i>$1</i>")
+    .replace(/~(.+?)~/g,"<s>$1</s>").replace(/`(.+?)`/g,'<code class="bg-slate-100 text-rose-600 px-1 rounded text-xs">$1</code>')
+    .replace(/^&gt; (.*)$/gm,'<span class="border-l-2 border-slate-300 pl-2 text-slate-500 block">$1</span>')
+    .replace(/\n/g,"<br>");
+}
+function send(){
+  const t = editor.value.trim(); if(!t) return;
+  const m = document.createElement("div"); m.className="fade-in flex gap-2";
+  m.innerHTML = `<div class="w-8 h-8 rounded bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0">D</div>
+    <div><div><span class="font-bold text-slate-800">Devanshu</span> <span class="text-xs text-slate-400">just now</span></div><div class="text-slate-700">${render(t)}</div></div>`;
+  thread.appendChild(m); thread.scrollTop = thread.scrollHeight;
+  editor.value=""; autogrow();
+}
+editor.addEventListener("keydown", e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); } });
+sendBtn.onclick = send;
+// seed a couple of messages
+thread.innerHTML = `<div class="flex gap-2"><div class="w-8 h-8 rounded bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0">A</div><div><div><span class="font-bold text-slate-800">Aisha</span> <span class="text-xs text-slate-400">9:41</span></div><div class="text-slate-700">ship the new composer today? <b>bold</b> idea 😄</div></div></div>`;
+autogrow();
+
+const STEPS = [
+  { title:"1. The textarea that grows itself", why:"A normal textarea is a fixed box with an ugly scrollbar. Slack's grows to fit your text, up to a cap, then scrolls. The trick is dead simple: on every keystroke, reset the height to 'auto' (so it can shrink), then set it to the element's scrollHeight (its natural content height).", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full">1 line → tall enough → cap at 200px → scroll</div>`, code:`editor.style.height = "auto";
+editor.style.height = editor.scrollHeight + "px";` },
+  { title:"2. Reset-then-measure (the gotcha)", why:"Why reset to 'auto' first? Because scrollHeight only ever grows — if you don't reset, deleting text leaves the box tall forever. Resetting lets it collapse, then re-measure gives the true height. Pair it with max-height + overflow-y:auto in CSS for the scroll cap.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full"><div>forget the reset → box never shrinks</div><div class="text-indigo-600">auto → measure → set</div></div>`, code:`/* CSS */ #editor { max-height: 200px; overflow-y: auto; resize: none; }` },
+  { title:"3. Toolbar wraps your selection", why:"Bold/italic/code don't style the box — they insert Slack's markdown around whatever you've selected. Grab selectionStart/End, splice the marker characters (*, _, \`) on both sides, and restore the cursor. It's text editing, not rich-text — which is why it's robust and copy-pasteable.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full">select "hi" + B → *hi*</div>`, code:`const sel = value.slice(a, b);
+value = value.slice(0,a) + "*" + sel + "*" + value.slice(b);` },
+  { title:"4. Enter sends, Shift+Enter is a newline", why:"This one keybinding defines a chat app. Plain Enter submits; Shift+Enter inserts a line break. You intercept keydown, and only call preventDefault + send when Shift isn't held — otherwise let the textarea do its normal newline.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full"><div>Enter → send</div><div>Shift+Enter → new line</div></div>`, code:`if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }` },
+  { title:"5. Render the markdown on send", why:"When the message posts, the raw *text* becomes real formatting via a few regex replacements (always escaping < first, so nobody can inject HTML). Now you've got the full loop: type → format → send → render — the entire Slack composer from a textarea and a toolbar.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">Autogrow + selection-wrap + Enter-to-send.</p></div>`, code:`text.replace(/\\*(.+?)\\*/g, "<b>$1</b>")  // *x* → bold` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+</script>
+</body>
+</html>

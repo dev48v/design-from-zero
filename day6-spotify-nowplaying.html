@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 6 — Spotify Now-Playing Bar</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  /* the player bar */
+  .sp-bar { background:#181818; border-top:1px solid #282828; color:#fff; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:14px 18px; gap:16px; border-radius:12px; }
+  .sp-art { width:56px; height:56px; border-radius:6px; background:linear-gradient(135deg,#1db954,#1ed760,#169c46); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:24px; }
+  .sp-left { display:flex; align-items:center; gap:12px; min-width:0; }
+  .sp-title { font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sp-artist { color:#b3b3b3; font-size:12px; }
+  .sp-center { display:flex; flex-direction:column; align-items:center; gap:8px; min-width:300px; }
+  .sp-ctrls { display:flex; align-items:center; gap:20px; }
+  .sp-btn { background:none; border:0; color:#b3b3b3; cursor:pointer; font-size:16px; }
+  .sp-btn:hover { color:#fff; }
+  .sp-play { background:#fff; color:#000; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  .sp-play:hover { transform:scale(1.06); color:#000; }
+  .sp-prog { display:flex; align-items:center; gap:8px; width:100%; font-size:11px; color:#b3b3b3; }
+  .sp-track { flex:1; height:4px; background:#5e5e5e; border-radius:2px; cursor:pointer; position:relative; }
+  .sp-fill { height:100%; background:#fff; border-radius:2px; width:0%; position:relative; }
+  .sp-track:hover .sp-fill { background:#1db954; }
+  .sp-track:hover .sp-knob { opacity:1; }
+  .sp-knob { position:absolute; right:-5px; top:50%; transform:translateY(-50%); width:10px; height:10px; background:#fff; border-radius:50%; opacity:0; }
+  .sp-right { display:flex; align-items:center; justify-content:flex-end; gap:12px; color:#b3b3b3; }
+  .sp-vol { width:90px; height:4px; background:#5e5e5e; border-radius:2px; }
+  .sp-vol-fill { height:100%; width:70%; background:#fff; border-radius:2px; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-fuchsia-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-fuchsia-600 font-bold uppercase tracking-wider">DesignFromZero · Day 6</div>
+      <h1 class="text-xl font-bold">🎵 Spotify Now-Playing Bar Clone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100 flex flex-col justify-end">
+    <div class="max-w-5xl mx-auto w-full">
+      <h2 class="text-2xl font-bold mb-1 text-center">The bar that's pinned to the bottom of Spotify</h2>
+      <p class="text-slate-500 text-center mb-8">A 3-column grid: track info · transport + progress · volume. Hit play — the progress bar moves in real time.</p>
+      <div class="sp-bar">
+        <div class="sp-left">
+          <div class="sp-art">🎧</div>
+          <div style="min-width:0;">
+            <div class="sp-title">Midnight City</div>
+            <div class="sp-artist">M83</div>
+          </div>
+          <button class="sp-btn" title="Save">♡</button>
+        </div>
+        <div class="sp-center">
+          <div class="sp-ctrls">
+            <button class="sp-btn" title="Shuffle">🔀</button>
+            <button class="sp-btn" title="Previous">⏮</button>
+            <button class="sp-play" id="play" title="Play/Pause">▶</button>
+            <button class="sp-btn" title="Next">⏭</button>
+            <button class="sp-btn" title="Repeat">🔁</button>
+          </div>
+          <div class="sp-prog">
+            <span id="cur">0:00</span>
+            <div class="sp-track" id="track"><div class="sp-fill" id="fill"><div class="sp-knob"></div></div></div>
+            <span id="dur">3:54</span>
+          </div>
+        </div>
+        <div class="sp-right">
+          <button class="sp-btn" title="Lyrics">🎤</button>
+          <button class="sp-btn" title="Queue">🔊</button>
+          <div class="sp-vol"><div class="sp-vol-fill"></div></div>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400 text-center mt-6">↑ Click the progress bar to scrub. Hit play to start the ticking clock.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">Build the bar step by step</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-fuchsia-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-fuchsia-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">One CSS grid + a tiny timer. No audio library needed to fake the feel.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Three columns</h3></div><pre>.sp-bar { display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; }
+/* left: track · center: controls+progress · right: volume */</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The progress bar is two divs</h3></div><pre>&lt;div class="track"&gt;&lt;div class="fill" style="width:42%"&gt;&lt;/div&gt;&lt;/div&gt;
+/* outer = rail, inner width% = elapsed. Green on hover. */</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Play = a 1-second timer</h3></div><pre>setInterval(() =&gt; { if (playing) { t++; fill.style.width = (t/dur*100)+"%"; } }, 1000);</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Scrub = click-to-seek</h3></div><pre>track.onclick = e =&gt; { t = (e.offsetX / track.clientWidth) * dur; };</pre></li>
+    </ol>
+    <div class="mt-10 bg-fuchsia-50 border border-fuchsia-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-fuchsia-900">🎉 Day 6 of DesignFromZero done.</h3><p class="text-sm text-fuchsia-700 mt-2">Tomorrow: Discord channel list.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== player =====
+const DUR = 234; // 3:54
+let t = 0, playing = false;
+const fill = document.getElementById("fill"), curEl = document.getElementById("cur"), playBtn = document.getElementById("play"), track = document.getElementById("track");
+const fmt = s => Math.floor(s/60) + ":" + String(Math.floor(s%60)).padStart(2,"0");
+function tick(){ if (playing && t < DUR) { t++; render(); } if (t >= DUR) { playing = false; playBtn.textContent = "▶"; } }
+function render(){ fill.style.width = (t/DUR*100) + "%"; curEl.textContent = fmt(t); }
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? "⏸" : "▶"; };
+track.onclick = e => { t = Math.floor((e.offsetX / track.clientWidth) * DUR); render(); };
+setInterval(tick, 1000);
+render();
+
+const STEPS = [
+  { title:"1. One bar, three columns", why:"Spotify's player is a single CSS grid pinned to the bottom: grid-template-columns: 1fr auto 1fr. Left stretches (track info), center is fixed-width (controls), right stretches (volume). This symmetry keeps the play button dead-centre at any width.", concept:`<div class="grid w-full gap-1 text-xs text-center" style="grid-template-columns:1fr auto 1fr;"><div class="bg-slate-200 p-2 rounded">track</div><div class="bg-fuchsia-200 p-2 rounded">controls</div><div class="bg-slate-200 p-2 rounded">volume</div></div>`, code:`.sp-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}` },
+  { title:"2. Progress bar = rail + fill", why:"It looks fancy but it's two nested divs: an outer grey rail and an inner div whose width is the percentage elapsed. Spotify's signature touch: the fill is white by default and turns green on hover, with a draggable knob appearing.", concept:`<div class="w-full"><div style="height:5px;background:#5e5e5e;border-radius:3px;"><div style="height:5px;width:42%;background:#1db954;border-radius:3px;"></div></div></div>`, code:`<div class="track">
+  <div class="fill" style="width: 42%"></div>
+</div>
+.track:hover .fill { background: #1db954; }` },
+  { title:"3. 'Playing' is just a boolean + a timer", why:"You don't need real audio to sell the feel. Hold elapsed seconds in a variable, run a setInterval every second, and if playing, increment and update the fill width. The clock ticks, the bar grows — it reads as a real player.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono space-y-1 w-full"><div>every 1s: if playing → t++</div><div>fill.width = t / duration * 100%</div></div>`, code:`let t = 0, playing = false;
+setInterval(() => {
+  if (playing && t < DUR) { t++; render(); }
+}, 1000);
+playBtn.onclick = () => playing = !playing;` },
+  { title:"4. Scrub with offsetX", why:"Click anywhere on the rail to seek. e.offsetX is the click's x-position inside the element; divide by the rail width to get a 0–1 fraction, multiply by duration. One line gives you click-to-seek.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono w-full">t = (clickX / railWidth) × duration</div>`, code:`track.onclick = e => {
+  t = (e.offsetX / track.clientWidth) * DUR;
+  render();
+};` },
+  { title:"5. Format seconds as m:ss", why:"234 seconds should read '3:54', not '234'. floor(s/60) for minutes, s%60 padded to two digits for seconds. A tiny helper every media UI needs.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono w-full">234 → "3:54"</div>`, code:`const fmt = s =>
+  Math.floor(s/60) + ":" +
+  String(Math.floor(s%60)).padStart(2, "0");` },
+  { title:"6. Done!", why:"A famous UI demystified: a 3-column grid, two divs for the bar, a boolean + timer for playback. Swap the fake timer for an <audio> element's currentTime and it's a real player. The structure doesn't change.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">Grid + a ticking width. That's the bar.</p></div>`, code:`// real version: bind to a real <audio>
+audio.ontimeupdate = () =>
+  fill.style.width = (audio.currentTime/audio.duration*100)+"%";` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const b=document.createElement("button"); b.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm"; b.innerHTML=`<div class="font-semibold">${s.title}</div>`; b.onclick=()=>show(i); stepsEl.appendChild(b); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((b,idx)=>{ b.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-fuchsia-500 bg-fuchsia-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+</script>
+</body>
+</html>

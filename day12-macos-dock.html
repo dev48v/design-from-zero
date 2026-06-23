@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 12 — macOS Dock</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== macOS Dock ===== */
+  .dock {
+    display:flex; align-items:flex-end; gap:6px;
+    padding:8px 12px 10px;
+    border-radius:22px;
+    background:rgba(255,255,255,0.28);
+    backdrop-filter:blur(18px) saturate(180%);
+    -webkit-backdrop-filter:blur(18px) saturate(180%);
+    border:1px solid rgba(255,255,255,0.45);
+    box-shadow:0 18px 50px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+  .dock-item {
+    position:relative;
+    width:54px; height:54px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:34px; line-height:1;
+    border-radius:14px;
+    transform-origin:bottom center;
+    transition:transform .12s ease-out;  /* smooths the per-frame scale changes */
+    cursor:pointer;
+    user-select:none;
+    will-change:transform;               /* GPU hint — we animate transform, never width */
+  }
+  .dock-item .label {
+    position:absolute; bottom:115%; left:50%; transform:translateX(-50%);
+    background:rgba(15,23,42,0.92); color:#fff; font-size:11px; font-weight:600;
+    padding:3px 8px; border-radius:6px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .15s;
+  }
+  .dock-item:hover .label { opacity:1; }
+  .dock-item .dot {
+    position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
+    width:4px; height:4px; border-radius:50%; background:#0f172a;
+  }
+  .bounce { animation: dockBounce .5s ease; }
+  @keyframes dockBounce {
+    0%,100% { transform:translateY(0); }
+    30%     { transform:translateY(-26px); }
+    55%     { transform:translateY(0); }
+    72%     { transform:translateY(-8px); }
+    100%    { transform:translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dock-item { transition:none !important; }
+    .bounce { animation:none !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 12</div>
+      <h1 class="text-xl font-bold">🍎 macOS Dock — Magnify on Hover</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center justify-end"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-xl mx-auto text-center mb-auto mt-4">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">The Dock from macOS — the fisheye magnify</h2>
+      <p class="text-white/80 mb-2">Move your mouse <b>along the dock</b> below. The icon under the cursor grows largest, its neighbours grow a little, and everything else stays small — a smooth fisheye lens. Click an icon to make it bounce.</p>
+    </div>
+
+    <div id="dock" class="dock mb-2"></div>
+
+    <p class="text-xs text-white/70 mt-4 max-w-lg text-center">
+      <b>The math:</b> for each icon we measure the horizontal distance <code>d</code> from its centre to the cursor.
+      Scale falls off with distance: <code>scale = 1 + maxBoost · max(0, 1 − d/range)</code>.
+      Under the cursor <code>d=0</code> → full boost; past <code>range</code> px → back to 1×.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How the magnify effect works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A flex row, one mousemove handler, and a distance-to-scale function. ~50 lines, pure CSS + vanilla JS.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The frosted bar + icon row</h3></div>
+        <div class="relative"><pre>&lt;div class="dock"&gt;
+  &lt;div class="dock-item"&gt;🧭&lt;/div&gt;
+  &lt;div class="dock-item"&gt;✉️&lt;/div&gt;
+  &lt;!-- …more icons… --&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Frosted glass + bottom-anchored items</h3></div>
+        <div class="relative"><pre>.dock {
+  display:flex; align-items:flex-end; gap:6px;
+  padding:8px 12px; border-radius:22px;
+  background:rgba(255,255,255,0.28);
+  backdrop-filter:blur(18px) saturate(180%);   /* the frost */
+  border:1px solid rgba(255,255,255,0.45);
+}
+.dock-item {
+  width:54px; height:54px;
+  transform-origin:bottom center;  /* grow UP off the dock floor */
+  transition:transform .12s ease-out;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Distance → scale, the falloff function</h3></div>
+        <div class="relative"><pre>const MAX = 0.9;   // biggest extra scale (1.9× under the cursor)
+const RANGE = 110; // px of influence on each side
+
+function scaleFor(distance) {
+  const t = Math.max(0, 1 - Math.abs(distance) / RANGE);
+  return 1 + MAX * t;   // d=0 → 1.9× ; d≥RANGE → 1×
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">On mousemove, scale every icon</h3></div>
+        <div class="relative"><pre>const items = [...dock.querySelectorAll(".dock-item")];
+
+dock.addEventListener("mousemove", (e) => {
+  items.forEach(item => {
+    const box = item.getBoundingClientRect();
+    const center = box.left + box.width / 2;
+    item.style.transform = `scale(${scaleFor(e.clientX - center)})`;
+  });
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Reset when the mouse leaves</h3></div>
+        <div class="relative"><pre>dock.addEventListener("mouseleave", () => {
+  items.forEach(item => item.style.transform = "scale(1)");
+});
+/* the CSS transition makes the shrink-back smooth too */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Bounce on click (keyframe)</h3></div>
+        <div class="relative"><pre>@keyframes dockBounce {
+  0%,100% { transform:translateY(0); }
+  30%     { transform:translateY(-26px); }
+  72%     { transform:translateY(-8px); }
+}
+item.addEventListener("click", () => {
+  item.classList.add("bounce");
+  item.addEventListener("animationend",
+    () => item.classList.remove("bounce"), { once:true });
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">The "running" dot + respect reduced-motion</h3></div>
+        <div class="relative"><pre>.dock-item .dot {          /* tiny dot under a running app */
+  position:absolute; bottom:-7px; left:50%;
+  transform:translateX(-50%);
+  width:4px; height:4px; border-radius:50%; background:#0f172a;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-item { transition:none !important; }
+  .bounce    { animation:none !important; }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 12 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Tomorrow: a segmented control / iOS toggle.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== macOS DOCK =====
+const APPS = [
+  { icon:"🧭", name:"Safari",   running:true  },
+  { icon:"✉️", name:"Mail",     running:false },
+  { icon:"📅", name:"Calendar", running:true  },
+  { icon:"🗒️", name:"Notes",    running:false },
+  { icon:"🎵", name:"Music",    running:true  },
+  { icon:"📷", name:"Photos",   running:false },
+  { icon:"⚙️", name:"Settings", running:false },
+  { icon:"🗑️", name:"Trash",    running:true  },
+];
+const MAX_BOOST = 0.9;   // under cursor → 1.9×
+const RANGE = 110;       // px of influence each side
+
+const dock = document.getElementById("dock");
+APPS.forEach(a => {
+  const el = document.createElement("div");
+  el.className = "dock-item";
+  el.innerHTML = `${a.icon}<span class="label">${a.name}</span>${a.running ? '<span class="dot"></span>' : ''}`;
+  el.addEventListener("click", () => {
+    el.classList.add("bounce");
+    el.addEventListener("animationend", () => el.classList.remove("bounce"), { once:true });
+  });
+  dock.appendChild(el);
+});
+const items = [...dock.querySelectorAll(".dock-item")];
+
+function scaleFor(distance) {
+  const t = Math.max(0, 1 - Math.abs(distance) / RANGE);
+  return 1 + MAX_BOOST * t;
+}
+dock.addEventListener("mousemove", (e) => {
+  items.forEach(item => {
+    if (item.classList.contains("bounce")) return; // don't fight the bounce keyframe
+    const box = item.getBoundingClientRect();
+    const center = box.left + box.width / 2;
+    item.style.transform = `scale(${scaleFor(e.clientX - center).toFixed(3)})`;
+  });
+});
+dock.addEventListener("mouseleave", () => {
+  items.forEach(item => { if (!item.classList.contains("bounce")) item.style.transform = "scale(1)"; });
+});
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. The whole idea: scale = f(distance)", why:"The dock is just a row of fixed-size icons. The magic is one rule: an icon's size depends on how far the cursor is from its centre. Closest icon = biggest, far icons = normal size. There is no physics and no library here. It is a single function turning a distance into a scale, run on every icon whenever the mouse moves.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">cursor distance → <b>scale</b> · near = big · far = 1×</div>`, code:`function scaleFor(distance) { /* distance from icon centre to cursor */ }` },
+
+  { title:"2. transform:scale (never width!)", why:"We grow icons with transform:scale, not by changing their width or height. Width changes force the browser to re-layout the whole row every frame, which is slow and janky. transform runs on the GPU and never reflows the page. This single choice is the difference between a buttery 60fps dock and a stuttering one.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">transform:scale(1.6) ✓ &nbsp; vs &nbsp; width:90px ✗ (reflow)</div>`, code:`item.style.transform = "scale(1.6)";   // GPU, no layout
+/* NOT item.style.width — that reflows every frame */` },
+
+  { title:"3. transform-origin: bottom center", why:"Real dock icons grow upward and outward from the dock floor, never downward into it. Setting transform-origin to bottom center anchors each icon to its base, so scaling pushes it up and out instead of off the bottom edge. Without this, big icons would sink below the bar. It is a one-line detail that sells the whole effect.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">anchor at the <b>bottom</b> → icons rise off the dock floor ⬆</div>`, code:`.dock-item { transform-origin: bottom center; }` },
+
+  { title:"4. Measuring distance with getBoundingClientRect", why:"On each mousemove we need the live screen position of every icon. getBoundingClientRect gives an icon's box in viewport coordinates; its centre is left + width/2. We subtract that from the cursor's clientX to get a signed horizontal distance. Reading the position live (not caching) keeps it correct even after the page scrolls or resizes.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">d = cursorX − (iconLeft + iconWidth/2)</div>`, code:`const box = item.getBoundingClientRect();
+const center = box.left + box.width / 2;
+const d = e.clientX - center;` },
+
+  { title:"5. The falloff curve", why:"We map distance to scale with a linear ramp: t = max(0, 1 − |d| / RANGE). At the cursor (d=0) t is 1, giving full boost; at the edge of RANGE t is 0, giving normal size; beyond RANGE it clamps to 0. Final scale = 1 + MAX_BOOST · t. Tuning RANGE controls how many neighbours react, and MAX_BOOST controls how big the peak gets.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>t = max(0, 1 − |d| / RANGE)</div><div class="mt-1">scale = 1 + MAX_BOOST · t</div></div>`, code:`const t = Math.max(0, 1 - Math.abs(d) / RANGE);
+const scale = 1 + MAX_BOOST * t;` },
+
+  { title:"6. Why neighbours ramp smoothly", why:"Because the same function runs on EVERY icon at once, the icon under the cursor gets the max, the ones beside it get a slightly smaller t, and the next ones smaller still. That gradient across the row is what reads as a smooth lens rather than one icon popping. You never code the neighbours specially — the shared distance function produces the curve for free.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">🔵 1.2 · 🔵 1.5 · 🔵 <b>1.9</b> · 🔵 1.5 · 🔵 1.2 → a lens</div>`, code:`items.forEach(item => item.style.transform =
+  "scale(" + scaleFor(distanceTo(item)) + ")");` },
+
+  { title:"7. A CSS transition smooths the steps", why:"Mouse events fire in discrete jumps, so raw scale values would visibly snap between frames. A short transition:transform .12s ease-out tells the browser to interpolate between each value, turning jumpy updates into fluid motion. The same transition also animates the graceful shrink-back when the cursor leaves. Keep it short — too long and the dock feels laggy and rubbery.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">transition:transform .12s → snaps become smooth glides</div>`, code:`.dock-item { transition: transform .12s ease-out; }` },
+
+  { title:"8. The frosted-glass bar (backdrop-filter)", why:"The translucent panel is one property: backdrop-filter:blur(18px) saturate(180%) blurs whatever is behind the bar, exactly like the real macOS Dock. A semi-transparent white background and a faint top inner-shadow give it that pane-of-glass look. Because it blurs the page behind it, it feels like it floats above your content rather than sitting on a flat box.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">backdrop-filter:blur + translucent bg = frosted glass</div>`, code:`.dock {
+  background: rgba(255,255,255,0.28);
+  backdrop-filter: blur(18px) saturate(180%);
+}` },
+
+  { title:"9. Bounce on click + the running dot", why:"Clicking an app should feel alive, so a keyframe lifts the icon up and lets it settle — the classic dock 'launch' hop. A small dot under an icon marks a running app, a tiny signal that costs one absolutely-positioned element. While the bounce keyframe owns the transform, we skip the mousemove scaling for that icon so the two animations don't fight each other.", concept:`<div class="text-center w-full"><div class="text-4xl mb-2">⬆️</div><p class="font-bold text-slate-700">click → translateY hop · running app → a dot beneath it</p></div>`, code:`@keyframes dockBounce { 30% { transform: translateY(-26px); } }
+el.classList.add("bounce");` },
+
+  { title:"10. Accessibility & performance", why:"Some people get motion-sick, so we wrap the transitions and bounce in @media (prefers-reduced-motion: reduce) and turn them off when the OS asks. For performance we only ever animate transform (GPU-friendly, no reflow) and add will-change:transform as a hint. Put together — shared distance function, transform-only, short transition, reduced-motion guard — you get a dock that is fast, smooth, and kind.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">distance→scale · transform-only · short transition · reduced-motion safe.</p></div>`, code:`@media (prefers-reduced-motion: reduce) {
+  .dock-item { transition: none; }
+  .bounce { animation: none; }
+}` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>

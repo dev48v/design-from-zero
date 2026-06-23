@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 2 — Linear Sidebar</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .copy-btn:hover { background:#1e293b; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-rose-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-rose-600 font-bold uppercase tracking-wider">DesignFromZero · Day 2</div>
+      <h1 class="text-xl font-bold">Linear Sidebar Clone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- LOOK -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] flex bg-[#16161a] text-slate-300">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#1c1c20] border-r border-[#26262b] flex flex-col">
+      <div class="px-4 py-3 border-b border-[#26262b] flex items-center gap-2">
+        <div class="w-7 h-7 bg-gradient-to-br from-fuchsia-500 to-rose-500 rounded text-white text-xs font-bold flex items-center justify-center">D</div>
+        <span class="font-semibold text-white text-sm">Dev48v</span>
+        <span class="ml-auto text-slate-500 text-xs">⌘K</span>
+      </div>
+      <nav class="flex-1 px-2 py-3 space-y-0.5 text-[13px]">
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><span>📥</span> Inbox <span class="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 rounded-full">3</span></a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-white bg-[#2a2a30]"><span>🎯</span> My issues</a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><span>👁</span> Subscribed</a>
+
+        <div class="pt-4 pb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Workspace</div>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><span class="w-2 h-2 bg-emerald-500 rounded-full"></span> Active projects</a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><span class="w-2 h-2 bg-amber-500 rounded-full"></span> Roadmap</a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><span class="w-2 h-2 bg-slate-500 rounded-full"></span> Initiatives</a>
+
+        <div class="pt-4 pb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Teams</div>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><div class="w-4 h-4 bg-indigo-500 rounded text-[9px] text-white font-bold flex items-center justify-center">F</div> Frontend</a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><div class="w-4 h-4 bg-emerald-500 rounded text-[9px] text-white font-bold flex items-center justify-center">B</div> Backend</a>
+        <a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 hover:bg-[#26262b]"><div class="w-4 h-4 bg-rose-500 rounded text-[9px] text-white font-bold flex items-center justify-center">D</div> Design</a>
+      </nav>
+      <div class="px-3 py-3 border-t border-[#26262b] text-xs text-slate-500 flex items-center justify-between">
+        <span>v2.81.0</span>
+        <span class="text-emerald-500">● Online</span>
+      </div>
+    </aside>
+    <main class="flex-1 p-8">
+      <div class="max-w-2xl">
+        <h2 class="text-2xl font-bold text-white mb-1">My issues</h2>
+        <p class="text-slate-400 text-sm mb-6">12 active · 4 in review</p>
+        <p class="text-xs text-slate-500">↑ This is what you build. Click <b class="text-white">UNDERSTAND</b> to see how each piece appears.</p>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- UNDERSTAND -->
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">Build it step by step</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step. Read the WHY.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next" class="bg-rose-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-rose-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-rose-600 tracking-wider mb-2">PREVIEW</div>
+        <div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step on the left →</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-rose-600 tracking-wider mb-2">WHY</div>
+        <div id="why" class="text-slate-700">—</div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-rose-600 tracking-wider mb-2">CODE FOR THIS STEP</div>
+        <pre id="code"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILD -->
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Estimated time: <b>15 minutes</b>. One HTML file. No build, no npm.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Create empty file</h3></div>
+<pre>mkdir my-sidebar && cd my-sidebar
+touch index.html</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Paste this in index.html</h3></div>
+        <div class="relative">
+<pre>&lt;!DOCTYPE html&gt;
+&lt;html&gt;&lt;head&gt;&lt;script src="https://cdn.tailwindcss.com"&gt;&lt;/script&gt;&lt;/head&gt;
+&lt;body class="bg-[#16161a] text-slate-300 min-h-screen flex"&gt;
+  &lt;aside class="w-64 bg-[#1c1c20] border-r border-[#26262b] flex flex-col"&gt;
+    &lt;div class="px-4 py-3 border-b border-[#26262b] flex items-center gap-2"&gt;
+      &lt;div class="w-7 h-7 bg-gradient-to-br from-fuchsia-500 to-rose-500 rounded text-white text-xs font-bold flex items-center justify-center"&gt;D&lt;/div&gt;
+      &lt;span class="font-semibold text-white text-sm"&gt;Workspace&lt;/span&gt;
+      &lt;span class="ml-auto text-slate-500 text-xs"&gt;⌘K&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;nav class="flex-1 px-2 py-3 space-y-0.5 text-sm"&gt;
+      &lt;a class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#26262b]"&gt;📥 Inbox &lt;span class="ml-auto bg-rose-500 text-white text-xs px-1.5 rounded-full"&gt;3&lt;/span&gt;&lt;/a&gt;
+      &lt;a class="flex items-center gap-2 px-2 py-1.5 rounded bg-[#2a2a30] text-white"&gt;🎯 My issues&lt;/a&gt;
+      &lt;a class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#26262b]"&gt;👁 Subscribed&lt;/a&gt;
+      &lt;div class="pt-4 pb-1 px-2 text-xs uppercase tracking-widest text-slate-500"&gt;Workspace&lt;/div&gt;
+      &lt;a class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#26262b]"&gt;&lt;span class="w-2 h-2 bg-emerald-500 rounded-full"&gt;&lt;/span&gt; Active projects&lt;/a&gt;
+      &lt;a class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#26262b]"&gt;&lt;span class="w-2 h-2 bg-amber-500 rounded-full"&gt;&lt;/span&gt; Roadmap&lt;/a&gt;
+    &lt;/nav&gt;
+    &lt;div class="px-3 py-3 border-t border-[#26262b] text-xs flex items-center justify-between"&gt;
+      &lt;span class="text-slate-500"&gt;v2.81.0&lt;/span&gt;
+      &lt;span class="text-emerald-500"&gt;● Online&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/aside&gt;
+  &lt;main class="flex-1 p-8"&gt;
+    &lt;h2 class="text-2xl font-bold text-white"&gt;My issues&lt;/h2&gt;
+  &lt;/main&gt;
+&lt;/body&gt;&lt;/html&gt;</pre>
+          <button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button>
+        </div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Open in browser</h3></div>
+        <p class="text-sm text-slate-600">Double-click <code>index.html</code>. Linear-style sidebar appears.</p>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-rose-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Make it yours</h3></div>
+        <ul class="text-sm text-slate-600 space-y-2 ml-4 list-disc">
+          <li>Swap workspace name + logo letter.</li>
+          <li>Change accent: <code>from-fuchsia-500</code> → <code>from-cyan-500</code>.</li>
+          <li>Add a Settings + Help section at bottom.</li>
+          <li>Toggle collapse: shrink sidebar to <code>w-14</code> + hide labels.</li>
+        </ul>
+      </li>
+    </ol>
+    <div class="mt-10 bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center">
+      <h3 class="font-bold text-lg text-rose-900">🎉 Day 2 of DesignFromZero done.</h3>
+      <p class="text-sm text-rose-700 mt-2">Tomorrow: Vercel deploy log. Day after: Arc tabs.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+const STEPS = [
+  { title:"1. App shell skeleton", why:"Sidebar UI uses a classic app-shell: fixed-width left column, flexible main right column. Flexbox handles the split. The whole page is one outer <body class='flex'>. Width on the sidebar (e.g. w-64 = 256px) keeps it stable; the main grows to fill.", concept:`<div class="flex border border-slate-300 rounded h-32 overflow-hidden"><div class="w-20 bg-[#1c1c20]"></div><div class="flex-1 bg-[#16161a]"></div></div>`, code:`<body class="flex h-screen">
+  <aside class="w-64 bg-[#1c1c20]"></aside>
+  <main class="flex-1"></main>
+</body>` },
+  { title:"2. Workspace header (logo + name)", why:"Top of the sidebar = identity. Small square gradient logo + workspace name. The ⌘K keyboard shortcut hint at the right teaches users about the command palette. Border-bottom separates from nav.", concept:`<div class="bg-[#1c1c20] px-3 py-2 border-b border-[#26262b] flex items-center gap-2 w-56"><div class="w-7 h-7 bg-gradient-to-br from-fuchsia-500 to-rose-500 rounded text-white text-xs font-bold flex items-center justify-center">D</div><span class="text-white text-sm font-semibold">Workspace</span><span class="ml-auto text-slate-500 text-xs">⌘K</span></div>`, code:`<div class="px-4 py-3 border-b flex items-center gap-2">
+  <div class="w-7 h-7 bg-gradient-to-br from-fuchsia-500 to-rose-500 rounded">D</div>
+  <span>Workspace</span>
+  <span class="ml-auto">⌘K</span>
+</div>` },
+  { title:"3. Primary nav items", why:"Each nav item is a row with icon + label + optional badge. Rows have rounded backgrounds on hover. The active item gets a stronger background to anchor where you are.", concept:`<div class="bg-[#1c1c20] p-2 w-56 space-y-1"><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm">📥 Inbox <span class="ml-auto bg-rose-500 text-white text-[10px] px-1.5 rounded-full">3</span></a><a class="flex items-center gap-2 px-2 py-1.5 rounded text-white bg-[#2a2a30] text-sm">🎯 My issues</a><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm">👁 Subscribed</a></div>`, code:`<a class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#26262b]">
+  <span>🎯</span> My issues
+</a>
+<!-- Active row gets bg-[#2a2a30] + text-white -->` },
+  { title:"4. Badge counts", why:"Tiny rounded-full pills show counts on items like Inbox. Pure visual: red = needs attention, neutral grey = informational. The badge sits at the right via ml-auto.", concept:`<a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 bg-[#1c1c20] w-56 text-sm">📥 Inbox <span class="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 rounded-full">3</span></a>`, code:`<span class="ml-auto bg-rose-500 text-white text-xs px-1.5 rounded-full">3</span>` },
+  { title:"5. Section headers", why:"Tiny uppercase 'WORKSPACE' and 'TEAMS' labels group items. text-[10px] + uppercase + tracking-widest is the Linear signature. They have no hover state — pure structure.", concept:`<div class="bg-[#1c1c20] p-2 w-56"><div class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2">Workspace</div></div>`, code:`<div class="pt-4 pb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+  Workspace
+</div>` },
+  { title:"6. Colored status dots", why:"Tiny 2px dots before sub-items signal status: green = active, amber = in progress, grey = idle. Replaces a wordy 'STATUS: ACTIVE' label.", concept:`<div class="bg-[#1c1c20] p-2 w-56 space-y-1"><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm"><span class="w-2 h-2 bg-emerald-500 rounded-full"></span> Active</a><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm"><span class="w-2 h-2 bg-amber-500 rounded-full"></span> Roadmap</a></div>`, code:`<span class="w-2 h-2 bg-emerald-500 rounded-full"></span>` },
+  { title:"7. Team avatars", why:"Each team gets a tiny colored square with first letter. Pattern from Slack/Linear/Notion: instant brand recognition at the row level.", concept:`<div class="bg-[#1c1c20] p-2 w-56 space-y-1"><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm"><div class="w-4 h-4 bg-indigo-500 rounded text-[9px] text-white font-bold flex items-center justify-center">F</div> Frontend</a><a class="flex items-center gap-2 px-2 py-1.5 rounded text-slate-300 text-sm"><div class="w-4 h-4 bg-emerald-500 rounded text-[9px] text-white font-bold flex items-center justify-center">B</div> Backend</a></div>`, code:`<div class="w-4 h-4 bg-indigo-500 rounded text-[9px] text-white font-bold flex items-center justify-center">
+  F
+</div>` },
+  { title:"8. Status footer", why:"Bottom of sidebar holds version + connection status. Sits flush via flex-col + flex-1 on the nav (push footer to bottom). Greenish dot = signal of life.", concept:`<div class="bg-[#1c1c20] border-t border-[#26262b] px-3 py-3 w-56 flex justify-between text-xs"><span class="text-slate-500">v2.81.0</span><span class="text-emerald-500">● Online</span></div>`, code:`<div class="px-3 py-3 border-t border-[#26262b] text-xs flex justify-between">
+  <span>v2.81.0</span>
+  <span class="text-emerald-500">● Online</span>
+</div>` },
+  { title:"9. Done!", why:"Linear's sidebar is just app-shell + nav rows + section headers + status dots + team avatars + footer. Apply the same skeleton to Discord, Slack, Notion — same idea, different colors.", concept:`<div class="text-center"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">You understand the app-shell sidebar pattern.</p><p class="text-sm text-slate-500 mt-2">Open BUILD to ship your own.</p></div>`, code:`// next: same pattern, swap colors + icons for Discord / Notion / Slack.` }
+];
+const stepsEl = document.getElementById("steps");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next");
+const auto = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-rose-400 text-sm";
+  b.innerHTML = `<div class="font-semibold">${s.title}</div>`;
+  b.onclick = () => show(i);
+  stepsEl.appendChild(b);
+});
+function show(i) {
+  cur = i;
+  const s = STEPS[i];
+  document.getElementById("concept").innerHTML = `<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML = `<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent = s.code;
+  stepsEl.querySelectorAll("button").forEach((b, idx) => {
+    b.className = idx === i
+      ? "w-full text-left p-3 rounded-lg border-2 border-rose-500 bg-rose-50 text-sm font-semibold"
+      : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-rose-400 text-sm";
+  });
+}
+prev.onclick = () => show(Math.max(0, cur - 1));
+next.onclick = () => show(Math.min(STEPS.length - 1, cur + 1));
+let timer = null;
+auto.onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; auto.textContent = "▶ Auto-play"; return; }
+  auto.textContent = "⏸ Pause";
+  show(0);
+  timer = setInterval(() => {
+    if (cur >= STEPS.length - 1) { clearInterval(timer); timer = null; auto.textContent = "▶ Replay"; return; }
+    show(cur + 1);
+  }, 2500);
+};
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 10 — ⌘K Command Palette</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  #overlay { background:rgba(15,23,42,.45); backdrop-filter:blur(2px); }
+  .palette { box-shadow:0 24px 60px rgba(0,0,0,.3); animation: pop .14s ease-out; }
+  @keyframes pop { from { opacity:0; transform:scale(.97) translateY(-6px); } to { opacity:1; transform:none; } }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px; padding:1px 6px; font-size:11px; font-family:ui-monospace,monospace; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 10</div>
+      <h1 class="text-xl font-bold">⌘ The Command Palette — ⌘K, Fuzzy Search, Run Anything</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100 relative" id="stage">
+    <div class="max-w-2xl mx-auto text-center">
+      <h2 class="text-2xl font-bold mb-1">The ⌘K menu from Linear, Raycast, VS Code…</h2>
+      <p class="text-slate-500 mb-6">Press <kbd>⌘ K</kbd> (or <kbd>Ctrl K</kbd>) — or the button. Type to fuzzy-filter (<i>"tgl dk"</i> finds "Toggle dark mode"), <kbd>↑</kbd><kbd>↓</kbd> to move, <kbd>↵</kbd> to run, <kbd>esc</kbd> to close.</p>
+      <button id="openBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-3 rounded-xl">Open command palette &nbsp;<kbd class="bg-indigo-500 border-indigo-400 text-white">⌘K</kbd></button>
+      <div id="toast" class="mt-6 text-sm text-indigo-600 font-semibold h-6"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a command palette works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A global shortcut, a fuzzy filter, and a keyboard-driven list. ~60 lines.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">A global ⌘K / Ctrl+K shortcut</h3></div><pre>document.addEventListener("keydown", e =&gt; {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault();   // stop the browser's own Ctrl+K
+    openPalette();
+  }
+});</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Commands are just data + an action</h3></div><pre>const COMMANDS = [
+  { icon:"🌙", label:"Toggle dark mode", group:"Theme", run: toggleDark },
+  { icon:"📄", label:"New file",        group:"File",  run: newFile },
+];</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Fuzzy match: chars in order</h3></div><pre>// "tgldk" matches "Toggle dark mode"
+function fuzzy(q, text){
+  let i = 0;
+  for (const ch of text.toLowerCase())
+    if (ch === q[i]) i++;
+  return i === q.length;   // all query chars found, in order
+}</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Arrows move, Enter runs</h3></div><pre>if (e.key === "ArrowDown") sel = (sel+1) % shown.length;
+if (e.key === "ArrowUp")   sel = (sel-1+shown.length) % shown.length;
+if (e.key === "Enter")     { shown[sel].run(); close(); }
+if (e.key === "Escape")    close();</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Focus the input the moment it opens</h3></div><pre>function openPalette(){
+  overlay.classList.remove("hidden");
+  input.value = ""; input.focus();   // type immediately, no click
+}</pre></li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 10 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Tomorrow: a toast notification system.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== COMMAND PALETTE =====
+const toast = document.getElementById("toast");
+const fire = (label) => { toast.textContent = "▶ Ran: " + label; setTimeout(()=>{ if(toast.textContent.includes(label)) toast.textContent=""; }, 2200); };
+const COMMANDS = [
+  { icon:"🏠", label:"Go to Home",        group:"Navigation", run:()=>fire("Go to Home") },
+  { icon:"📁", label:"Go to Projects",    group:"Navigation", run:()=>fire("Go to Projects") },
+  { icon:"📨", label:"Go to Inbox",       group:"Navigation", run:()=>fire("Go to Inbox") },
+  { icon:"🌙", label:"Toggle dark mode",  group:"Theme",      run:()=>fire("Toggle dark mode") },
+  { icon:"🎨", label:"Change accent color",group:"Theme",     run:()=>fire("Change accent color") },
+  { icon:"📄", label:"New file",          group:"File",       run:()=>fire("New file") },
+  { icon:"💾", label:"Save all",          group:"File",       run:()=>fire("Save all") },
+  { icon:"🔍", label:"Search everywhere", group:"File",       run:()=>fire("Search everywhere") },
+  { icon:"👤", label:"Account settings",  group:"Account",    run:()=>fire("Account settings") },
+  { icon:"🚪", label:"Sign out",          group:"Account",    run:()=>fire("Sign out") },
+];
+let sel = 0, shown = [];
+
+// build the palette overlay
+const overlay = document.createElement("div");
+overlay.id = "overlay";
+overlay.className = "hidden fixed inset-0 z-50 flex items-start justify-center pt-28";
+overlay.innerHTML = `<div class="palette bg-white w-full max-w-lg rounded-xl overflow-hidden mx-4">
+  <div class="flex items-center gap-2 px-4 border-b border-slate-100">
+    <span class="text-slate-400">🔍</span>
+    <input id="cmdInput" class="w-full py-3 outline-none text-sm" placeholder="Type a command or search…" />
+    <kbd>esc</kbd>
+  </div>
+  <div id="cmdList" class="max-h-72 overflow-y-auto py-2"></div>
+  <div class="px-4 py-2 border-t border-slate-100 text-[11px] text-slate-400 flex gap-3">
+    <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> run</span><span><kbd>esc</kbd> close</span>
+  </div>
+</div>`;
+document.body.appendChild(overlay);
+const input = overlay.querySelector("#cmdInput"), list = overlay.querySelector("#cmdList");
+
+function fuzzy(q, text){ if(!q) return true; let i=0; const t=text.toLowerCase(); for (const ch of t){ if (ch === q[i]) i++; if (i===q.length) return true; } return i===q.length; }
+function render(){
+  const q = input.value.toLowerCase().replace(/\s/g,"");
+  shown = COMMANDS.filter(c => fuzzy(q, c.label) || fuzzy(q, c.group));
+  if (sel >= shown.length) sel = Math.max(0, shown.length-1);
+  if (!shown.length){ list.innerHTML = `<div class="px-4 py-6 text-center text-sm text-slate-400">No commands match.</div>`; return; }
+  let html = "", lastGroup = "";
+  shown.forEach((c,i)=>{
+    if (c.group !== lastGroup){ html += `<div class="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider text-slate-400 font-bold">${c.group}</div>`; lastGroup = c.group; }
+    html += `<div class="cmd flex items-center gap-3 px-4 py-2 cursor-pointer ${i===sel?'bg-indigo-50':''}" data-i="${i}">
+      <span class="w-7 h-7 rounded-md border border-slate-200 flex items-center justify-center text-sm">${c.icon}</span>
+      <span class="text-sm font-medium text-slate-800">${c.label}</span>
+      ${i===sel?'<span class="ml-auto"><kbd>↵</kbd></span>':''}</div>`;
+  });
+  list.innerHTML = html;
+  list.querySelectorAll(".cmd").forEach(el=>{
+    el.onmouseenter = ()=>{ sel=+el.dataset.i; render(); };
+    el.onmousedown = ev=>{ ev.preventDefault(); shown[+el.dataset.i].run(); close(); };
+  });
+}
+function open(){ overlay.classList.remove("hidden"); input.value=""; sel=0; render(); setTimeout(()=>input.focus(),0); }
+function close(){ overlay.classList.add("hidden"); }
+input.addEventListener("input", ()=>{ sel=0; render(); });
+input.addEventListener("keydown", e=>{
+  if (e.key==="ArrowDown"){ e.preventDefault(); sel=(sel+1)%shown.length; render(); }
+  else if (e.key==="ArrowUp"){ e.preventDefault(); sel=(sel-1+shown.length)%shown.length; render(); }
+  else if (e.key==="Enter"){ e.preventDefault(); if(shown[sel]){ shown[sel].run(); close(); } }
+  else if (e.key==="Escape"){ close(); }
+});
+document.addEventListener("keydown", e=>{
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==="k"){ e.preventDefault();
+    if (!document.getElementById("look").classList.contains("hidden")) open();
+  }
+});
+overlay.addEventListener("mousedown", e=>{ if(e.target===overlay) close(); });
+document.getElementById("openBtn").onclick = open;
+
+const STEPS = [
+  { title:"1. One global shortcut to rule them all", why:"The whole feature hinges on a single document-level keydown listener watching for ⌘K (Mac) or Ctrl+K (Windows). You MUST call preventDefault — browsers bind Ctrl+K to their own search bar. Catch it once, globally, and any screen in your app can summon the palette.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">(metaKey || ctrlKey) && key === "k" → open</div>`, code:`if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+  e.preventDefault(); openPalette();
+}` },
+  { title:"2. Commands are data, not buttons", why:"Every action your app can do becomes one object: an icon, a label, a group, and a run() function. Now the UI is generic — it just lists objects and calls run() on the chosen one. Adding a new command is adding one line, never new markup.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-left">{ label:"New file", group:"File", run: newFile }</div>`, code:`const COMMANDS = [
+  { icon:"📄", label:"New file", run: newFile },
+];` },
+  { title:"3. Fuzzy matching feels like mind-reading", why:"Palettes don't do exact substring match — they do subsequence match: the query's characters must appear in order, but not adjacent. So 'tgldk' finds 'Toggle dark mode'. It's a tiny loop with one pointer, and it's why you can fly through commands with sloppy half-typed queries.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">"tgldk" ⊂ "toggle dark mode" (in order) ✓</div>`, code:`let i = 0;
+for (const ch of text.toLowerCase()) if (ch === q[i]) i++;
+return i === q.length;` },
+  { title:"4. It's keyboard-first by design", why:"The point of a palette is to never touch the mouse. The input keeps focus; Up/Down move a selection index (with modulo wraparound), Enter runs the highlighted command, Escape closes. Power users open, type three letters, and hit Enter — all in under a second.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full"><div>↑ ↓ move · ↵ run · esc close</div><div class="text-indigo-600">hands never leave the keyboard</div></div>`, code:`if (e.key === "Enter") { shown[sel].run(); close(); }` },
+  { title:"5. Focus on open is the whole UX", why:"The detail that makes it feel instant: the moment the palette opens, you focus the input so the user types immediately — no click required. Pair that with the global shortcut and the loop is open → type → Enter, faster than any menu could ever be.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">Global shortcut + command data + fuzzy filter + autofocus.</p></div>`, code:`overlay.show();
+input.focus();   // type right away` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 7 — Discord Channels UI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Discord UI ===== */
+  .dc-shell { display:flex; height:520px; border-radius:12px; overflow:hidden; font-size:14px; user-select:none; }
+
+  /* Server icon rail */
+  .dc-rail { width:72px; background:#1e1f22; display:flex; flex-direction:column; align-items:center; padding:12px 0; gap:8px; overflow-y:auto; flex-shrink:0; }
+  .dc-rail::-webkit-scrollbar { display:none; }
+  .dc-icon { width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; cursor:pointer; transition:border-radius .15s, background .15s; position:relative; flex-shrink:0; }
+  .dc-icon:hover, .dc-icon.active { border-radius:16px; }
+  .dc-icon::before { content:''; position:absolute; left:-8px; top:50%; transform:translateY(-50%); width:4px; border-radius:0 4px 4px 0; background:#fff; transition:height .15s; height:0; }
+  .dc-icon:hover::before { height:8px; }
+  .dc-icon.active::before { height:40px; }
+  .dc-icon-home { background:#5865f2; color:#fff; }
+  .dc-icon-s1 { background:#2b2d31; color:#e0e0e0; font-size:12px; font-weight:700; }
+  .dc-icon-s1:hover, .dc-icon-s1.active { background:#5865f2; color:#fff; }
+  .dc-icon-s2 { background:#2b2d31; color:#e0e0e0; font-size:18px; }
+  .dc-icon-s2:hover, .dc-icon-s2.active { background:#ed4245; color:#fff; }
+  .dc-icon-s3 { background:#2b2d31; color:#e0e0e0; font-size:18px; }
+  .dc-icon-s3:hover, .dc-icon-s3.active { background:#3ba55c; color:#fff; }
+  .dc-icon-add { background:#2b2d31; color:#3ba55c; font-size:22px; font-weight:300; }
+  .dc-icon-add:hover { background:#3ba55c; color:#fff; border-radius:16px; }
+  .dc-rail-sep { width:32px; height:2px; background:#35363c; border-radius:1px; flex-shrink:0; }
+
+  /* Channel list */
+  .dc-channels { width:240px; background:#2b2d31; display:flex; flex-direction:column; flex-shrink:0; }
+  .dc-ch-header { padding:16px 12px 10px; border-bottom:1px solid #1e1f22; display:flex; align-items:center; justify-content:space-between; }
+  .dc-ch-header-name { font-weight:700; font-size:15px; color:#f2f3f5; }
+  .dc-ch-body { flex:1; overflow-y:auto; padding:8px 0; }
+  .dc-ch-body::-webkit-scrollbar { width:4px; }
+  .dc-ch-body::-webkit-scrollbar-thumb { background:#1a1b1e; border-radius:2px; }
+  .dc-category { display:flex; align-items:center; gap:4px; padding:6px 8px 4px 12px; color:#96989d; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; cursor:pointer; }
+  .dc-category:hover { color:#d5d7dc; }
+  .dc-category-arrow { font-size:9px; transition:transform .15s; }
+  .dc-category.collapsed .dc-category-arrow { transform:rotate(-90deg); }
+  .dc-ch-item { display:flex; align-items:center; gap:6px; padding:5px 8px 5px 16px; border-radius:4px; margin:0 8px; cursor:pointer; color:#96989d; font-size:15px; }
+  .dc-ch-item:hover { background:#35363c; color:#d5d7dc; }
+  .dc-ch-item.active { background:#404249; color:#f2f3f5; }
+  .dc-ch-icon { font-size:16px; flex-shrink:0; opacity:.75; }
+  .dc-ch-label { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dc-ch-badge { background:#ed4245; color:#fff; font-size:10px; font-weight:700; border-radius:8px; padding:1px 5px; margin-left:auto; }
+  .dc-ch-footer { padding:10px 8px; background:#232428; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .dc-user-av { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#5865f2,#a855f7); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700; flex-shrink:0; position:relative; }
+  .dc-user-av::after { content:''; position:absolute; bottom:0; right:0; width:10px; height:10px; background:#3ba55c; border-radius:50%; border:2px solid #232428; }
+  .dc-user-name { flex:1; min-width:0; }
+  .dc-user-display { font-size:13px; font-weight:700; color:#f2f3f5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dc-user-tag { font-size:11px; color:#96989d; }
+  .dc-user-icons { display:flex; gap:4px; color:#96989d; font-size:16px; }
+  .dc-user-icons span { cursor:pointer; padding:2px; border-radius:4px; }
+  .dc-user-icons span:hover { background:#35363c; color:#d5d7dc; }
+
+  /* Main chat */
+  .dc-main { flex:1; background:#313338; display:flex; flex-direction:column; min-width:0; }
+  .dc-chat-header { padding:12px 16px; border-bottom:1px solid #2b2d31; display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .dc-chat-header-icon { color:#96989d; font-size:18px; }
+  .dc-chat-header-name { font-weight:700; color:#f2f3f5; font-size:16px; }
+  .dc-chat-header-desc { color:#96989d; font-size:13px; padding-left:8px; border-left:1px solid #4a4d52; margin-left:4px; }
+  .dc-chat-header-actions { margin-left:auto; display:flex; gap:12px; color:#96989d; font-size:16px; }
+  .dc-chat-header-actions span { cursor:pointer; border-radius:4px; padding:2px 4px; }
+  .dc-chat-header-actions span:hover { background:#35363c; color:#d5d7dc; }
+  .dc-messages { flex:1; overflow-y:auto; padding:16px 16px 0; display:flex; flex-direction:column; gap:4px; }
+  .dc-messages::-webkit-scrollbar { width:6px; }
+  .dc-messages::-webkit-scrollbar-thumb { background:#1a1b1e; border-radius:3px; }
+  .dc-msg-group { display:grid; grid-template-columns:40px 1fr; gap:0 12px; padding:4px 0; border-radius:4px; }
+  .dc-msg-group:hover { background:#2e3035; }
+  .dc-msg-av { grid-column:1; grid-row:1/3; padding-top:2px; }
+  .dc-msg-av-img { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#fff; flex-shrink:0; cursor:pointer; }
+  .dc-msg-meta { grid-column:2; display:flex; align-items:baseline; gap:8px; }
+  .dc-msg-name { font-weight:700; font-size:15px; cursor:pointer; }
+  .dc-msg-name:hover { text-decoration:underline; }
+  .dc-msg-time { font-size:11px; color:#72767d; }
+  .dc-msg-text { grid-column:2; color:#dcddde; font-size:15px; line-height:1.5; word-break:break-word; }
+  .dc-msg-text a { color:#00b0f4; text-decoration:none; }
+  .dc-msg-text a:hover { text-decoration:underline; }
+  .dc-msg-cont { grid-column:2; color:#dcddde; font-size:15px; line-height:1.5; }
+  .dc-msg-embed { margin-top:6px; border-left:4px solid #5865f2; background:#2b2d31; border-radius:0 4px 4px 0; padding:10px 12px; font-size:13px; color:#dcddde; max-width:440px; }
+  .dc-msg-embed-title { font-weight:700; color:#00b0f4; margin-bottom:4px; }
+  .dc-msg-react { display:inline-flex; align-items:center; gap:4px; background:#2b2d31; border:1px solid #3c3f45; border-radius:8px; padding:2px 8px; font-size:13px; margin-top:4px; cursor:pointer; color:#dcddde; }
+  .dc-msg-react:hover { background:#35363c; border-color:#5865f2; }
+  .dc-input-wrap { padding:0 16px 16px; flex-shrink:0; }
+  .dc-input { background:#383a40; border-radius:8px; display:flex; align-items:center; gap:12px; padding:11px 16px; }
+  .dc-input-btn { color:#96989d; font-size:20px; cursor:pointer; flex-shrink:0; }
+  .dc-input-btn:hover { color:#d5d7dc; }
+  .dc-input-fake { flex:1; color:#72767d; font-size:15px; }
+
+  /* Member sidebar */
+  .dc-members { width:240px; background:#2b2d31; overflow-y:auto; flex-shrink:0; padding:16px 8px; }
+  .dc-members::-webkit-scrollbar { width:4px; }
+  .dc-members::-webkit-scrollbar-thumb { background:#1a1b1e; border-radius:2px; }
+  .dc-members-cat { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#96989d; padding:8px 8px 4px; }
+  .dc-member { display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:4px; cursor:pointer; }
+  .dc-member:hover { background:#35363c; }
+  .dc-member-av { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#fff; flex-shrink:0; position:relative; }
+  .dc-member-av::after { content:''; position:absolute; bottom:0; right:0; width:10px; height:10px; border-radius:50%; border:2px solid #2b2d31; }
+  .online::after { background:#3ba55c; }
+  .idle::after { background:#faa81a; }
+  .busy::after { background:#ed4245; }
+  .offline::after { background:#747f8d; }
+  .dc-member-name { font-size:15px; color:#96989d; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dc-member:hover .dc-member-name { color:#d5d7dc; }
+  .dc-member-role { font-size:11px; color:#5865f2; font-weight:700; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 7</div>
+      <h1 class="text-xl font-bold">💬 Discord Channel Sidebar / Chat UI</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== LOOK ===================== -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100 flex flex-col items-center justify-center">
+    <h2 class="text-2xl font-bold mb-1 text-center">Four-column Discord — pure CSS</h2>
+    <p class="text-slate-500 text-center mb-6">Server rail · channel list · chat area · member sidebar — no framework, no images.</p>
+
+    <div class="dc-shell w-full" style="max-width:960px;">
+
+      <!-- Server rail -->
+      <div class="dc-rail">
+        <div class="dc-icon dc-icon-home active" title="Home">🏠</div>
+        <div class="dc-rail-sep"></div>
+        <div class="dc-icon dc-icon-s1" title="dev48v">D48</div>
+        <div class="dc-icon dc-icon-s2" title="Gaming den">🎮</div>
+        <div class="dc-icon dc-icon-s3" title="Open Source">⚡</div>
+        <div class="dc-icon dc-icon-s1" title="Design pals" style="font-size:11px;">DES</div>
+        <div class="dc-icon dc-icon-s2" title="Anime club" style="">🌸</div>
+        <div class="dc-rail-sep"></div>
+        <div class="dc-icon dc-icon-add" title="Add server">+</div>
+      </div>
+
+      <!-- Channel list -->
+      <div class="dc-channels">
+        <div class="dc-ch-header">
+          <span class="dc-ch-header-name">dev48v</span>
+          <span style="color:#96989d;font-size:18px;cursor:pointer;" title="Server settings">⌄</span>
+        </div>
+        <div class="dc-ch-body" id="ch-body">
+
+          <div class="dc-category" id="cat-info">
+            <span class="dc-category-arrow">▼</span>
+            <span>Information</span>
+          </div>
+          <div class="dc-cat-group" id="grp-info">
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">rules</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">announcements</span>
+              <span class="dc-ch-badge">3</span>
+            </div>
+          </div>
+
+          <div class="dc-category" id="cat-general">
+            <span class="dc-category-arrow">▼</span>
+            <span>General</span>
+          </div>
+          <div class="dc-cat-group" id="grp-general">
+            <div class="dc-ch-item active" id="ch-general">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">general</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">introductions</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">off-topic</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">🔊</span>
+              <span class="dc-ch-label">voice lounge</span>
+            </div>
+          </div>
+
+          <div class="dc-category" id="cat-dev">
+            <span class="dc-category-arrow">▼</span>
+            <span>Development</span>
+          </div>
+          <div class="dc-cat-group" id="grp-dev">
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">code-review</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">help-wanted</span>
+              <span class="dc-ch-badge">7</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">projects</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">🔊</span>
+              <span class="dc-ch-label">pair-programming</span>
+            </div>
+          </div>
+
+          <div class="dc-category" id="cat-design">
+            <span class="dc-category-arrow">▼</span>
+            <span>Design</span>
+          </div>
+          <div class="dc-cat-group" id="grp-design">
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">inspiration</span>
+            </div>
+            <div class="dc-ch-item">
+              <span class="dc-ch-icon">#</span>
+              <span class="dc-ch-label">portfolio-feedback</span>
+            </div>
+          </div>
+
+        </div>
+        <div class="dc-ch-footer">
+          <div class="dc-user-av">D</div>
+          <div class="dc-user-name">
+            <div class="dc-user-display">devanshu</div>
+            <div class="dc-user-tag">#4807</div>
+          </div>
+          <div class="dc-user-icons">
+            <span title="Mute">🎤</span>
+            <span title="Deafen">🎧</span>
+            <span title="Settings">⚙</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat area -->
+      <div class="dc-main">
+        <div class="dc-chat-header">
+          <span class="dc-chat-header-icon">#</span>
+          <span class="dc-chat-header-name">general</span>
+          <span class="dc-chat-header-desc">A place for the whole server to hang out</span>
+          <div class="dc-chat-header-actions">
+            <span title="Threads">🧵</span>
+            <span title="Notification settings">🔔</span>
+            <span title="Pin">📌</span>
+            <span title="Members">👥</span>
+            <span title="Search">🔍</span>
+          </div>
+        </div>
+
+        <div class="dc-messages">
+
+          <!-- Message group 1 -->
+          <div class="dc-msg-group">
+            <div class="dc-msg-av">
+              <div class="dc-msg-av-img" style="background:linear-gradient(135deg,#5865f2,#a855f7);">A</div>
+            </div>
+            <div class="dc-msg-meta">
+              <span class="dc-msg-name" style="color:#f47fff;">Aria</span>
+              <span class="dc-msg-time">Today at 10:14 AM</span>
+            </div>
+            <div class="dc-msg-text">Good morning everyone! Anyone working on something cool this weekend? 👋</div>
+          </div>
+
+          <!-- Message group 2 -->
+          <div class="dc-msg-group">
+            <div class="dc-msg-av">
+              <div class="dc-msg-av-img" style="background:linear-gradient(135deg,#3ba55c,#0f9b58);">K</div>
+            </div>
+            <div class="dc-msg-meta">
+              <span class="dc-msg-name" style="color:#57f287;">Kiran</span>
+              <span class="dc-msg-time">Today at 10:16 AM</span>
+            </div>
+            <div class="dc-msg-text">Yeah! Rebuilt the Discord UI in pure CSS — check the DesignFromZero series 🔥</div>
+            <div style="grid-column:2;">
+              <div class="dc-msg-embed">
+                <div class="dc-msg-embed-title">DesignFromZero · Day 7</div>
+                <div>Discord channel sidebar + chat layout — just CSS flex and grid, no images.</div>
+              </div>
+            </div>
+            <div style="grid-column:2;margin-top:4px;">
+              <span class="dc-msg-react">🔥 12</span>
+              <span class="dc-msg-react" style="margin-left:4px;">👀 5</span>
+            </div>
+          </div>
+
+          <!-- Message group 3 -->
+          <div class="dc-msg-group">
+            <div class="dc-msg-av">
+              <div class="dc-msg-av-img" style="background:linear-gradient(135deg,#ed4245,#c03537);">M</div>
+            </div>
+            <div class="dc-msg-meta">
+              <span class="dc-msg-name" style="color:#ed4245;">Maya</span>
+              <span class="dc-msg-time">Today at 10:19 AM</span>
+            </div>
+            <div class="dc-msg-text">That's wild. How long did it take?</div>
+          </div>
+
+          <!-- Continuation in same group -->
+          <div class="dc-msg-group" style="padding-top:0;">
+            <div class="dc-msg-av"></div>
+            <div class="dc-msg-cont" style="color:#dcddde;font-size:15px;line-height:1.5;">About 2 hours. The grid message row trick is the key insight — avatar in column 1, everything else spans column 2.</div>
+          </div>
+
+          <!-- Message group 4 -->
+          <div class="dc-msg-group">
+            <div class="dc-msg-av">
+              <div class="dc-msg-av-img" style="background:linear-gradient(135deg,#faa81a,#e07b00);">S</div>
+            </div>
+            <div class="dc-msg-meta">
+              <span class="dc-msg-name" style="color:#fee75c;">Sam</span>
+              <span class="dc-msg-time">Today at 10:22 AM</span>
+            </div>
+            <div class="dc-msg-text">The blurple <code style="background:#2b2d31;padding:2px 6px;border-radius:3px;font-size:13px;">#5865f2</code> really sells it 😂 nice work!</div>
+          </div>
+
+          <!-- Message group 5 (current user) -->
+          <div class="dc-msg-group">
+            <div class="dc-msg-av">
+              <div class="dc-msg-av-img" style="background:linear-gradient(135deg,#5865f2,#a855f7);">D</div>
+            </div>
+            <div class="dc-msg-meta">
+              <span class="dc-msg-name" style="color:#5865f2;">devanshu</span>
+              <span class="dc-msg-time">Today at 10:24 AM</span>
+            </div>
+            <div class="dc-msg-text">Thanks! Tomorrow is Slack's input bar. The autogrow textarea one 👀</div>
+          </div>
+
+        </div>
+
+        <div class="dc-input-wrap" style="padding-top:12px;">
+          <div class="dc-input">
+            <span class="dc-input-btn" title="Upload">+</span>
+            <span class="dc-input-fake">Message #general</span>
+            <span class="dc-input-btn" title="Emoji" style="font-size:18px;">😊</span>
+            <span class="dc-input-btn" title="GIF" style="font-size:12px;font-weight:700;border:1px solid #96989d;padding:2px 4px;border-radius:3px;">GIF</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Member sidebar -->
+      <div class="dc-members">
+        <div class="dc-members-cat">Online — 4</div>
+        <div class="dc-member">
+          <div class="dc-member-av online" style="background:linear-gradient(135deg,#f47fff,#a855f7);">A</div>
+          <div>
+            <div class="dc-member-name" style="color:#f2f3f5;font-weight:600;">Aria</div>
+            <div class="dc-member-role">Moderator</div>
+          </div>
+        </div>
+        <div class="dc-member">
+          <div class="dc-member-av online" style="background:linear-gradient(135deg,#3ba55c,#0f9b58);">K</div>
+          <div><div class="dc-member-name" style="color:#f2f3f5;font-weight:600;">Kiran</div></div>
+        </div>
+        <div class="dc-member">
+          <div class="dc-member-av idle" style="background:linear-gradient(135deg,#faa81a,#e07b00);">S</div>
+          <div><div class="dc-member-name" style="color:#f2f3f5;font-weight:600;">Sam</div></div>
+        </div>
+        <div class="dc-member">
+          <div class="dc-member-av busy" style="background:linear-gradient(135deg,#ed4245,#c03537);">M</div>
+          <div>
+            <div class="dc-member-name" style="color:#f2f3f5;font-weight:600;">Maya</div>
+            <div class="dc-member-role" style="color:#ed4245;">Do Not Disturb</div>
+          </div>
+        </div>
+        <div class="dc-members-cat" style="margin-top:8px;">Offline — 3</div>
+        <div class="dc-member">
+          <div class="dc-member-av offline" style="background:#4a4d52;">J</div>
+          <div><div class="dc-member-name">Jake</div></div>
+        </div>
+        <div class="dc-member">
+          <div class="dc-member-av offline" style="background:#4a4d52;">P</div>
+          <div><div class="dc-member-name">Priya</div></div>
+        </div>
+        <div class="dc-member">
+          <div class="dc-member-av offline" style="background:#4a4d52;">L</div>
+          <div><div class="dc-member-name">Lucas</div></div>
+        </div>
+      </div>
+
+    </div>
+    <p class="text-xs text-slate-400 text-center mt-4">↑ Click category headers to collapse sections. Click server icons on the left rail.</p>
+  </div>
+</section>
+
+<!-- ===================== UNDERSTAND ===================== -->
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">The anatomy of Discord's layout</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step to explore the concept.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== BUILD ===================== -->
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Four columns, two flex tricks, one grid row. Start with the shell and fill in the pieces.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The outer shell: four flex children</h3></div>
+        <pre>.dc-shell {
+  display: flex;        /* all four panels side by side */
+  height: 520px;
+  overflow: hidden;
+}
+/* Each panel has a fixed width except .dc-main which gets flex:1 */</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Server rail — pill-to-squircle on hover</h3></div>
+        <pre>.dc-icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;           /* pill by default */
+  transition: border-radius .15s;
+}
+.dc-icon:hover { border-radius: 16px; } /* squircle on hover */
+
+/* Active indicator: pseudo-element on the left */
+.dc-icon::before {
+  content: '';
+  position: absolute; left: -8px;
+  width: 4px; background: #fff;
+  border-radius: 0 4px 4px 0;
+  transition: height .15s;
+  height: 0;
+}
+.dc-icon.active::before { height: 40px; }</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Channel list typography — categories + items</h3></div>
+        <pre>.dc-category {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #96989d;
+}
+.dc-ch-item {
+  display: flex; align-items: center;
+  gap: 6px; padding: 5px 8px 5px 16px;
+  border-radius: 4px; color: #96989d;
+}
+.dc-ch-item:hover  { background: #35363c; color: #d5d7dc; }
+.dc-ch-item.active { background: #404249; color: #f2f3f5; }</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Message rows — CSS grid not flex</h3></div>
+        <pre>.dc-msg-group {
+  display: grid;
+  grid-template-columns: 40px 1fr; /* avatar | content */
+  gap: 0 12px;
+}
+/* Avatar spans rows 1 and 2; username+text each sit in col 2 */
+.dc-msg-av  { grid-column: 1; grid-row: 1 / 3; }
+.dc-msg-meta { grid-column: 2; }    /* username + timestamp */
+.dc-msg-text { grid-column: 2; }    /* the actual text */</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The Discord color palette — blurple + dark grays</h3></div>
+        <pre>/* Core palette */
+--dc-bg-1: #313338;   /* main chat bg */
+--dc-bg-2: #2b2d31;   /* sidebar bg */
+--dc-bg-3: #1e1f22;   /* server rail bg */
+--dc-blurple: #5865f2; /* brand accent */
+--dc-green:   #3ba55c;
+--dc-red:     #ed4245;
+
+/* Text hierarchy */
+--dc-text-hi: #f2f3f5;   /* primary */
+--dc-text-md: #dcddde;   /* message body */
+--dc-text-lo: #96989d;   /* muted / channels */</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Status dots — CSS pseudo-element</h3></div>
+        <pre>/* One trick for all 4 statuses */
+.dc-member-av::after {
+  content: '';
+  position: absolute; bottom: 0; right: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid #2b2d31; /* "cut out" trick */
+}
+.online::after { background: #3ba55c; }
+.idle::after   { background: #faa81a; }
+.busy::after   { background: #ed4245; }
+.offline::after{ background: #747f8d; }</pre>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center">
+      <h3 class="font-bold text-lg text-indigo-900">🎉 Day 7 of DesignFromZero done.</h3>
+      <p class="text-sm text-indigo-700 mt-2">Tomorrow: Slack input bar — autogrow textarea + rich toolbar.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+// ===== Tab switching =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== Collapsible categories =====
+function makeCollapsible(catId, grpId) {
+  const cat = document.getElementById(catId);
+  const grp = document.getElementById(grpId);
+  if (!cat || !grp) return;
+  cat.onclick = () => {
+    const collapsed = grp.style.display === "none";
+    grp.style.display = collapsed ? "" : "none";
+    cat.classList.toggle("collapsed", !collapsed);
+  };
+}
+makeCollapsible("cat-info", "grp-info");
+makeCollapsible("cat-general", "grp-general");
+makeCollapsible("cat-dev", "grp-dev");
+makeCollapsible("cat-design", "grp-design");
+
+// ===== Server icon active state =====
+document.querySelectorAll(".dc-icon").forEach(icon => {
+  icon.onclick = () => {
+    document.querySelectorAll(".dc-icon").forEach(x => x.classList.remove("active"));
+    icon.classList.add("active");
+  };
+});
+
+// ===== Channel active state =====
+document.querySelectorAll(".dc-ch-item").forEach(item => {
+  item.onclick = () => {
+    document.querySelectorAll(".dc-ch-item").forEach(x => x.classList.remove("active"));
+    item.classList.add("active");
+  };
+});
+
+// ===== UNDERSTAND steps =====
+const STEPS = [
+  {
+    title: "1. Four-column flex shell",
+    why: "Discord's entire layout is one flex container with four direct children: the narrow server icon rail (72px), the channel list (240px), the main chat (flex:1, takes all remaining space), and the member sidebar (240px). Flexbox makes this trivially responsive — shrink the window and the chat area compresses while the sidebars stay fixed.",
+    concept: `<div class="flex w-full gap-1 text-xs text-center text-white" style="height:60px;">
+      <div class="flex items-center justify-center rounded" style="width:50px;background:#1e1f22;font-size:10px;">rail<br>72px</div>
+      <div class="flex items-center justify-center rounded" style="width:80px;background:#2b2d31;font-size:10px;">channels<br>240px</div>
+      <div class="flex-1 flex items-center justify-center rounded" style="background:#313338;font-size:10px;">chat<br>flex:1</div>
+      <div class="flex items-center justify-center rounded" style="width:80px;background:#2b2d31;font-size:10px;">members<br>240px</div>
+    </div>`,
+    code: `.dc-shell {
+  display: flex;
+  height: 520px;
+}
+.dc-rail     { width: 72px;  flex-shrink: 0; }
+.dc-channels { width: 240px; flex-shrink: 0; }
+.dc-main     { flex: 1;      min-width: 0;   }
+.dc-members  { width: 240px; flex-shrink: 0; }`
+  },
+  {
+    title: "2. Server rail pill-to-squircle",
+    why: "Discord's server icons are circles by default but animate to a 'squircle' (rounded square) on hover and when active. This is done by transitioning border-radius from 50% to 16px. The active indicator on the left edge is a CSS pseudo-element with a height transition — 0 at rest, 8px on hover, 40px when active.",
+    concept: `<div class="flex gap-6 items-center justify-center w-full">
+      <div style="width:48px;height:48px;background:#5865f2;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;">D</div>
+      <div style="font-size:20px;">→</div>
+      <div style="width:48px;height:48px;background:#5865f2;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;">D</div>
+    </div>`,
+    code: `.dc-icon {
+  border-radius: 50%;
+  transition: border-radius .15s;
+}
+.dc-icon:hover { border-radius: 16px; }
+
+/* Active bar: left-edge pseudo-element */
+.dc-icon::before {
+  content: ''; position: absolute; left: -8px;
+  width: 4px; border-radius: 0 4px 4px 0; background: #fff;
+  height: 0; transition: height .15s;
+}
+.dc-icon.active::before { height: 40px; }`
+  },
+  {
+    title: "3. Channel list typography",
+    why: "Discord's channel sidebar uses a clear two-level visual hierarchy: category headers are 11px bold uppercase with wide letter-spacing, and channel items are 15px with subdued color. The indentation (16px left padding) signals they belong to a category. Hover state adds a subtle background, active state is a slightly lighter background plus brighter text.",
+    concept: `<div class="w-full text-sm" style="background:#2b2d31;border-radius:8px;padding:12px;color:#96989d;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:4px 0 8px;">General</div>
+      <div style="padding:4px 4px 4px 16px;border-radius:4px;display:flex;gap:6px;align-items:center;"># general</div>
+      <div style="padding:4px 4px 4px 16px;border-radius:4px;display:flex;gap:6px;align-items:center;background:#404249;color:#f2f3f5;"># announcements</div>
+      <div style="padding:4px 4px 4px 16px;border-radius:4px;display:flex;gap:6px;align-items:center;"># off-topic</div>
+    </div>`,
+    code: `.dc-category {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: #96989d;
+}
+.dc-ch-item {
+  padding: 5px 8px 5px 16px;   /* 16px indent */
+  border-radius: 4px; color: #96989d;
+  display: flex; gap: 6px;
+}
+.dc-ch-item:hover  { background: #35363c; }
+.dc-ch-item.active { background: #404249; color: #f2f3f5; }`
+  },
+  {
+    title: "4. Message rows — CSS grid trick",
+    why: "Each message group is a 2-column CSS grid: 40px for the avatar, 1fr for content. The avatar has grid-row: 1 / 3 so it spans both the username row and the text row, creating the side-by-side layout. Continuation messages (no avatar re-shown) simply skip the avatar column and span only column 2. This is cleaner than nested flex or absolute positioning.",
+    concept: `<div class="w-full" style="background:#313338;border-radius:8px;padding:12px;display:grid;grid-template-columns:40px 1fr;gap:0 10px;">
+      <div style="grid-column:1;grid-row:1/3;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#5865f2,#a855f7);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;">D</div>
+      <div style="grid-column:2;display:flex;gap:8px;align-items:baseline;"><span style="color:#5865f2;font-weight:700;font-size:14px;">devanshu</span><span style="color:#72767d;font-size:11px;">Today 10:24</span></div>
+      <div style="grid-column:2;color:#dcddde;font-size:14px;">This is a message with grid layout!</div>
+    </div>`,
+    code: `.dc-msg-group {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 0 12px;
+}
+.dc-msg-av   { grid-column: 1; grid-row: 1 / 3; }
+.dc-msg-meta { grid-column: 2; } /* username + time */
+.dc-msg-text { grid-column: 2; } /* the message */`
+  },
+  {
+    title: "5. The Discord color system",
+    why: "Discord's dark theme uses exactly three background levels (each ~3-5 units darker than the previous), a blurple brand accent, and a three-level text hierarchy. The brand color #5865f2 is called 'blurple' (blue + purple). Role colors use full-saturation hues because they need to pop against the very dark backgrounds. Understanding this 3-background-level system is reusable for any dark UI.",
+    concept: `<div class="flex flex-col gap-2 w-full text-white text-xs font-mono">
+      <div class="rounded p-2 flex gap-3" style="background:#313338;">#313338 — chat bg</div>
+      <div class="rounded p-2 flex gap-3" style="background:#2b2d31;">#2b2d31 — sidebar bg</div>
+      <div class="rounded p-2 flex gap-3" style="background:#1e1f22;">#1e1f22 — server rail</div>
+      <div class="rounded p-2 flex gap-3" style="background:#5865f2;">#5865f2 — blurple</div>
+      <div class="rounded p-2 flex gap-3" style="background:#3ba55c;">#3ba55c — green / online</div>
+      <div class="rounded p-2 flex gap-3" style="background:#ed4245;">#ed4245 — red / busy</div>
+    </div>`,
+    code: `/* 3-level background stack */
+#313338  /* main chat */
+#2b2d31  /* sidebars */
+#1e1f22  /* server rail */
+
+/* Brand */
+#5865f2  /* blurple: buttons, active items */
+
+/* Status */
+#3ba55c  /* online */
+#faa81a  /* idle */
+#ed4245  /* busy / do not disturb */
+#747f8d  /* offline */`
+  },
+  {
+    title: "6. Status dots — the border cutout trick",
+    why: "The coloured status dot in the bottom-right corner of each avatar uses a CSS pseudo-element (::after). The dot appears to be 'cut out' from the avatar by setting a border colour that matches the parent background. When the background changes on hover, the border colour should ideally update too — Discord solves this by keeping the sidebar background consistent.",
+    concept: `<div class="flex gap-6 justify-center items-center w-full">
+      <div style="position:relative;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#3ba55c,#0f9b58);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;">K
+        <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;background:#3ba55c;border-radius:50%;border:2px solid #2b2d31;"></div>
+      </div>
+      <div style="position:relative;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#faa81a,#e07b00);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;">S
+        <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;background:#faa81a;border-radius:50%;border:2px solid #2b2d31;"></div>
+      </div>
+      <div style="position:relative;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#ed4245,#c03537);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;">M
+        <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;background:#ed4245;border-radius:50%;border:2px solid #2b2d31;"></div>
+      </div>
+    </div>`,
+    code: `.dc-member-av {
+  position: relative; /* needed for ::after */
+}
+.dc-member-av::after {
+  content: '';
+  position: absolute; bottom: 0; right: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid #2b2d31; /* background colour = "cutout" */
+}
+.online::after  { background: #3ba55c; }
+.idle::after    { background: #faa81a; }
+.busy::after    { background: #ed4245; }
+.offline::after { background: #747f8d; }`
+  },
+  {
+    title: "7. Done!",
+    why: "Four CSS flex panels, one CSS grid for messages, border-radius transitions for the server icons, and three background levels for depth. That's the whole Discord UI. No images, no SVGs needed, no JS framework. The hardest part was the grid message row — once you understand the avatar spans two rows, everything else clicks.",
+    concept: `<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">flex shell + grid rows + blurple = Discord</p></div>`,
+    code: `/* The whole thing in one sentence:
+   flex shell → 4 panels
+   grid rows  → messages aligned
+   blurple    → #5865f2
+   3 grays    → depth */`
+  }
+];
+
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev");
+const nextB = document.getElementById("next-btn");
+const autoB = document.getElementById("auto");
+let cur = 0;
+
+STEPS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm";
+  b.innerHTML = `<div class="font-semibold">${s.title}</div>`;
+  b.onclick = () => show(i);
+  stepsEl.appendChild(b);
+});
+
+function show(i) {
+  cur = i;
+  const s = STEPS[i];
+  document.getElementById("concept").innerHTML = `<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML = `<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent = s.code;
+  stepsEl.querySelectorAll("button").forEach((b, idx) => {
+    b.className = idx === i
+      ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold"
+      : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm";
+  });
+}
+
+prevB.onclick = () => show(Math.max(0, cur - 1));
+nextB.onclick = () => show(Math.min(STEPS.length - 1, cur + 1));
+
+let tm = null;
+autoB.onclick = () => {
+  if (tm) { clearInterval(tm); tm = null; autoB.textContent = "▶ Auto-play"; return; }
+  autoB.textContent = "⏸ Pause";
+  show(0);
+  tm = setInterval(() => {
+    if (cur >= STEPS.length - 1) { clearInterval(tm); tm = null; autoB.textContent = "▶ Replay"; return; }
+    show(cur + 1);
+  }, 2800);
+};
+
+show(0);
+</script>
+</body>
+</html>

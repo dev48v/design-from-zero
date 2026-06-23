@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 5 — Notion Calendar</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  /* The whole calendar is ONE CSS grid, 7 columns wide. */
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); border-top:1px solid #ededec; border-left:1px solid #ededec; }
+  .cal-cell { min-height:104px; border-right:1px solid #ededec; border-bottom:1px solid #ededec; padding:6px; background:#fff; cursor:pointer; transition:background .12s; }
+  .cal-cell:hover { background:#f7f7f5; }
+  .cal-cell.dim { background:#fbfbfa; color:#c4c4c2; }
+  .daynum { font-size:13px; color:#787774; font-weight:600; }
+  .today .daynum { background:#eb5757; color:#fff; border-radius:50%; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; }
+  .evt { font-size:11px; padding:2px 6px; border-radius:4px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-fuchsia-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-fuchsia-600 font-bold uppercase tracking-wider">DesignFromZero · Day 5</div>
+      <h1 class="text-xl font-bold">🗓️ Notion Calendar Grid Clone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- LOOK -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow border border-slate-200 overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-4">
+        <div class="flex items-center gap-3">
+          <span class="text-lg">🗓️</span>
+          <h2 id="title" class="text-lg font-bold text-slate-800"></h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="today" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-50">Today</button>
+          <button id="prev" class="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50">‹</button>
+          <button id="nextm" class="w-8 h-8 rounded-md border border-slate-200 hover:bg-slate-50">›</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-7 px-0 text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+        <div class="px-2 py-2">Sun</div><div class="px-2 py-2">Mon</div><div class="px-2 py-2">Tue</div><div class="px-2 py-2">Wed</div><div class="px-2 py-2">Thu</div><div class="px-2 py-2">Fri</div><div class="px-2 py-2">Sat</div>
+      </div>
+      <div id="cal" class="cal-grid"></div>
+    </div>
+    <p class="text-xs text-slate-400 text-center mt-4">↑ A real month grid. Click any day to drop an event chip. Prev/next walks months. All from one 7-column CSS grid + date math.</p>
+  </div>
+</section>
+
+<!-- UNDERSTAND -->
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">Build the calendar step by step</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="sprev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="snext" class="bg-fuchsia-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-fuchsia-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">CONCEPT</div>
+        <div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step on the left →</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">WHY</div>
+        <div id="why" class="text-slate-700">—</div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-fuchsia-600 tracking-wider mb-2">CODE FOR THIS STEP</div>
+        <pre id="code"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILD -->
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Estimated time: <b>25 minutes</b>. One HTML file, pure CSS grid — no library.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Seven columns, that's the whole layout</h3></div>
+<pre>.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Find where the month starts</h3></div>
+<pre>const first = new Date(year, month, 1);
+const startDay = first.getDay();            // 0=Sun … 6=Sat
+const daysInMonth = new Date(year, month + 1, 0).getDate();</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Pad with the previous month's tail</h3></div>
+        <p class="text-sm text-slate-600">If the 1st is a Wednesday, the grid needs 3 dimmed leading cells so dates line up under the right weekday — exactly what Notion shows in grey.</p>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-fuchsia-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Highlight today + add event chips</h3></div>
+        <p class="text-sm text-slate-600">Compare each cell's date to <code>new Date()</code> for the red "today" dot. Store events in a <code>{ "2026-06-14": [...] }</code> map keyed by ISO date.</p>
+      </li>
+    </ol>
+    <div class="mt-10 bg-fuchsia-50 border border-fuchsia-200 rounded-2xl p-6 text-center">
+      <h3 class="font-bold text-lg text-fuchsia-900">🎉 Day 5 of DesignFromZero done.</h3>
+      <p class="text-sm text-fuchsia-700 mt-2">Tomorrow: Spotify now-playing bar.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// =========== NOTION CALENDAR ===========
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CHIP_COLORS = ["#e8f0fe;#1a73e8","#fce8e6;#d93025","#e6f4ea;#188038","#fef7e0;#b06000","#f3e8fd;#9334e6"];
+const cal = document.getElementById("cal");
+const titleEl = document.getElementById("title");
+const today = new Date();
+let view = new Date(today.getFullYear(), today.getMonth(), 1);
+const iso = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+
+// seed a couple of demo events on this month so it doesn't look empty
+const events = {};
+(function seed(){
+  const y = view.getFullYear(), m = view.getMonth();
+  events[`${y}-${String(m+1).padStart(2,"0")}-05`] = [{ t:"Design review", c:0 }];
+  events[`${y}-${String(m+1).padStart(2,"0")}-12`] = [{ t:"1:1 with Sam", c:2 }];
+  events[`${y}-${String(m+1).padStart(2,"0")}-21`] = [{ t:"Ship v2 🚀", c:1 }, { t:"Retro", c:3 }];
+})();
+
+function render() {
+  const year = view.getFullYear(), month = view.getMonth();
+  titleEl.textContent = `${MONTHS[month]} ${year}`;
+  const startDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevDays = new Date(year, month, 0).getDate();
+  cal.innerHTML = "";
+
+  // leading cells from previous month (dimmed)
+  for (let i = startDay - 1; i >= 0; i--) addCell(prevDays - i, true, null);
+  // this month
+  for (let d = 1; d <= daysInMonth; d++) addCell(d, false, new Date(year, month, d));
+  // trailing cells to fill the last row
+  const total = startDay + daysInMonth;
+  const trailing = (7 - (total % 7)) % 7;
+  for (let d = 1; d <= trailing; d++) addCell(d, true, null);
+}
+function addCell(num, dim, date) {
+  const cell = document.createElement("div");
+  cell.className = "cal-cell" + (dim ? " dim" : "");
+  const isToday = date && iso(date) === iso(today);
+  if (isToday) cell.classList.add("today");
+  cell.innerHTML = `<div class="daynum">${num}</div>`;
+  if (date) {
+    const key = iso(date);
+    (events[key] || []).forEach(e => {
+      const [bg, fg] = CHIP_COLORS[e.c].split(";");
+      const chip = document.createElement("div");
+      chip.className = "evt"; chip.style.background = bg; chip.style.color = fg;
+      chip.textContent = e.t;
+      cell.appendChild(chip);
+    });
+    cell.onclick = () => {
+      const t = prompt("New event on " + key + ":");
+      if (t) { (events[key] = events[key] || []).push({ t, c: Math.floor(Math.random()*5) }); render(); }
+    };
+  }
+  cal.appendChild(cell);
+}
+document.getElementById("prev").onclick = () => { view.setMonth(view.getMonth()-1); render(); };
+document.getElementById("nextm").onclick = () => { view.setMonth(view.getMonth()+1); render(); };
+document.getElementById("today").onclick = () => { view = new Date(today.getFullYear(), today.getMonth(), 1); render(); };
+render();
+
+// UNDERSTAND
+const STEPS = [
+  { title:"1. A calendar is just a 7-wide grid", why:"Notion's calendar looks complex but it's one CSS grid with grid-template-columns: repeat(7, 1fr). Every day is a cell. The browser handles all the wrapping — you never position anything manually.", concept:`<div class="grid grid-cols-7 gap-px w-full bg-slate-200 p-px rounded">${Array.from({length:35}).map(()=>`<div class="aspect-square bg-white"></div>`).join("")}</div>`, code:`.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}` },
+  { title:"2. Where does the month start?", why:"The 1st of the month isn't always a Sunday. new Date(year, month, 1).getDay() tells you the weekday (0=Sun). That number is how many blank cells you prepend so the dates line up under the correct weekday header.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono space-y-1 w-full">
+    <div>new Date(2026, 5, 1).getDay()  → 1 (Mon)</div>
+    <div class="text-fuchsia-700">→ prepend 1 dimmed cell before the 1st</div>
+  </div>`, code:`const first = new Date(year, month, 1);
+const startDay = first.getDay();   // 0=Sun … 6=Sat` },
+  { title:"3. How many days this month?", why:"The classic JS trick: new Date(year, month + 1, 0) is the LAST day of the current month, because day 0 of next month rolls back. .getDate() gives 28/29/30/31 — leap years handled for free.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono space-y-1 w-full">
+    <div>new Date(2026, 2, 0).getDate()  → 28</div>
+    <div>new Date(2024, 2, 0).getDate()  → 29 (leap)</div>
+  </div>`, code:`const daysInMonth =
+  new Date(year, month + 1, 0).getDate();` },
+  { title:"4. Pad both ends so rows stay full", why:"Leading cells = the tail of the previous month (dimmed grey). Trailing cells = the start of next month, so the final row is never ragged. This grey overflow is the detail that makes it read as 'Notion' and not a school worksheet.", concept:`<div class="grid grid-cols-7 gap-px w-full text-center text-xs">${[29,30,31].map(n=>`<div class="bg-slate-100 text-slate-400 py-2">${n}</div>`).join("")}${[1,2,3,4].map(n=>`<div class="bg-white py-2">${n}</div>`).join("")}</div>`, code:`// leading: previous month's last few days
+for (let i = startDay - 1; i >= 0; i--)
+  addCell(prevDays - i, /*dim*/ true);
+
+// trailing: next month's first few days
+const trailing = (7 - (startDay + daysInMonth) % 7) % 7;` },
+  { title:"5. Today + events", why:"Highlight today by comparing each cell's ISO date string to new Date(). Events live in a plain object keyed by '2026-06-14' — render whatever sits under that key as colored chips. Clicking a cell adds one. That's Notion's database-on-a-calendar in miniature.", concept:`<div class="bg-slate-100 p-4 rounded text-xs font-mono space-y-1 w-full">
+    <div>events = {</div>
+    <div class="ml-3">"2026-06-21": [{ t:"Ship v2" }]</div>
+    <div>}</div>
+    <div class="text-fuchsia-700 mt-1">render chips under each matching cell</div>
+  </div>`, code:`const key = iso(date);          // "2026-06-21"
+(events[key] || []).forEach(e => {
+  const chip = document.createElement("div");
+  chip.textContent = e.t;
+  cell.appendChild(chip);
+});` },
+  { title:"6. Done!", why:"Month navigation is just view.setMonth(±1) then re-render. No date library needed for a clean month view — the built-in Date object does all the arithmetic. The same grid powers week/agenda views by changing the cell count.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">A polished calendar in one CSS grid.</p></div>`, code:`prevBtn.onclick = () => {
+  view.setMonth(view.getMonth() - 1);
+  render();
+};` },
+];
+const stepsEl = document.getElementById("steps");
+const prev = document.getElementById("sprev");
+const next = document.getElementById("snext");
+const auto = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm";
+  b.innerHTML = `<div class="font-semibold">${s.title}</div>`;
+  b.onclick = () => show(i);
+  stepsEl.appendChild(b);
+});
+function show(i) {
+  cur = i;
+  const s = STEPS[i];
+  document.getElementById("concept").innerHTML = `<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML = `<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent = s.code;
+  stepsEl.querySelectorAll("button").forEach((b, idx) => {
+    b.className = idx === i
+      ? "w-full text-left p-3 rounded-lg border-2 border-fuchsia-500 bg-fuchsia-50 text-sm font-semibold"
+      : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-fuchsia-400 text-sm";
+  });
+}
+prev.onclick = () => show(Math.max(0, cur - 1));
+next.onclick = () => show(Math.min(STEPS.length - 1, cur + 1));
+let timer = null;
+auto.onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; auto.textContent = "▶ Auto-play"; return; }
+  auto.textContent = "⏸ Pause";
+  show(0);
+  timer = setInterval(() => {
+    if (cur >= STEPS.length - 1) { clearInterval(timer); timer = null; auto.textContent = "▶ Replay"; return; }
+    show(cur + 1);
+  }, 2800);
+};
+show(0);
+</script>
+</body>
+</html>

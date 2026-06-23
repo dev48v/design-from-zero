@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 11 — Toast Notifications</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .toast-in { animation: toastIn .25s cubic-bezier(.21,1.02,.73,1); }
+  @keyframes toastIn { from { opacity:0; transform:translateX(120%); } to { opacity:1; transform:none; } }
+  .toast-out { animation: toastOut .2s ease-in forwards; }
+  @keyframes toastOut { to { opacity:0; transform:translateX(120%); } }
+  .tprog { height:3px; border-radius:2px; animation: shrink linear forwards; transform-origin:left; }
+  @keyframes shrink { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 11</div>
+      <h1 class="text-xl font-bold">🔔 Toast Notifications — Stack, Auto-Dismiss, Variants</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-xl mx-auto text-center">
+      <h2 class="text-2xl font-bold mb-1">The notifications from Sonner, react-hot-toast, every app</h2>
+      <p class="text-slate-500 mb-6">Click to fire toasts — they stack, auto-dismiss after a few seconds (watch the progress bar), and you can dismiss early with ×. Hover the stack to pause the timers.</p>
+      <div class="grid grid-cols-2 gap-3">
+        <button class="toast-btn bg-emerald-600 text-white font-semibold py-2.5 rounded-lg" data-type="success">✅ Success</button>
+        <button class="toast-btn bg-rose-600 text-white font-semibold py-2.5 rounded-lg" data-type="error">⛔ Error</button>
+        <button class="toast-btn bg-indigo-600 text-white font-semibold py-2.5 rounded-lg" data-type="info">ℹ️ Info</button>
+        <button class="toast-btn bg-amber-500 text-white font-semibold py-2.5 rounded-lg" data-type="loading">⏳ Loading → Success</button>
+      </div>
+      <p class="text-xs text-slate-400 mt-6">↑ Toasts appear bottom-right. Fire several fast — they queue and stack newest-on-top.</p>
+    </div>
+  </div>
+  <div id="toaster" class="fixed bottom-5 right-5 z-50 flex flex-col-reverse gap-2 w-80"></div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a toast system works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A list in state, a fixed container, and a timeout per toast. ~40 lines.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Toasts are a list of state</h3></div><pre>let toasts = [];   // [{ id, type, message }]
+function toast(message, type="info") {
+  toasts.push({ id: Date.now()+Math.random(), type, message });
+  render();
+}</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">One fixed container (a "portal")</h3></div><pre>&lt;div class="fixed bottom-5 right-5 flex flex-col gap-2"&gt;&lt;/div&gt;
+/* fixed = floats above everything, regardless of where you called toast() */</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Auto-dismiss with a timer</h3></div><pre>setTimeout(() => dismiss(id), 4000);
+function dismiss(id) { toasts = toasts.filter(t => t.id !== id); render(); }</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Variants from a lookup</h3></div><pre>const STYLE = {
+  success: { icon:"✅", ring:"border-emerald-200" },
+  error:   { icon:"⛔", ring:"border-rose-200" },
+  info:    { icon:"ℹ️", ring:"border-indigo-200" },
+};</pre></li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Animate in AND out</h3></div><pre>// slide in on mount; on dismiss, add an exit class, then remove after the animation
+el.classList.add("toast-out");
+el.addEventListener("animationend", () => el.remove());</pre></li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 11 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Tomorrow: skeleton loading states.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== TOAST SYSTEM =====
+const toaster = document.getElementById("toaster");
+const STYLE = {
+  success: { icon:"✅", bar:"bg-emerald-500", ring:"border-emerald-200" },
+  error:   { icon:"⛔", bar:"bg-rose-500",    ring:"border-rose-200" },
+  info:    { icon:"ℹ️", bar:"bg-indigo-500",  ring:"border-indigo-200" },
+  loading: { icon:"⏳", bar:"bg-amber-500",   ring:"border-amber-200" },
+};
+const MSG = {
+  success:"Order placed successfully.", error:"Something went wrong. Try again.",
+  info:"3 new updates are available.", loading:"Uploading your file…",
+};
+let paused = false;
+toaster.addEventListener("mouseenter", ()=>paused=true);
+toaster.addEventListener("mouseleave", ()=>paused=false);
+
+function toast(message, type="info", ms=4000){
+  const id = "t"+Date.now()+Math.random().toString(36).slice(2,6);
+  const s = STYLE[type];
+  const el = document.createElement("div");
+  el.className = `toast-in bg-white border ${s.ring} rounded-xl shadow-lg overflow-hidden`;
+  el.innerHTML = `<div class="flex items-start gap-3 p-3">
+      <span class="text-lg">${s.icon}</span>
+      <div class="flex-1 text-sm text-slate-700">${message}</div>
+      <button class="text-slate-400 hover:text-slate-700 text-sm leading-none">✕</button>
+    </div><div class="tprog ${s.bar}" style="animation-duration:${ms}ms"></div>`;
+  toaster.appendChild(el);
+  const remove = () => { el.classList.add("toast-out"); el.addEventListener("animationend",()=>el.remove(),{once:true}); };
+  el.querySelector("button").onclick = remove;
+  let left = ms, start = performance.now();
+  const tickTimer = setInterval(()=>{ if(!paused){ left -= performance.now()-start; } start=performance.now(); if(left<=0){ clearInterval(tickTimer); remove(); } }, 100);
+  return remove;
+}
+document.querySelectorAll(".toast-btn").forEach(b=>b.onclick=()=>{
+  const type=b.dataset.type;
+  if (type==="loading"){ toast("Uploading your file…","loading",1600); setTimeout(()=>toast("File uploaded!","success"),1700); }
+  else toast(MSG[type], type);
+});
+
+const STEPS = [
+  { title:"1. Toasts are just a list in state", why:"A toast system is, at heart, an array of toast objects {id, type, message}. Calling toast() pushes one and re-renders; dismissing filters it out. Decoupling the DATA (the list) from the DISPLAY is what lets you fire a toast from anywhere — a button, a network handler, an error boundary.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">toast() → push to list → render. dismiss → filter out.</div>`, code:`let toasts = [];
+function toast(msg, type) { toasts.push({ id: uid(), msg, type }); render(); }` },
+  { title:"2. One fixed container, anywhere", why:"All toasts render into a single position:fixed container (here, bottom-right). 'Fixed' floats it above the whole page no matter which component called toast() — this is the 'portal' idea. One mount point, called from everywhere.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">fixed bottom-right container ← every toast renders here</div>`, code:`<div class="fixed bottom-5 right-5 flex flex-col gap-2"></div>` },
+  { title:"3. Stacking + ordering", why:"Multiple toasts stack with a gap. Using flex-col-reverse (or rendering newest last) puts the freshest toast nearest the corner where the eye goes. Each is independent — they appear and disappear on their own timers without disturbing the others.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">newest on top · each lives & dies independently</div>`, code:`<div class="flex flex-col-reverse gap-2"> … </div>` },
+  { title:"4. Auto-dismiss with a timer (+ pause on hover)", why:"Each toast sets a setTimeout to remove itself after a few seconds, and a CSS-animated bar shows the countdown. The pro touch: pause every timer while the user hovers the stack, so notifications don't vanish while they're reading. Resume on mouse-leave.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center">timeout(4s) → dismiss · hover → pause the countdown</div>`, code:`setTimeout(() => dismiss(id), 4000);
+container.onmouseenter = () => paused = true;` },
+  { title:"5. Variants are a lookup table", why:"Success/error/info/loading differ only by an icon and a colour. A small map from type → styles keeps the component generic: one render function, any number of variants. Add a 'warning' by adding one line — no new code path.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full"><div>success → ✅ green · error → ⛔ red</div><div>info → ℹ️ indigo · loading → ⏳ amber</div></div>`, code:`const STYLE = { success:{icon:"✅"}, error:{icon:"⛔"} }; // type → look` },
+  { title:"6. Animate in AND out", why:"Sliding in is easy (animate on mount). The often-forgotten half is the EXIT: you can't just remove the node or it pops away. Add an exit class, listen for animationend, then remove. Smooth on both ends is what separates a polished toast from a janky one.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">List in state + fixed portal + timers + variants + enter/exit animation.</p></div>`, code:`el.classList.add("toast-out");
+el.addEventListener("animationend", () => el.remove());` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+</script>
+</body>
+</html>

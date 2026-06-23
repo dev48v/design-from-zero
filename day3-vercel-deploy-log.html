@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 3 — Vercel Deploy Log</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .copy-btn:hover { background:#1e293b; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .log-line { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 13px; padding: 3px 0; opacity: 0; animation: slideIn .25s forwards; }
+  .log-line.cmd { color: #93c5fd; }
+  .log-line.info { color: #cbd5e1; }
+  .log-line.dim { color: #64748b; }
+  .log-line.ok { color: #4ade80; }
+  .log-line.warn { color: #fbbf24; }
+  .log-line.err { color: #fb7185; }
+  .log-line .ts { color: #475569; margin-right: 10px; }
+  @keyframes slideIn { to { opacity: 1; } }
+  .blinker::after { content: "▌"; animation: blink 1s steps(2) infinite; color: #4ade80; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back to DesignFromZero" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-amber-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-amber-600 font-bold uppercase tracking-wider">DesignFromZero · Day 3</div>
+      <h1 class="text-xl font-bold">▲ Vercel Deploy Log Clone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- LOOK -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+
+      <!-- Vercel-style header bar -->
+      <div class="bg-[#0a0a0a] rounded-t-xl border border-slate-800 border-b-0 px-4 py-3 flex items-center gap-3">
+        <span class="text-white text-lg">▲</span>
+        <div class="text-slate-300 text-sm flex-1">
+          <span class="font-semibold text-white">webrtc-from-zero</span>
+          <span class="text-slate-500"> · main · </span>
+          <span class="text-slate-400 font-mono text-xs">c436636</span>
+        </div>
+        <span id="status-pill" class="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">● BUILDING</span>
+      </div>
+
+      <!-- Log body -->
+      <div id="log" class="bg-[#0a0a0a] border border-slate-800 border-t-0 rounded-b-xl p-5 h-[420px] overflow-auto">
+      </div>
+
+      <div class="mt-4 flex justify-center gap-2">
+        <button id="restart" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">↻ Restart deploy</button>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-6 text-center">↑ Vercel's actual deploy log shape: timestamp + colored line + auto-scrolling stream. Click <b>UNDERSTAND</b> for the pieces.</p>
+    </div>
+  </div>
+</section>
+
+<!-- UNDERSTAND -->
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">Build the deploy log</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step. Read the WHY.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next" class="bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-amber-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-amber-600 tracking-wider mb-2">PREVIEW</div>
+        <div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step on the left →</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-amber-600 tracking-wider mb-2">WHY</div>
+        <div id="why" class="text-slate-700">—</div>
+      </div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="text-xs uppercase font-bold text-amber-600 tracking-wider mb-2">CODE FOR THIS STEP</div>
+        <pre id="code"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILD -->
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Estimated time: <b>10 minutes</b>. One HTML file.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Make a file</h3></div>
+<pre>touch deploy-log.html</pre>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Paste this</h3></div>
+        <div class="relative">
+<pre>&lt;!DOCTYPE html&gt;
+&lt;html&gt;&lt;head&gt;
+&lt;style&gt;
+  body { background:#0a0a0a; color:#cbd5e1; font:13px ui-monospace, monospace; padding:1rem; }
+  .line { padding:3px 0; opacity:0; animation: slide .25s forwards; }
+  .ts  { color:#475569; margin-right:10px; }
+  .cmd { color:#93c5fd; }
+  .dim { color:#64748b; }
+  .ok  { color:#4ade80; }
+  .err { color:#fb7185; }
+  @keyframes slide { to { opacity:1; } }
+&lt;/style&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;div id="log"&gt;&lt;/div&gt;
+&lt;script&gt;
+const LINES = [
+  {cls:"cmd", t:"$ git clone https://github.com/dev48v/repo"},
+  {cls:"dim", t:"  Cloning into 'repo'..."},
+  {cls:"cmd", t:"$ npm install"},
+  {cls:"dim", t:"  added 234 packages in 12s"},
+  {cls:"cmd", t:"$ npm run build"},
+  {cls:"ok",  t:"  ✓ Compiled successfully in 4.2s"},
+  {cls:"ok",  t:"✓ Deployed to https://repo.vercel.app"}
+];
+const log = document.getElementById('log');
+function ts() {
+  const d = new Date();
+  return `${d.toTimeString().slice(0,8)}.${String(d.getMilliseconds()).padStart(3,'0')}`;
+}
+let i = 0;
+const tick = setInterval(() =&gt; {
+  if (i &gt;= LINES.length) return clearInterval(tick);
+  const L = LINES[i++];
+  const div = document.createElement('div');
+  div.className = 'line';
+  div.innerHTML = `&lt;span class="ts"&gt;${ts()}&lt;/span&gt;&lt;span class="${L.cls}"&gt;${L.t}&lt;/span&gt;`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}, 600);
+&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;</pre>
+          <button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button>
+        </div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Open in browser</h3></div>
+        <p class="text-sm text-slate-600">Double-click <code>deploy-log.html</code>. Watch lines stream in like Vercel.</p>
+      </li>
+    </ol>
+    <div class="mt-10 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
+      <h3 class="font-bold text-lg text-amber-900">🎉 Day 3 of DesignFromZero done.</h3>
+      <p class="text-sm text-amber-700 mt-2">Tomorrow: Arc vertical tabs.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// LOOK — animated log stream
+const LINES = [
+  { cls:"cmd",  t:"$ git clone https://github.com/dev48v/webrtc-from-zero" },
+  { cls:"dim",  t:"  Cloning into 'webrtc-from-zero'..." },
+  { cls:"info", t:"  Receiving objects: 100% (87/87), 28.4 KiB" },
+  { cls:"cmd",  t:"$ npm install" },
+  { cls:"dim",  t:"  npm warn deprecated inflight@1.0.6" },
+  { cls:"info", t:"  added 234 packages, audited 235 packages in 12s" },
+  { cls:"ok",   t:"  found 0 vulnerabilities" },
+  { cls:"cmd",  t:"$ next build" },
+  { cls:"info", t:"   ▲ Next.js 16.2.7" },
+  { cls:"dim",  t:"   - Creating an optimized production build..." },
+  { cls:"ok",   t:"   ✓ Compiled successfully in 4.2s" },
+  { cls:"info", t:"   Route (app)                              Size     First Load JS" },
+  { cls:"info", t:"   ┌ ○ /                                    8.2 kB   124 kB" },
+  { cls:"info", t:"   └ ○ /_not-found                          875 B    113 kB" },
+  { cls:"cmd",  t:"$ vercel deploy --prod" },
+  { cls:"dim",  t:"  Vercel CLI 50.37.3" },
+  { cls:"dim",  t:"  Inspect: https://vercel.com/dev48v/webrtc-from-zero/dpl_GKJ2..." },
+  { cls:"info", t:"  Uploading 8.4 MB [============================] 100%" },
+  { cls:"info", t:"  Building..." },
+  { cls:"ok",   t:"  ✓ Build completed (38s)" },
+  { cls:"ok",   t:"  ✓ Deployment ready" },
+  { cls:"ok",   t:"  ● Production: https://webrtc-from-zero.vercel.app" }
+];
+
+const logEl = document.getElementById("log");
+const status = document.getElementById("status-pill");
+
+function ts() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}.${String(d.getMilliseconds()).padStart(3,"0")}`;
+}
+
+let cursor = null;
+function play() {
+  logEl.innerHTML = "";
+  status.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30";
+  status.textContent = "● BUILDING";
+  let i = 0;
+  const tick = setInterval(() => {
+    if (i >= LINES.length) {
+      clearInterval(tick);
+      status.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+      status.textContent = "● READY";
+      return;
+    }
+    const L = LINES[i++];
+    const div = document.createElement("div");
+    div.className = "log-line " + L.cls;
+    div.innerHTML = `<span class="ts">${ts()}</span>${L.t}`;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+  }, 380);
+}
+play();
+document.getElementById("restart").onclick = play;
+
+// UNDERSTAND
+const STEPS = [
+  { title:"1. Dark terminal canvas", why:"Vercel deploy logs live on a near-black canvas (#0a0a0a — not pure black so soft on the eye). White triangle logo + project + branch + commit hash at top in a header bar. Status pill on the right shows live state.", concept:`<div class="w-full bg-[#0a0a0a] border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-3"><span class="text-white">▲</span><span class="text-slate-300 text-sm">project · main · <span class="font-mono text-xs">a1b2c3d</span></span><span class="ml-auto bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold px-2.5 py-1 rounded-full">● BUILDING</span></div>`, code:`body { background: #0a0a0a; color: #cbd5e1; font-family: ui-monospace, monospace; }
+.header { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid #1e293b; }` },
+  { title:"2. Timestamp + colored line", why:"Each line = a timestamp (greyed) + colored text. Color = signal. Blue = command. White/grey = info. Green = success. Red = error. Same convention as every CI log on earth.", concept:`<div class="w-full bg-[#0a0a0a] p-3 rounded-xl font-mono text-xs space-y-1"><div><span class="text-slate-500">14:32:08.412</span> <span class="text-blue-300">$ npm install</span></div><div><span class="text-slate-500">14:32:09.027</span> <span class="text-slate-300">added 234 packages</span></div><div><span class="text-slate-500">14:32:09.512</span> <span class="text-green-400">✓ Compiled successfully</span></div><div><span class="text-slate-500">14:32:10.108</span> <span class="text-rose-400">× build failed</span></div></div>`, code:`<span class="ts">14:32:08.412</span>
+<span class="cmd">$ next build</span>
+
+/* CSS */
+.ts  { color: #475569; margin-right: 10px; }
+.cmd { color: #93c5fd; }  /* command */
+.ok  { color: #4ade80; }  /* success */
+.err { color: #fb7185; }  /* error */` },
+  { title:"3. Stream lines in over time", why:"Real deploys take 30-90 seconds. Lines stream as the deploy progresses. Mimic with setInterval — append a div every 300-400ms. Looks alive, not pre-rendered.", concept:`<div class="bg-slate-100 p-4 rounded font-mono text-xs space-y-1 w-full">
+    <div>setInterval → append &lt;div class="log-line"&gt;</div>
+    <div class="text-amber-700">every 380ms</div>
+    <div class="text-slate-500 italic mt-2">User sees lines appear with fade-in animation</div>
+  </div>`, code:`setInterval(() => {
+  if (i >= LINES.length) return clearInterval(tick);
+  const L = LINES[i++];
+  const div = document.createElement("div");
+  div.className = "log-line " + L.cls;
+  div.innerHTML = \`<span class="ts">\${ts()}</span>\${L.t}\`;
+  log.appendChild(div);
+}, 380);` },
+  { title:"4. Auto-scroll to bottom", why:"As new lines appear below the fold, you want the viewport to follow. Set scrollTop = scrollHeight after every append. Without this the user has to manually scroll.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full">
+    <div class="font-mono text-xs space-y-1">
+      <div>append line</div>
+      <div class="text-emerald-700">→ log.scrollTop = log.scrollHeight</div>
+    </div>
+    <p class="text-xs text-slate-500 italic mt-2">Lock viewport to the latest line. Real CI logs always do this.</p>
+  </div>`, code:`log.appendChild(div);
+log.scrollTop = log.scrollHeight;` },
+  { title:"5. Fade-in animation", why:"New lines fade + slide in from below 4px — a tiny detail that makes the log feel alive. Without it lines pop in too sharply.", concept:`<div class="bg-slate-100 p-4 rounded font-mono text-xs w-full">
+    <div>.log-line {</div>
+    <div class="ml-4">opacity: 0;</div>
+    <div class="ml-4">animation: slideIn .25s forwards;</div>
+    <div>}</div>
+    <div class="text-emerald-700 mt-2">@keyframes slideIn { to { opacity: 1 } }</div>
+  </div>`, code:`.log-line {
+  opacity: 0;
+  animation: slideIn .25s forwards;
+}
+@keyframes slideIn { to { opacity: 1; } }` },
+  { title:"6. Status pill flips on success", why:"While building → amber 'BUILDING' pulse. On final line → swap class to emerald 'READY'. One state variable, two class names. UX signal louder than text alone.", concept:`<div class="flex gap-2 w-full">
+    <span class="bg-amber-500/20 text-amber-700 border border-amber-500/40 text-xs font-bold px-3 py-1.5 rounded-full">● BUILDING</span>
+    <span class="text-2xl">→</span>
+    <span class="bg-emerald-500/20 text-emerald-700 border border-emerald-500/40 text-xs font-bold px-3 py-1.5 rounded-full">● READY</span>
+  </div>`, code:`if (i >= LINES.length) {
+  status.classList.replace("text-amber-400", "text-emerald-400");
+  status.textContent = "● READY";
+}` },
+  { title:"7. ASCII-art route table", why:"The middle of every Next.js deploy log is a beautiful ┌ ○ └ tree showing each route's bundle size. Pre-rendered as static text — preserve whitespace with monospace font. Easy points for visual authenticity.", concept:`<div class="bg-[#0a0a0a] p-4 rounded font-mono text-xs w-full">
+    <div class="text-slate-300">Route (app)                Size     First Load JS</div>
+    <div class="text-slate-400">┌ ○ /                      8.2 kB   124 kB</div>
+    <div class="text-slate-400">└ ○ /_not-found            875 B    113 kB</div>
+  </div>`, code:`{ cls: "info", t: "Route (app)             Size    First Load JS" },
+{ cls: "info", t: "┌ ○ /                   8.2 kB  124 kB" },
+{ cls: "info", t: "└ ○ /_not-found         875 B   113 kB" }` },
+  { title:"8. Done!", why:"Vercel's deploy log is just a dark canvas + timestamp prefix + 4 colors + animated line append + auto-scroll. Same shape works for GitHub Actions, CircleCI, your own build runners. Master the pattern once.", concept:`<div class="text-center w-full"><div class="text-5xl mb-2">🎉</div><p class="font-bold text-slate-700">You understand the CI log pattern.</p></div>`, code:`// Reusable as: GitHub Actions log · CircleCI log
+// Render Render log · Fly.io log · your own build runner` }
+];
+const stepsEl = document.getElementById("steps");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next");
+const auto = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.className = "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-amber-400 text-sm";
+  b.innerHTML = `<div class="font-semibold">${s.title}</div>`;
+  b.onclick = () => show(i);
+  stepsEl.appendChild(b);
+});
+function show(i) {
+  cur = i;
+  const s = STEPS[i];
+  document.getElementById("concept").innerHTML = `<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML = `<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent = s.code;
+  stepsEl.querySelectorAll("button").forEach((b, idx) => {
+    b.className = idx === i
+      ? "w-full text-left p-3 rounded-lg border-2 border-amber-500 bg-amber-50 text-sm font-semibold"
+      : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-amber-400 text-sm";
+  });
+}
+prev.onclick = () => show(Math.max(0, cur - 1));
+next.onclick = () => show(Math.min(STEPS.length - 1, cur + 1));
+let timer = null;
+auto.onclick = () => {
+  if (timer) { clearInterval(timer); timer = null; auto.textContent = "▶ Auto-play"; return; }
+  auto.textContent = "⏸ Pause";
+  show(0);
+  timer = setInterval(() => {
+    if (cur >= STEPS.length - 1) { clearInterval(timer); timer = null; auto.textContent = "▶ Replay"; return; }
+    show(cur + 1);
+  }, 2500);
+};
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+</script>
+</body>
+</html>
