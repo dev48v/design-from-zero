@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 15 — Kanban Board</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Kanban Board ===== */
+  .kcard {
+    cursor:grab;
+    transition: box-shadow .18s ease, transform .12s ease, opacity .15s ease;
+  }
+  .kcard:active { cursor:grabbing; }
+  /* the card currently being dragged — lift it with a stronger shadow + fade */
+  .kcard.dragging {
+    opacity:.4;
+    box-shadow:0 12px 28px rgba(15,23,42,.28);
+    transform:rotate(2deg) scale(1.02);
+  }
+  /* a column the pointer is hovering over while dragging — highlight + dashed ring */
+  .kcol.drop-target {
+    background:#eef2ff;                /* indigo-50 */
+    outline:2px dashed #6366f1;        /* indigo-500 */
+    outline-offset:-4px;
+  }
+  /* the live placeholder gap that shows where the card will land */
+  .placeholder {
+    height:46px; margin:6px 0;
+    border:2px dashed #a5b4fc;         /* indigo-300 */
+    border-radius:12px;
+    background:#eef2ff;
+  }
+  .kcol-list { min-height:60px; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 15</div>
+      <h1 class="text-xl font-bold">🗂️ Kanban Board — Drag-and-Drop Columns</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">Drag a card. Watch work move through stages.</h2>
+      <p class="text-white/80 mb-2"><b>Grab any card</b> and drop it into another column. The column you hover lights up, a dashed gap shows where it'll land, and the <b>card counts</b> in every header update instantly. Add cards with the input at the bottom of a column, or hit <b>×</b> to delete. All native HTML5 drag-and-drop — no library.</p>
+    </div>
+
+    <!-- the live board -->
+    <div class="w-full" style="max-width:980px;">
+      <div id="board" class="grid md:grid-cols-3 gap-4">
+        <!-- columns are injected by JS so the model stays the single source of truth -->
+      </div>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:980px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">What's happening under the hood</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        On <code>dragstart</code> we stash the card's id in <code>dataTransfer</code>. A column is only a valid drop zone if its
+        <code>dragover</code> handler calls <code>preventDefault()</code> — the classic gotcha, since by default nothing accepts a drop.
+        On <code>drop</code> we read the id back, move that card's DOM node into the column, update our model, and re-count each header.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole trick:</b> the browser fires <code>dragstart → dragover → drop</code>. You carry the dragged item's id in
+      <code>dataTransfer</code>, you <i>must</i> <code>preventDefault()</code> on <code>dragover</code> to allow the drop, and on
+      <code>drop</code> you move the node + update state. Counts and persistence are just bookkeeping on top.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How drag-and-drop Kanban works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Three columns, draggable cards, and the native HTML5 Drag and Drop API. ~70 lines, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup — three columns, each a drop zone</h3></div>
+        <div class="relative"><pre>&lt;div class="board"&gt;
+  &lt;!-- each column carries its id; the .list is where cards live --&gt;
+  &lt;section class="col" data-col="todo"&gt;
+    &lt;header&gt;To Do &lt;span class="count"&gt;0&lt;/span&gt;&lt;/header&gt;
+    &lt;div class="list"&gt;&lt;/div&gt;
+  &lt;/section&gt;
+  &lt;section class="col" data-col="doing"&gt;...&lt;/section&gt;
+  &lt;section class="col" data-col="done"&gt;...&lt;/section&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Keep a model, then render from it</h3></div>
+        <div class="relative"><pre>// the model is the single source of truth — id → text + column
+let cards = [
+  { id:"c1", text:"Design the empty state", col:"todo"  },
+  { id:"c2", text:"Wire dragover handler",  col:"doing" },
+  { id:"c3", text:"Ship v1",                col:"done"  },
+];
+let nextId = 4;
+
+// render() wipes each list and rebuilds cards from the model
+function render() {
+  document.querySelectorAll(".list").forEach(l =&gt; l.innerHTML = "");
+  cards.forEach(c =&gt; columnList(c.col).appendChild(cardEl(c)));
+  updateCounts();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Make a card draggable + fire dragstart</h3></div>
+        <div class="relative"><pre>function cardEl(c) {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.draggable = true;            // THIS makes it grabbable
+  el.dataset.id = c.id;
+  el.textContent = c.text;
+
+  // dragstart: stash WHICH card is moving, in dataTransfer
+  el.addEventListener("dragstart", e =&gt; {
+    e.dataTransfer.setData("text/plain", c.id);
+    e.dataTransfer.effectAllowed = "move";
+    el.classList.add("dragging");
+  });
+  el.addEventListener("dragend", () =&gt; el.classList.remove("dragging"));
+  return el;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The gotcha: preventDefault on dragover</h3></div>
+        <div class="relative"><pre>// By default NOTHING is a drop target. You must cancel
+// dragover (and dragenter) for the browser to allow a drop.
+document.querySelectorAll(".col").forEach(col =&gt; {
+  col.addEventListener("dragover", e =&gt; {
+    e.preventDefault();                 // &lt;-- without this, no drop fires
+    e.dataTransfer.dropEffect = "move";
+    col.classList.add("drop-target");   // highlight the zone
+  });
+  col.addEventListener("dragleave", () =&gt; col.classList.remove("drop-target"));
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">On drop: read the id, update the model</h3></div>
+        <div class="relative"><pre>col.addEventListener("drop", e =&gt; {
+  e.preventDefault();
+  col.classList.remove("drop-target");
+
+  const id  = e.dataTransfer.getData("text/plain");  // who moved
+  const dst = col.dataset.col;                        // where to
+
+  // update the MODEL first, then re-render the DOM from it
+  const card = cards.find(c =&gt; c.id === id);
+  if (card) card.col = dst;
+  render();
+  save();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Live counts in each header</h3></div>
+        <div class="relative"><pre>function updateCounts() {
+  document.querySelectorAll(".col").forEach(col =&gt; {
+    const id = col.dataset.col;
+    const n  = cards.filter(c =&gt; c.col === id).length;
+    col.querySelector(".count").textContent = n;
+  });
+}
+// counts are derived from the model, so they're always correct
+// after any move, add, or delete — no manual ++ / -- needed.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Add a card + delete a card</h3></div>
+        <div class="relative"><pre>function addCard(colId, text) {
+  if (!text.trim()) return;
+  cards.push({ id:"c" + (nextId++), text:text.trim(), col:colId });
+  render(); save();
+}
+function deleteCard(id) {
+  cards = cards.filter(c =&gt; c.id !== id);   // drop it from the model
+  render(); save();
+}
+// each card gets a × button wired to deleteCard(c.id)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Persist to localStorage</h3></div>
+        <div class="relative"><pre>function save() {
+  localStorage.setItem("kanban", JSON.stringify(cards));
+}
+function load() {
+  const saved = localStorage.getItem("kanban");
+  if (saved) cards = JSON.parse(saved);
+}
+// load() on startup, save() after every change → the board
+// survives a refresh. Reset = localStorage.removeItem("kanban").
+load(); render();</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 15 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">dragstart, preventDefault, drop — move the node, update the model. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== KANBAN BOARD =====
+const COLUMNS = [
+  { id:"todo",  title:"To Do",       dot:"#94a3b8" },
+  { id:"doing", title:"In Progress", dot:"#f59e0b" },
+  { id:"done",  title:"Done",        dot:"#10b981" },
+];
+
+// the model is the single source of truth
+let cards = [
+  { id:"c1", text:"Sketch the empty state",      col:"todo"  },
+  { id:"c2", text:"Pick the colour palette",     col:"todo"  },
+  { id:"c3", text:"Wire the dragover handler",   col:"doing" },
+  { id:"c4", text:"Add the live card counts",    col:"doing" },
+  { id:"c5", text:"Ship v1 to staging",          col:"done"  },
+];
+let nextId = 6;
+
+const board = document.getElementById("board");
+
+// --- build the three columns once, from COLUMNS ---
+function buildBoard() {
+  board.innerHTML = "";
+  COLUMNS.forEach(col => {
+    const section = document.createElement("section");
+    section.className = "kcol bg-white/95 rounded-2xl shadow-xl p-4 flex flex-col";
+    section.dataset.col = col.id;
+    section.innerHTML = `
+      <div class="flex items-center justify-between mb-3 px-1">
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${col.dot}"></span>
+          <span class="font-bold text-slate-700 text-sm">${col.title}</span>
+        </div>
+        <span class="count bg-slate-100 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+      </div>
+      <div class="kcol-list flex-1 space-y-2"></div>
+      <div class="mt-3 flex gap-2">
+        <input class="add-input flex-1 text-sm px-3 py-2 rounded-lg border border-slate-200 focus:border-indigo-400 focus:outline-none"
+               placeholder="+ add card" />
+        <button class="add-btn bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-lg">Add</button>
+      </div>`;
+    board.appendChild(section);
+
+    const list  = section.querySelector(".kcol-list");
+    const input = section.querySelector(".add-input");
+    const btn   = section.querySelector(".add-btn");
+
+    // --- column is a drop target: MUST preventDefault on dragover ---
+    section.addEventListener("dragover", e => {
+      e.preventDefault();                 // without this, drop never fires
+      e.dataTransfer.dropEffect = "move";
+      section.classList.add("drop-target");
+      showPlaceholder(list, e.clientY);
+    });
+    section.addEventListener("dragleave", e => {
+      // only clear when the pointer actually leaves the column box
+      if (!section.contains(e.relatedTarget)) {
+        section.classList.remove("drop-target");
+        removePlaceholder();
+      }
+    });
+    section.addEventListener("drop", e => {
+      e.preventDefault();
+      section.classList.remove("drop-target");
+      const id  = e.dataTransfer.getData("text/plain");
+      const dst = col.id;
+      // figure out the drop position relative to existing cards
+      const beforeId = placeholderBeforeId(list, e.clientY, id);
+      removePlaceholder();
+      moveCard(id, dst, beforeId);
+    });
+
+    // --- add card ---
+    const doAdd = () => { addCard(col.id, input.value); input.value = ""; input.focus(); };
+    btn.onclick = doAdd;
+    input.addEventListener("keydown", e => { if (e.key === "Enter") doAdd(); });
+  });
+}
+
+function columnList(colId) {
+  return board.querySelector(`.kcol[data-col="${colId}"] .kcol-list`);
+}
+
+// --- build one card element, wired for dragging ---
+function cardEl(c) {
+  const el = document.createElement("div");
+  el.className = "kcard bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-sm flex items-start justify-between gap-2";
+  el.draggable = true;
+  el.dataset.id = c.id;
+  el.innerHTML = `<span class="text-sm text-slate-700 leading-snug">${escapeHtml(c.text)}</span>
+    <button class="del text-slate-300 hover:text-rose-500 font-bold leading-none text-lg -mt-0.5" title="delete">&times;</button>`;
+
+  // dragstart: stash WHICH card via dataTransfer
+  el.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("text/plain", c.id);
+    e.dataTransfer.effectAllowed = "move";
+    // defer the class so the drag image is the solid card, not the faded one
+    requestAnimationFrame(() => el.classList.add("dragging"));
+  });
+  el.addEventListener("dragend", () => {
+    el.classList.remove("dragging");
+    board.querySelectorAll(".kcol").forEach(s => s.classList.remove("drop-target"));
+    removePlaceholder();
+  });
+
+  el.querySelector(".del").addEventListener("click", () => deleteCard(c.id));
+  return el;
+}
+
+// --- render the cards from the model ---
+function render() {
+  board.querySelectorAll(".kcol-list").forEach(l => l.innerHTML = "");
+  cards.forEach(c => {
+    const list = columnList(c.col);
+    if (list) list.appendChild(cardEl(c));
+  });
+  updateCounts();
+}
+
+// counts are derived from the model — always correct
+function updateCounts() {
+  COLUMNS.forEach(col => {
+    const n = cards.filter(c => c.col === col.id).length;
+    const badge = board.querySelector(`.kcol[data-col="${col.id}"] .count`);
+    if (badge) badge.textContent = n;
+  });
+}
+
+// --- move a card to a column, optionally before another card ---
+function moveCard(id, dstCol, beforeId) {
+  const idx = cards.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  const [card] = cards.splice(idx, 1);   // pull it out of the model
+  card.col = dstCol;
+  if (beforeId) {
+    const at = cards.findIndex(c => c.id === beforeId);
+    cards.splice(at === -1 ? cards.length : at, 0, card);
+  } else {
+    cards.push(card);                     // drop at the end of the column
+  }
+  render(); save();
+}
+
+function addCard(colId, text) {
+  if (!text.trim()) return;
+  cards.push({ id:"c" + (nextId++), text:text.trim(), col:colId });
+  render(); save();
+}
+
+function deleteCard(id) {
+  cards = cards.filter(c => c.id !== id);
+  render(); save();
+}
+
+// ===== drop placeholder (visual gap showing where the card lands) =====
+let placeholder = null;
+function makePlaceholder() {
+  if (!placeholder) { placeholder = document.createElement("div"); placeholder.className = "placeholder"; }
+  return placeholder;
+}
+function removePlaceholder() {
+  if (placeholder && placeholder.parentElement) placeholder.parentElement.removeChild(placeholder);
+}
+// insert the placeholder at the right spot based on cursor Y
+function showPlaceholder(list, y) {
+  const ph = makePlaceholder();
+  const after = cardAfter(list, y);
+  if (after == null) list.appendChild(ph);
+  else list.insertBefore(ph, after);
+}
+// which existing (non-dragging) card sits just below the cursor
+function cardAfter(list, y) {
+  const els = [...list.querySelectorAll(".kcard:not(.dragging)")];
+  for (const el of els) {
+    const box = el.getBoundingClientRect();
+    if (y < box.top + box.height / 2) return el;
+  }
+  return null;
+}
+// translate the placeholder position into "insert before this card id"
+function placeholderBeforeId(list, y, draggedId) {
+  const after = cardAfter(list, y);
+  if (after && after.dataset.id !== draggedId) return after.dataset.id;
+  return null;
+}
+
+// ===== persistence =====
+function save() { localStorage.setItem("dfz-kanban", JSON.stringify({ cards, nextId })); }
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("dfz-kanban"));
+    if (saved && Array.isArray(saved.cards)) { cards = saved.cards; nextId = saved.nextId || cards.length + 1; }
+  } catch (_) { /* ignore bad/empty storage */ }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+}
+
+// boot the board
+buildBoard();
+load();
+render();
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. What a Kanban board models", why:"A Kanban board is a picture of work flowing through stages. Each column is a stage — usually To Do, In Progress, and Done — and each card is one piece of work. As a task progresses you drag its card from left to right, so the board always shows, at a glance, what is queued, what is active, and what is finished. The count in each column header hints at workload and bottlenecks. Underneath, it is just items that each remember which column they belong to.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-3"><span class="px-2 py-1 bg-white rounded border">To Do</span><span>→</span><span class="px-2 py-1 bg-white rounded border">In Progress</span><span>→</span><span class="px-2 py-1 bg-white rounded border">Done</span></div><div class="mt-2">a card = one task · its column = its stage</div></div>`, code:`// the model: every card knows its column
+let cards = [
+  { id:"c1", text:"Sketch the UI", col:"todo"  },
+  { id:"c3", text:"Wire dragover", col:"doing" },
+  { id:"c5", text:"Ship v1",       col:"done"  },
+];` },
+
+  { title:"2. The HTML5 Drag and Drop API", why:"Browsers have a built-in drag-and-drop system, so you do not need a library for the basics. You mark an element as draggable, and the browser then fires a sequence of drag events you can listen to. There are events on the thing being dragged (the source) and events on the thing it is dragged over (the target). A shared dataTransfer object travels along with the drag to carry data between them. Learn the handful of events and the whole feature falls into place.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div><b>source</b> events: dragstart · drag · dragend</div><div class="mt-1"><b>target</b> events: dragenter · dragover · drop</div><div class="mt-1">+ a shared <b>dataTransfer</b> carrying the payload</div></div>`, code:`// source: the card you grab
+el.draggable = true;
+el.addEventListener("dragstart", ...);
+// target: the column you drop onto
+col.addEventListener("dragover", ...);
+col.addEventListener("drop", ...);` },
+
+  { title:"3. draggable=\"true\" + the drag lifecycle", why:"Setting draggable to true is what makes an element grabbable in the first place — without it, mouse-dragging just selects text. Once it is set, picking the element up fires dragstart, moving it fires a stream of drag events, and releasing it fires dragend. dragstart is where you record what is moving and add a 'being dragged' style; dragend is your cleanup hook to remove that style no matter where the card ended up. These two bracket the entire gesture.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div><b>dragstart</b> → grabbed (set up)</div><div class="mt-1"><b>drag</b> → moving (fires repeatedly)</div><div class="mt-1"><b>dragend</b> → released (clean up)</div></div>`, code:`el.draggable = true;
+el.addEventListener("dragstart", e => {
+  el.classList.add("dragging");      // visual feedback
+});
+el.addEventListener("dragend", () => {
+  el.classList.remove("dragging");   // always clean up
+});` },
+
+  { title:"4. Drop targets need dragover + preventDefault", why:"This is the single most common stumbling block. By default, no element on the page accepts a drop, so even if you drag a card over a column, releasing it does nothing. To turn a column into a valid drop zone you must call preventDefault inside its dragover handler — that cancels the browser's default 'reject the drop' behaviour. Only then will the drop event fire. It feels backwards, but remembering 'preventDefault to allow the drop' saves hours of confusion.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-rose-500 font-bold">No preventDefault → drop NEVER fires</div><div class="mt-1">call <code>e.preventDefault()</code> on <b>dragover</b> to opt in</div></div>`, code:`col.addEventListener("dragover", e => {
+  e.preventDefault();              // <-- REQUIRED, the classic gotcha
+  e.dataTransfer.dropEffect = "move";
+});
+// only now will the column's "drop" event fire` },
+
+  { title:"5. dataTransfer carries the dragged card's id", why:"You need to know which card was dropped, and the dataTransfer object is how that information rides along with the drag. On dragstart you call setData with a key and the card's id; the browser holds onto it for the whole gesture. On drop you call getData with the same key to read it back. Passing just the id — rather than the whole element — keeps the model as the source of truth: you look the card up by id and update its column. Small payload, clean handoff.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>dragstart: <code>setData("text/plain", id)</code></div><div class="mt-1">⬇ travels with the drag ⬇</div><div class="mt-1">drop: <code>getData("text/plain")</code> → the id</div></div>`, code:`// on the card
+e.dataTransfer.setData("text/plain", c.id);
+// on the column
+const id = e.dataTransfer.getData("text/plain");
+const card = cards.find(c => c.id === id);` },
+
+  { title:"6. Visual feedback: drag image + drop-zone highlight", why:"Drag-and-drop only feels good when the user can see what is happening. Fade or lift the card being dragged so it clearly reads as 'in motion'. Highlight the column under the cursor — a tinted background or dashed outline — so the target is obvious. Best of all, show a placeholder: an empty gap that opens up exactly where the card will land, so the drop is never a surprise. The browser even generates a ghost drag image for free; you can replace it with setDragImage if you want.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>dragged card → faded &amp; lifted</div><div class="mt-1">hovered column → highlighted</div><div class="mt-1">landing spot → dashed <b>placeholder</b> gap</div></div>`, code:`.kcard.dragging   { opacity:.4; transform:rotate(2deg); }
+.kcol.drop-target { background:#eef2ff;
+                    outline:2px dashed #6366f1; }
+.placeholder      { height:46px; border:2px dashed #a5b4fc; }` },
+
+  { title:"7. Reordering within a column vs moving between columns", why:"Dropping a card has two flavours. Moving between columns just changes the card's column. Reordering within a column changes its position among siblings. To support both, you work out where in the list the cursor sits — by comparing the cursor's Y against the vertical midpoint of each card — and insert before whichever card is just below it, or at the end if it is past them all. That same 'insert before this card' logic handles both cases, so one drop handler covers moves and reorders.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>cursor above a card's midpoint → drop <b>before</b> it</div><div class="mt-1">cursor past the last card → drop at the <b>end</b></div></div>`, code:`function cardAfter(list, y) {
+  for (const el of list.querySelectorAll(".kcard:not(.dragging)")) {
+    const box = el.getBoundingClientRect();
+    if (y < box.top + box.height / 2) return el;  // insert before this
+  }
+  return null;                                    // else append at end
+}` },
+
+  { title:"8. Update state, not just the DOM", why:"It is tempting to simply move the dropped element into the new column with appendChild and call it done. That works visually, but now the screen and your data disagree. The robust pattern is to update the model first — change the card's column and position in your array — then re-render the columns from that model. The DOM becomes a reflection of the data, never the source of truth. This keeps counts correct, makes persistence trivial, and avoids the subtle bugs that come from editing the DOM directly.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div><b>model</b> = source of truth</div><div class="mt-1">drop → update model → <b>re-render</b> from model</div><div class="mt-1">DOM is just a reflection of the data</div></div>`, code:`function moveCard(id, dstCol, beforeId) {
+  const [card] = cards.splice(cards.findIndex(c=>c.id===id), 1);
+  card.col = dstCol;                 // update the MODEL
+  // ...insert at the right index...
+  render();                          // rebuild DOM from the model
+}` },
+
+  { title:"9. Persistence with localStorage", why:"A board that forgets everything on refresh is frustrating. Because the model is a plain array of objects, you can serialise it to a string with JSON.stringify and stash it in localStorage after every change. On startup you read it back with JSON.parse and rebuild. Wrap the parse in a try/catch so corrupt or empty storage cannot crash the page. With two tiny functions — save and load — the board survives reloads, and clearing the key resets it to defaults.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>change → <code>save()</code> → localStorage</div><div class="mt-1">reload → <code>load()</code> → rebuild the board</div></div>`, code:`function save() {
+  localStorage.setItem("kanban", JSON.stringify(cards));
+}
+function load() {
+  try { cards = JSON.parse(localStorage.getItem("kanban")) || cards; }
+  catch (_) {}            // ignore bad/empty storage
+}` },
+
+  { title:"10. Accessibility + touch (the production reality)", why:"Native HTML5 drag-and-drop has two real gaps. It is mouse-only in spirit, so keyboard users cannot drag — you must add a fallback, like focusing a card and using arrow keys or a 'move to column' menu, plus ARIA roles and live-region announcements. And it is unreliable on touch devices, where touch events do not map cleanly to drag events. For real products people reach for a library such as dnd-kit or SortableJS that wraps Pointer Events and bakes in keyboard and screen-reader support. Learn the native API to understand the mechanics, then lean on a library when you ship.", concept:`<div class="text-center w-full"><div class="text-4xl mb-2">🎉</div><p class="font-bold text-slate-700">draggable · preventDefault · dataTransfer · drop → move node + update model.</p><p class="text-xs text-slate-500 mt-1">For prod: keyboard fallback, ARIA, and dnd-kit / SortableJS for touch.</p></div>`, code:`// native DnD is mouse-first — add a keyboard fallback:
+card.tabIndex = 0;
+card.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") moveCard(card.id, nextColumn);
+});
+// production: dnd-kit / SortableJS wrap Pointer Events + a11y` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>

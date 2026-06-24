@@ -1,10 +1,10 @@
 # DesignFromZero
 
-Clone 50 iconic UIs (Stripe, Linear, macOS Dock, GitHub graph...) — one file each, no build step.
+Clone 50 iconic UIs - one file each, no build step.
 
 🌐 **Live (all days):** https://dev48v.infy.uk/designfromzero.php
 
-Every lesson is a single, self-contained HTML file with three tabs — 👁 **LOOK** (an interactive demo), 🧠 **UNDERSTAND** (the concept, step by step), 🔨 **BUILD** (do it yourself). No build tools, no install — open any file in a browser.
+Every lesson is a single, self-contained HTML file with three tabs — 👁 **LOOK** (interactive demo), 🧠 **UNDERSTAND** (the concept, step by step), 🔨 **BUILD** (do it yourself). No build tools, no install — open any file in a browser.
 
 ## Days
 - [DesignFromZero · Day 1 — 3-tier reference](https://dev48v.infy.uk/design/day1-stripe-pricing.html) — `day1-stripe-pricing.html`
@@ -21,6 +21,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 12 — macOS Dock](https://dev48v.infy.uk/design/day12-macos-dock.html) — `day12-macos-dock.html`
 - [DesignFromZero · Day 13 — GitHub Contribution Graph](https://dev48v.infy.uk/design/day13-github-contributions.html) — `day13-github-contributions.html`
 - [DesignFromZero · Day 14 — Circular Progress Ring](https://dev48v.infy.uk/design/day14-progress-ring.html) — `day14-progress-ring.html`
+- [DesignFromZero · Day 15 — Kanban Board](https://dev48v.infy.uk/design/day15-kanban-board.html) — `day15-kanban-board.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk
