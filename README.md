@@ -22,6 +22,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 13 — GitHub Contribution Graph](https://dev48v.infy.uk/design/day13-github-contributions.html) — `day13-github-contributions.html`
 - [DesignFromZero · Day 14 — Circular Progress Ring](https://dev48v.infy.uk/design/day14-progress-ring.html) — `day14-progress-ring.html`
 - [DesignFromZero · Day 15 — Kanban Board](https://dev48v.infy.uk/design/day15-kanban-board.html) — `day15-kanban-board.html`
+- [DesignFromZero · Day 16 — Skeleton Loaders](https://dev48v.infy.uk/design/day16-skeleton-loader.html) — `day16-skeleton-loader.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

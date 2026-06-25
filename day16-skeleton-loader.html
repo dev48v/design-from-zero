@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 16 — Skeleton Loaders</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Skeleton Loaders ===== */
+  /* a skeleton block is a rounded gray div sized like the real element,
+     with an animated light gradient sweeping across it */
+  .skel {
+    position:relative;
+    overflow:hidden;
+    background:#e2e8f0;                 /* slate-200 base */
+    border-radius:8px;
+  }
+  /* the shimmer = a light band that slides across via background-position */
+  .skel::after {
+    content:"";
+    position:absolute; inset:0;
+    transform:translateX(-100%);
+    background:linear-gradient(
+      90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.65) 50%,
+      rgba(255,255,255,0) 100%);
+    animation: shimmer var(--shimmer-dur,1.4s) ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    100% { transform:translateX(100%); }
+  }
+  /* reverse direction (right-to-left) */
+  .skel.rev::after { animation-direction: reverse; }
+
+  /* the real content fades in when data is ready */
+  .real-in { animation: fadeIn .5s ease-out; }
+
+  /* respect users who ask for less motion: freeze the shimmer */
+  @media (prefers-reduced-motion: reduce) {
+    .skel::after { animation: none; opacity:.5; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 16</div>
+      <h1 class="text-xl font-bold">💀 Skeleton Loaders — Shimmer While You Wait</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">Watch the gray blocks become real content.</h2>
+      <p class="text-white/80 mb-2"><b>Hit reload</b> and the card snaps back to <b>shimmer placeholders</b> — gray blocks shaped exactly like the avatar, title, lines, and image — for about 1.5s, then the real content fades in. Because the skeleton mirrors the final layout, <b>nothing jumps</b>. Flip on <b>side-by-side</b> to compare skeleton vs loaded, and tweak the <b>shimmer speed &amp; direction</b>.</p>
+    </div>
+
+    <!-- controls -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-5 py-3 mb-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full w-full" style="max-width:760px;">
+      <button id="reloadBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">🔄 reload</button>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        <input id="sideToggle" type="checkbox" class="w-4 h-4 accent-indigo-600" />
+        side-by-side (skeleton vs loaded)
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        speed
+        <input id="speed" type="range" min="0.6" max="3" step="0.1" value="1.4" class="accent-indigo-600" />
+        <span id="speedVal" class="text-xs text-slate-400 w-10 tabular-nums">1.4s</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        direction
+        <select id="dir" class="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:border-indigo-400 focus:outline-none">
+          <option value="ltr">→ left-to-right</option>
+          <option value="rtl">← right-to-left</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- the demo card(s) -->
+    <div id="demoWrap" class="grid gap-4 w-full" style="max-width:760px; grid-template-columns:1fr;">
+      <!-- live card injected by JS -->
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">What's happening under the hood</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        Each gray block is a <code>.skel</code> div sized to match its real element. The shimmer is a single light-colored
+        <code>linear-gradient</code> in a <code>::after</code> layer that slides across with a <code>transform:translateX</code>
+        keyframe. On reload we show the skeleton, wait ~1.5s for "data", then swap in the real markup with a fade — same
+        dimensions, so the layout never shifts.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> a skeleton mirrors the final layout's shape so the page doesn't jump (no layout shift) and feels
+      faster than a spinner — the shimmer is just an animated gradient sweeping across gray blocks.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How skeleton loaders work</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Gray blocks shaped like your content, one shimmer gradient, and a timed swap. Pure CSS plus a few lines of JS, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The skeleton markup — blocks shaped like the real card</h3></div>
+        <div class="relative"><pre>&lt;!-- mirror the final layout: avatar + title + lines + image --&gt;
+&lt;div class="card"&gt;
+  &lt;div class="row"&gt;
+    &lt;div class="skel avatar"&gt;&lt;/div&gt;        &lt;!-- round --&gt;
+    &lt;div&gt;
+      &lt;div class="skel line title"&gt;&lt;/div&gt;   &lt;!-- name --&gt;
+      &lt;div class="skel line sub"&gt;&lt;/div&gt;     &lt;!-- handle --&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="skel line"&gt;&lt;/div&gt;             &lt;!-- body --&gt;
+  &lt;div class="skel line short"&gt;&lt;/div&gt;
+  &lt;div class="skel image"&gt;&lt;/div&gt;            &lt;!-- media --&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The base block — a rounded gray div</h3></div>
+        <div class="relative"><pre>/* every placeholder shares this look */
+.skel {
+  position: relative;     /* anchor for the shimmer layer */
+  overflow: hidden;       /* clip the moving gradient */
+  background: #e2e8f0;    /* a calm light-gray */
+  border-radius: 8px;
+}
+/* a generic text line */
+.line   { height: 12px; margin: 8px 0; }
+.short  { width: 60%; }
+.avatar { width: 48px; height: 48px; border-radius: 9999px; }
+.image  { height: 180px; border-radius: 12px; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">The shimmer — an animated gradient that sweeps across</h3></div>
+        <div class="relative"><pre>/* a light band riding in an ::after layer */
+.skel::after {
+  content: "";
+  position: absolute; inset: 0;
+  transform: translateX(-100%);          /* start off the left edge */
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0)   0%,
+    rgba(255,255,255,.65) 50%,           /* the highlight */
+    rgba(255,255,255,0)   100%);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }  /* glide off the right edge */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Reserve the real dimensions (no layout shift)</h3></div>
+        <div class="relative"><pre>/* The skeleton must occupy the SAME box as the real element.
+   Match width + height so when content arrives, nothing moves. */
+.image      { height: 180px; }   /* real photo is also ~180px */
+.avatar     { width: 48px; height: 48px; }
+.title      { width: 40%; height: 14px; }
+
+/* Tip: if the real text wraps to 3 lines, draw 3 skeleton lines.
+   A matching shape = a Cumulative Layout Shift (CLS) of ~0. */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The swap — skeleton while loading, real content on ready</h3></div>
+        <div class="relative"><pre>const slot = document.querySelector("#feed");
+
+// 1) show the skeleton immediately
+slot.innerHTML = skeletonHTML;
+slot.setAttribute("aria-busy", "true");   // tell AT it's loading
+
+// 2) fetch the real data
+const data = await fetch("/api/post").then(r =&gt; r.json());
+
+// 3) replace with real markup (fades in via .real-in)
+slot.innerHTML = realHTML(data);
+slot.removeAttribute("aria-busy");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Fade the real content in</h3></div>
+        <div class="relative"><pre>/* a gentle entrance so the swap doesn't snap */
+.real-in { animation: fadeIn .5s ease-out; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+/* wrap the real markup so it animates on insert:
+   realHTML = `&lt;div class="real-in"&gt;...content...&lt;/div&gt;` */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Respect prefers-reduced-motion</h3></div>
+        <div class="relative"><pre>/* some users get motion sick — kill the sweep for them.
+   Leave a static, slightly dimmed gray so it still reads
+   as "loading", just without the moving highlight. */
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; opacity: .5; }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Tune speed &amp; direction with a CSS variable</h3></div>
+        <div class="relative"><pre>/* drive duration from a variable so JS can tweak it live */
+.skel::after { animation: shimmer var(--shimmer-dur, 1.4s) ease-in-out infinite; }
+.skel.rev::after { animation-direction: reverse; }  /* right-to-left */
+
+// JS: a speed slider + direction toggle
+card.style.setProperty("--shimmer-dur", speed + "s");
+card.querySelectorAll(".skel")
+    .forEach(s =&gt; s.classList.toggle("rev", dir === "rtl"));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 16 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">Gray blocks shaped like the content, a gradient sweep, a timed swap — no layout shift, no spinner. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SKELETON LOADER DEMO =====
+const demoWrap = document.getElementById("demoWrap");
+const reloadBtn = document.getElementById("reloadBtn");
+const sideToggle = document.getElementById("sideToggle");
+const speed = document.getElementById("speed");
+const speedVal = document.getElementById("speedVal");
+const dirSel = document.getElementById("dir");
+
+// the "real" content that arrives after loading
+const POST = {
+  name: "Maya Okonkwo",
+  handle: "@maya.builds",
+  avatar: "https://i.pravatar.cc/96?img=47",
+  body: "Just shipped the new dashboard. Swapped every spinner for skeleton screens and the app instantly feels twice as fast — even though the data takes exactly as long to load. Perceived performance is real. 💀✨",
+  image: "https://picsum.photos/seed/skeleton16/640/360",
+};
+
+// --- the skeleton markup: gray blocks shaped like the real card ---
+function skeletonHTML() {
+  const rev = dirSel.value === "rtl" ? " rev" : "";
+  return `
+    <div class="flex items-center gap-3 mb-4">
+      <div class="skel${rev}" style="width:52px;height:52px;border-radius:9999px;flex:0 0 auto;"></div>
+      <div class="flex-1">
+        <div class="skel${rev}" style="width:40%;height:13px;margin-bottom:8px;"></div>
+        <div class="skel${rev}" style="width:25%;height:11px;"></div>
+      </div>
+    </div>
+    <div class="skel${rev}" style="height:12px;margin:9px 0;"></div>
+    <div class="skel${rev}" style="height:12px;margin:9px 0;"></div>
+    <div class="skel${rev}" style="height:12px;margin:9px 0;width:70%;"></div>
+    <div class="skel${rev}" style="height:200px;margin-top:14px;border-radius:12px;"></div>`;
+}
+
+// --- the real card markup (same shape + dimensions → no shift) ---
+function realHTML() {
+  return `
+    <div class="real-in">
+      <div class="flex items-center gap-3 mb-4">
+        <img src="${POST.avatar}" alt="" style="width:52px;height:52px;border-radius:9999px;flex:0 0 auto;object-fit:cover;" />
+        <div class="flex-1 leading-tight">
+          <div class="font-bold text-slate-800 text-sm">${POST.name}</div>
+          <div class="text-slate-400 text-xs">${POST.handle}</div>
+        </div>
+      </div>
+      <p class="text-sm text-slate-700 leading-relaxed mb-3">${POST.body}</p>
+      <img src="${POST.image}" alt="" style="width:100%;height:200px;border-radius:12px;object-fit:cover;display:block;" />
+    </div>`;
+}
+
+// build one card shell and return its inner content slot
+function cardShell(label) {
+  const card = document.createElement("div");
+  card.className = "bg-white/95 rounded-2xl shadow-xl p-5";
+  card.style.setProperty("--shimmer-dur", speed.value + "s");
+  const cap = label
+    ? `<div class="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-3">${label}</div>`
+    : "";
+  card.innerHTML = cap + `<div class="slot"></div>`;
+  return card;
+}
+
+let swapTimer = null;
+
+// render the demo: either a single live card, or skeleton vs loaded side-by-side
+function renderDemo(loading) {
+  clearTimeout(swapTimer);
+  demoWrap.innerHTML = "";
+
+  if (sideToggle.checked) {
+    // left = always skeleton, right = always loaded — a static comparison
+    demoWrap.style.gridTemplateColumns = "1fr 1fr";
+    const left = cardShell("⏳ Skeleton");
+    left.querySelector(".slot").innerHTML = skeletonHTML();
+    left.querySelector(".slot").setAttribute("aria-busy", "true");
+    const right = cardShell("✅ Loaded");
+    right.querySelector(".slot").innerHTML = realHTML();
+    demoWrap.append(left, right);
+    return;
+  }
+
+  // single live card that transitions skeleton → content
+  demoWrap.style.gridTemplateColumns = "1fr";
+  const card = cardShell("");
+  const slot = card.querySelector(".slot");
+  demoWrap.appendChild(card);
+
+  if (loading) {
+    slot.innerHTML = skeletonHTML();
+    slot.setAttribute("aria-busy", "true");
+    swapTimer = setTimeout(() => {
+      slot.innerHTML = realHTML();
+      slot.removeAttribute("aria-busy");
+    }, 1500);
+  } else {
+    slot.innerHTML = realHTML();
+  }
+}
+
+// --- controls wiring ---
+reloadBtn.onclick = () => renderDemo(true);
+sideToggle.onchange = () => renderDemo(false);
+speed.oninput = () => {
+  speedVal.textContent = parseFloat(speed.value).toFixed(1) + "s";
+  // live-update the shimmer duration on every card currently on screen
+  demoWrap.querySelectorAll(".slot").forEach(s => s.closest("div[class*='rounded-2xl']").style.setProperty("--shimmer-dur", speed.value + "s"));
+};
+dirSel.onchange = () => {
+  // re-render showing the skeleton so the new sweep direction is visible
+  renderDemo(!sideToggle.checked);
+};
+
+// boot: start in the loaded state, then let the user hit reload to watch the swap
+renderDemo(false);
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. Why skeletons beat spinners", why:"A spinner says 'something is happening' but tells you nothing about what or how much. A skeleton screen instead shows the rough shape of the content that is about to appear — gray blocks where the avatar, title, lines, and image will be. This gives the brain a head start: it can already make sense of the layout before any real data lands. Studies and real products consistently find that skeletons feel faster than spinners even when the actual load time is identical. The trick is perceived performance: the wait feels shorter because the page already looks like itself.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center items-center gap-6"><div><div class="text-2xl">🔄</div><div class="mt-1">spinner = "wait…"</div></div><div class="text-slate-400">vs</div><div><div class="text-2xl">💀</div><div class="mt-1">skeleton = "here's the shape"</div></div></div><div class="mt-2 text-slate-500">same load time · skeleton feels faster</div></div>`, code:`// spinner: zero information about the result
+<div class="spinner"></div>
+
+// skeleton: a preview of the layout to come
+<div class="skel avatar"></div>
+<div class="skel line title"></div>
+<div class="skel line"></div>` },
+
+  { title:"2. Match the real layout's shape", why:"A skeleton only works if it resembles the thing it stands in for. If the real card is an avatar with a name beside it, two lines of text, and a wide image, the skeleton should be a circle, a couple of short bars, two lines, and a tall rectangle — in those positions. The closer the placeholder mirrors the final composition, the more the eye accepts it as the page simply 'warming up' rather than something broken. A skeleton that looks nothing like the result is just decorative noise and breaks the illusion the moment the content swaps in.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-6 items-start text-left"><div><div class="w-8 h-8 rounded-full bg-slate-300"></div><div class="w-16 h-2 bg-slate-300 rounded mt-2"></div><div class="w-24 h-12 bg-slate-300 rounded mt-2"></div></div><div class="text-slate-400 self-center">≈</div><div><div class="w-8 h-8 rounded-full bg-indigo-400"></div><div class="w-16 h-2 bg-slate-600 rounded mt-2"></div><div class="w-24 h-12 bg-indigo-200 rounded mt-2"></div></div></div><div class="mt-2 text-slate-500">placeholder shape ≈ real shape</div></div>`, code:`// real card                 // its skeleton
+<img class="avatar">          <div class="skel avatar"></div>
+<h3 class="name">…</h3>        <div class="skel line title"></div>
+<p>… two lines …</p>          <div class="skel line"></div>
+                              <div class="skel line short"></div>
+<img class="photo">           <div class="skel image"></div>` },
+
+  { title:"3. The shimmer is an animated linear-gradient", why:"What gives a skeleton life is the shimmer: a soft band of light that glides across the gray. You build it from a single linear-gradient that is transparent on the edges and lightly white in the middle. That gradient lives in a layer over the block, and you animate its position so the highlight travels from one side to the other and repeats. There is no image, no GIF, no JavaScript loop — just CSS moving a gradient. This is what makes the placeholder read as 'loading' rather than as a permanently broken gray box.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="skel mx-auto" style="width:80%;height:24px;"></div><div class="mt-3">a transparent→white→transparent band</div><div class="mt-1">slides across, on a loop</div></div>`, code:`background: linear-gradient(90deg,
+  rgba(255,255,255,0)   0%,
+  rgba(255,255,255,.65) 50%,   /* the moving highlight */
+  rgba(255,255,255,0)   100%);` },
+
+  { title:"4. background-position (or transform) keyframes", why:"The motion comes from animating the highlight across the block on a loop. The classic technique stretches the gradient wider than the element and animates its background-position from one side to the other; a cleaner variant puts the gradient in an ::after layer and slides it with transform: translateX, which the browser can move on the GPU. Either way it is a keyframe animation set to repeat infinitely with a gentle easing. Keeping it a transform animation is the most performant choice because it avoids repainting the element on every frame.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>frame 0%: highlight off the left edge</div><div class="mt-1">frame 100%: highlight off the right edge</div><div class="mt-1"><code>animation: shimmer 1.4s infinite</code></div></div>`, code:`.skel::after {
+  transform: translateX(-100%);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer { 100% { transform: translateX(100%); } }` },
+
+  { title:"5. Building the blocks (rounded gray divs)", why:"Each placeholder is just an empty div with a gray background, some border-radius, and a width and height. Reusable utility classes do most of the work: a 'line' class for text bars, a 'short' modifier for a partial line, an 'avatar' class that is a small circle, an 'image' class that is a tall rectangle. You compose these like Lego to mimic any card. Because they are ordinary boxes, they sit in normal document flow and respond to flexbox and grid exactly like the real elements will, which keeps the skeleton honest.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-left mx-auto" style="max-width:220px;"><div class="skel" style="width:44px;height:44px;border-radius:9999px;"></div><div class="skel" style="height:11px;margin-top:10px;width:70%;"></div><div class="skel" style="height:11px;margin-top:8px;width:50%;"></div></div>`, code:`.skel   { background:#e2e8f0; border-radius:8px;
+          position:relative; overflow:hidden; }
+.line   { height:12px; margin:8px 0; }
+.short  { width:60%; }
+.avatar { width:48px; height:48px; border-radius:9999px; }
+.image  { height:180px; border-radius:12px; }` },
+
+  { title:"6. The swap: skeleton while loading → content on ready", why:"The logic is a three-step dance. The instant the component mounts you render the skeleton, before any request even returns. Then you fire the fetch for the real data. When the data resolves you replace the skeleton markup with the real markup — typically by swapping innerHTML or by toggling a 'loading' boolean in your framework. Wrapping the real content in a tiny fade-in animation softens the transition so it does not snap. The skeleton's only job is to occupy the screen gracefully during that gap between request and response.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>mount → show skeleton</div><div class="mt-1">fetch data…</div><div class="mt-1">data ready → swap in real content (fade)</div></div>`, code:`slot.innerHTML = skeletonHTML;          // 1. show skeleton
+const data = await fetch(url).then(r => r.json()); // 2. load
+slot.innerHTML = realHTML(data);        // 3. swap on ready` },
+
+  { title:"7. Avoid cumulative layout shift (reserve dimensions)", why:"The biggest payoff of skeletons is killing layout shift — the jarring jump when content pops in and shoves everything down. To get it, the skeleton must reserve the same dimensions as the real element: if the photo will be 180px tall, the placeholder is 180px tall; if the text wraps to three lines, draw three skeleton lines. When the real content fits into the exact box the skeleton held, nothing moves — your Cumulative Layout Shift score stays near zero. A mismatched skeleton that is shorter than the content reintroduces the very jump you were trying to prevent.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600 font-bold">skeleton box == content box</div><div class="mt-1">content arrives → nothing shifts → CLS ≈ 0</div><div class="mt-1 text-rose-500">too-short skeleton → page jumps on load</div></div>`, code:`/* reserve the real height up front */
+.skel.image { height: 180px; }   /* == the real photo */
+.skel.avatar{ width:48px; height:48px; }
+/* same box in, same box out → no layout shift */` },
+
+  { title:"8. When NOT to use a skeleton", why:"Skeletons are not free and not always right. If data is effectively instant — cached, local, or already in memory — a skeleton that flashes for 50ms is worse than showing nothing, because the flicker itself is distracting. For very small or simple content, like a single line of text or a tiny badge, the placeholder is more effort than it is worth. And for actions the user explicitly triggered, like submitting a form, an inline spinner or a disabled button often communicates intent better. Reach for skeletons when you are loading substantial, structured content over a noticeable network delay.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600">✓ big structured content over the network</div><div class="mt-1 text-rose-500">✗ instant/cached data (flicker)</div><div class="mt-1 text-rose-500">✗ tiny content · explicit button actions</div></div>`, code:`// guard against the flash for fast loads
+let showSkel = false;
+const t = setTimeout(() => showSkel = true, 150); // only if slow
+const data = await fetch(url); clearTimeout(t);
+// if it returned in <150ms, the skeleton never appears` },
+
+  { title:"9. Accessibility: aria-busy + prefers-reduced-motion", why:"A pile of gray boxes means nothing to a screen reader, so mark the loading region with aria-busy=\"true\" while the skeleton is shown and remove it once the real content arrives; assistive tech then announces the state change instead of reading empty divs. The shimmer is motion, and some people are sensitive to it, so wrap the animation in a prefers-reduced-motion media query and disable the sweep for those users — leave a static, slightly dimmed gray so it still reads as loading. These two touches turn a flashy effect into one that is inclusive rather than alienating.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div><code>aria-busy="true"</code> while loading</div><div class="mt-1"><code>prefers-reduced-motion</code> → freeze the shimmer</div></div>`, code:`slot.setAttribute("aria-busy", "true");   // loading
+// …when ready…
+slot.removeAttribute("aria-busy");
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; opacity:.5; }
+}` },
+
+  { title:"10. Content-aware vs generic, and libraries vs hand-rolled", why:"There are two design philosophies. A content-aware skeleton is hand-shaped to one specific layout — this exact card, this exact list row — and looks most convincing, at the cost of being tied to that markup. A generic skeleton uses a few reusable shapes that stand in for anything; it is cheaper to maintain but a looser match. On the tooling side, you can hand-roll the CSS in a dozen lines, or pull in a library like react-content-loader or react-loading-skeleton that gives you composable primitives and sensible defaults. Learn the hand-rolled version first so you understand the mechanics, then reach for a library when you have many varied layouts to cover.", concept:`<div class="text-center w-full"><div class="text-4xl mb-2">🎉</div><p class="font-bold text-slate-700">Gray blocks shaped like the content + a gradient sweep + a timed swap.</p><p class="text-xs text-slate-500 mt-1">Content-aware = best match · generic = cheap · libraries scale it.</p></div>`, code:`// hand-rolled: ~12 lines of CSS, full control
+.skel { ... } .skel::after { ...shimmer... }
+
+// at scale, a library gives composable primitives:
+// react-loading-skeleton, react-content-loader
+<Skeleton count={3} height={12} />` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
