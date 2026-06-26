@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 17 — Instagram Stories</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Instagram Stories ===== */
+  /* the phone frame holds the story stage + the segmented bars on top */
+  .phone {
+    width:300px; height:540px;
+    border-radius:30px;
+    background:#000;
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 25px 60px rgba(0,0,0,.45), 0 0 0 6px #18181b;
+    user-select:none;
+  }
+  /* the full-bleed slide behind everything */
+  .stage {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; text-align:center;
+    transition:opacity .25s ease;
+  }
+  /* the row of segmented progress bars, one per slide */
+  .bars {
+    position:absolute; top:10px; left:10px; right:10px;
+    display:flex; gap:4px; z-index:30;
+  }
+  /* one segment = a thin track with a fill child inside it */
+  .seg {
+    flex:1; height:3px;
+    background:rgba(255,255,255,.35);   /* the empty track */
+    border-radius:3px;
+    overflow:hidden;
+  }
+  .seg-fill {
+    height:100%; width:0%;
+    background:#fff;                    /* the bright fill */
+    border-radius:3px;
+  }
+  /* tap zones: invisible left/right halves over the whole story */
+  .tapzone {
+    position:absolute; top:0; bottom:0; width:50%; z-index:20;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .tapzone.left  { left:0; }
+  .tapzone.right { right:0; }
+
+  /* the avatar + username header, above the slide, below the bars */
+  .story-head { position:absolute; top:22px; left:12px; right:12px; z-index:25; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage { transition:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 17</div>
+      <h1 class="text-xl font-bold">📸 Instagram Stories — Segmented Progress Bars</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">Watch the bar fill, then jump to the next story.</h2>
+      <p class="text-white/80 mb-2">Across the top sit <b>one thin bar per slide</b>. Only the <b>current</b> bar animates its width from 0&rarr;100% over ~4s; finished bars stay full, upcoming ones stay empty. When it fills, it <b>auto-advances</b>. <b>Tap the right half</b> to skip ahead, the <b>left half</b> to go back, and <b>press-and-hold anywhere</b> to pause the timer (release to resume).</p>
+    </div>
+
+    <!-- controls -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-5 py-3 mb-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full w-full" style="max-width:760px;">
+      <button id="restartBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">↺ restart</button>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        per-slide
+        <input id="dur" type="range" min="2" max="8" step="0.5" value="4" class="accent-indigo-600" />
+        <span id="durVal" class="text-xs text-slate-400 w-10 tabular-nums">4.0s</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        <input id="loopToggle" type="checkbox" class="w-4 h-4 accent-indigo-600" checked />
+        loop at the end
+      </label>
+      <span id="status" class="text-xs font-semibold text-indigo-600 tabular-nums">slide 1 / 5</span>
+    </div>
+
+    <!-- the live phone viewer -->
+    <div class="phone" id="phone">
+      <!-- bars, head, stage, tapzones injected by JS -->
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">What's happening under the hood</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        There are <b>N segments</b> — one per story. Each segment is a track with a <code>.seg-fill</code> inside it.
+        Only the <b>active</b> segment animates: a <code>requestAnimationFrame</code> loop nudges its <code>width</code> from
+        0% to 100% over the chosen duration. When it reaches 100% we <b>advance</b>: the segment snaps full, the next one
+        becomes active and starts at 0%. Past segments are forced to 100%, future ones to 0%. Tapping a half jumps the index;
+        pressing and holding just stops feeding the loop, so the fill freezes until you let go.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> a row of N bars where only the active one grows 0&rarr;100%; finishing (or a right-tap)
+      advances the index, a left-tap rewinds it, and holding pauses the timer — that's the entire Stories pattern.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How Stories progress bars work</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A row of N segments, one rAF loop filling the active one, and a tiny index you push around with taps and a hold. Pure CSS plus vanilla JS, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The segments markup — one bar per story</h3></div>
+        <div class="relative"><pre>&lt;div class="bars"&gt;
+  &lt;!-- one .seg per slide; .seg-fill is the growing part --&gt;
+  &lt;div class="seg"&gt;&lt;div class="seg-fill"&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;div class="seg"&gt;&lt;div class="seg-fill"&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;div class="seg"&gt;&lt;div class="seg-fill"&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;/div&gt;
+
+&lt;!-- build them from your slides array instead of by hand: --&gt;
+&lt;script&gt;
+  bars.innerHTML = slides.map(() =&gt;
+    `&lt;div class="seg"&gt;&lt;div class="seg-fill"&gt;&lt;/div&gt;&lt;/div&gt;`
+  ).join("");
+&lt;/script&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Style the track and the fill</h3></div>
+        <div class="relative"><pre>.bars { position:absolute; top:10px; left:10px; right:10px;
+        display:flex; gap:4px; z-index:30; }
+
+/* each segment shares the row width via flex:1 */
+.seg {
+  flex:1; height:3px;
+  background:rgba(255,255,255,.35);  /* the empty track */
+  border-radius:3px;
+  overflow:hidden;                   /* clip the fill */
+}
+.seg-fill {
+  height:100%; width:0%;             /* starts empty */
+  background:#fff;                   /* the bright bar */
+  border-radius:3px;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Animate ONLY the active bar with requestAnimationFrame</h3></div>
+        <div class="relative"><pre>let index = 0, elapsed = 0, last = 0;
+const DURATION = 4000;   // ms per slide
+
+function tick(now) {
+  if (!last) last = now;
+  if (!paused) elapsed += now - last;
+  last = now;
+
+  const pct = Math.min(elapsed / DURATION, 1) * 100;
+  fills[index].style.width = pct + "%";   // grow the active fill
+
+  if (pct &gt;= 100) next();                  // full → advance
+  raf = requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Advance, rewind, and reset each segment's state</h3></div>
+        <div class="relative"><pre>function paint() {
+  fills.forEach((f, i) =&gt; {
+    if (i &lt; index)      f.style.width = "100%"; // past = full
+    else if (i &gt; index) f.style.width = "0%";   // future = empty
+    // the active one is left for the rAF loop to fill
+  });
+  showSlide(index);
+}
+
+function next() {
+  if (index &lt; slides.length - 1) { index++; elapsed = 0; }
+  else if (loop)                 { index = 0; elapsed = 0; }
+  paint();
+}
+function prev() { index = Math.max(0, index - 1); elapsed = 0; paint(); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Tap zones — left half = prev, right half = next</h3></div>
+        <div class="relative"><pre>&lt;div class="tapzone left"&gt;&lt;/div&gt;   &lt;!-- covers left 50% --&gt;
+&lt;div class="tapzone right"&gt;&lt;/div&gt;  &lt;!-- covers right 50% --&gt;
+
+.tapzone { position:absolute; top:0; bottom:0; width:50%; z-index:20; }
+.tapzone.left  { left:0; }
+.tapzone.right { right:0; }
+
+&lt;script&gt;
+  left.onclick  = prev;
+  right.onclick = next;
+&lt;/script&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Press-and-hold to pause (pointerdown / pointerup)</h3></div>
+        <div class="relative"><pre>let paused = false;
+
+// any press pauses; release resumes. Use pointer events so it
+// works for mouse AND touch with one set of handlers.
+phone.addEventListener("pointerdown", () =&gt; paused = true);
+phone.addEventListener("pointerup",   () =&gt; { paused = false; last = 0; });
+phone.addEventListener("pointerleave",() =&gt; { paused = false; last = 0; });
+
+// resetting `last = 0` on resume stops the paused gap from being
+// counted as elapsed time on the very next frame.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Swap the slide and preload the next one</h3></div>
+        <div class="relative"><pre>function showSlide(i) {
+  stage.style.background = slides[i].bg;   // gradient / image
+  stage.textContent      = slides[i].emoji;
+  // preload the NEXT image so it's ready before we advance
+  const n = slides[i + 1];
+  if (n && n.img) { const im = new Image(); im.src = n.img; }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Loop or end — and stay accessible</h3></div>
+        <div class="relative"><pre>// at the last slide: loop back, or stop and show an "end" state
+function next() {
+  if (index &lt; slides.length - 1) index++;
+  else if (loop)                 index = 0;
+  else { cancelAnimationFrame(raf); onEnd(); return; }
+  elapsed = 0; paint();
+}
+
+// accessibility: never trap the user — pausing on hold is the
+// escape hatch, so a slow reader can stop the auto-advance.
+// also expose buttons (prev/next) so it works without taps.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 17 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">N bars, one rAF loop on the active one, an index you push with taps, and a hold-to-pause — the whole Stories pattern in a screenful of code. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== INSTAGRAM STORIES DEMO =====
+const phone = document.getElementById("phone");
+const restartBtn = document.getElementById("restartBtn");
+const durSlider = document.getElementById("dur");
+const durVal = document.getElementById("durVal");
+const loopToggle = document.getElementById("loopToggle");
+const statusEl = document.getElementById("status");
+
+// the 4-5 story slides (gradient backgrounds + a big emoji)
+const SLIDES = [
+  { bg:"linear-gradient(160deg,#f97316,#db2777)", emoji:"🌅", cap:"Morning light" },
+  { bg:"linear-gradient(160deg,#6366f1,#0ea5e9)", emoji:"🏔️", cap:"Up the ridge" },
+  { bg:"linear-gradient(160deg,#10b981,#14b8a6)", emoji:"🌿", cap:"Into the green" },
+  { bg:"linear-gradient(160deg,#8b5cf6,#ec4899)", emoji:"🎶", cap:"Sound check" },
+  { bg:"linear-gradient(160deg,#0f172a,#334155)", emoji:"🌙", cap:"Night cap" },
+];
+
+let index = 0;
+let elapsed = 0;       // ms accumulated on the active slide
+let lastTs = 0;        // previous rAF timestamp
+let paused = false;
+let raf = null;
+let fills = [];
+let stageEl, headEl;
+
+// build the phone's internals once
+function buildPhone() {
+  const bars = `<div class="bars">${SLIDES.map(()=>'<div class="seg"><div class="seg-fill"></div></div>').join("")}</div>`;
+  const head = `<div class="story-head flex items-center gap-2">
+      <div class="w-8 h-8 rounded-full flex-none" style="background:linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7);padding:2px;">
+        <div class="w-full h-full rounded-full bg-white flex items-center justify-center text-sm">🦊</div>
+      </div>
+      <div class="leading-tight">
+        <div class="text-white text-xs font-semibold drop-shadow">fox.travels</div>
+        <div class="text-white/70 text-[10px]">just now</div>
+      </div>
+    </div>`;
+  const stage = `<div class="stage" id="stage"></div>`;
+  const zones = `<div class="tapzone left" id="zoneL"></div><div class="tapzone right" id="zoneR"></div>`;
+  phone.innerHTML = stage + zones + bars + head;
+  fills = Array.from(phone.querySelectorAll(".seg-fill"));
+  stageEl = phone.querySelector("#stage");
+  // tap zones
+  phone.querySelector("#zoneL").onclick = prev;
+  phone.querySelector("#zoneR").onclick = next;
+  // press-and-hold to pause (pointer events cover mouse + touch)
+  phone.addEventListener("pointerdown", () => { paused = true; });
+  phone.addEventListener("pointerup",   () => { paused = false; lastTs = 0; });
+  phone.addEventListener("pointerleave",() => { paused = false; lastTs = 0; });
+}
+
+function dur() { return parseFloat(durSlider.value) * 1000; }
+
+// force each segment to its correct state, then show the slide
+function paint() {
+  fills.forEach((f, i) => {
+    if (i < index)      f.style.width = "100%";  // past = full
+    else if (i > index) f.style.width = "0%";    // future = empty
+    // active is filled by the rAF loop
+  });
+  showSlide(index);
+  statusEl.textContent = `slide ${index + 1} / ${SLIDES.length}`;
+}
+
+function showSlide(i) {
+  const s = SLIDES[i];
+  stageEl.style.opacity = "0";
+  // tiny fade for polish
+  requestAnimationFrame(() => {
+    stageEl.style.background = s.bg;
+    stageEl.innerHTML = `<div><div style="font-size:84px;line-height:1;">${s.emoji}</div>
+      <div class="mt-3 text-white font-semibold drop-shadow">${s.cap}</div></div>`;
+    stageEl.style.opacity = "1";
+  });
+}
+
+function next() {
+  if (index < SLIDES.length - 1) { index++; elapsed = 0; }
+  else if (loopToggle.checked)   { index = 0; elapsed = 0; }
+  else { /* stay on the last slide, full */ elapsed = dur(); }
+  paint();
+}
+
+function prev() {
+  index = Math.max(0, index - 1);
+  elapsed = 0;
+  paint();
+}
+
+// the single rAF loop: only the active segment grows
+function tick(now) {
+  if (!lastTs) lastTs = now;
+  if (!paused) elapsed += now - lastTs;
+  lastTs = now;
+
+  const pct = Math.min(elapsed / dur(), 1) * 100;
+  if (fills[index]) fills[index].style.width = pct + "%";
+
+  if (pct >= 100) {
+    const atEnd = index === SLIDES.length - 1 && !loopToggle.checked;
+    if (!atEnd) next();           // full → advance (or loop)
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+function start() {
+  index = 0; elapsed = 0; lastTs = 0; paused = false;
+  paint();
+  if (raf) cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(tick);
+}
+
+// --- controls wiring ---
+restartBtn.onclick = start;
+durSlider.oninput = () => { durVal.textContent = parseFloat(durSlider.value).toFixed(1) + "s"; };
+loopToggle.onchange = () => {}; // read live inside next()/tick()
+
+buildPhone();
+start();
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. The Stories UX pattern", why:"Stories are short, full-screen slides that play one after another on a timer, the way Instagram, WhatsApp, and Snapchat all work. The user does not press play — the slides advance themselves after a few seconds each, so watching is effortless. A row of thin bars at the top quietly shows how many slides there are and how far through the current one you are. Taps let you skip forward or back, and a press-and-hold lets you linger on a slide. The whole feel is 'lean back and watch', with just enough control to escape if you want it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-1 mb-3"><div class="h-1 w-10 bg-slate-700 rounded"></div><div class="h-1 w-10 bg-indigo-400 rounded"></div><div class="h-1 w-10 bg-slate-300 rounded"></div><div class="h-1 w-10 bg-slate-300 rounded"></div></div><div class="text-3xl">📸</div><div class="mt-2 text-slate-500">auto-playing full-screen slides + a progress row on top</div></div>`, code:`// the model is tiny:
+let index = 0;            // which slide is showing
+const slides = [ ... ];   // 4-5 full-screen slides
+// a timer advances index; bars reflect index + progress` },
+
+  { title:"2. The segmented progress bar", why:"Instead of one long bar, Stories use one short bar per slide, sitting in a row across the top. Each bar is a thin track with a fill inside it. A bar that belongs to a slide you have already seen is completely full; a bar for a slide you have not reached yet is completely empty; and exactly one bar — the current slide's — is partly filled and growing. This segmented design tells you two things at a glance: how many slides there are in total, and precisely where you are in the set. It is far more informative than a single spinner or one continuous bar.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-1 mb-2"><div class="h-2 w-12 bg-slate-700 rounded"></div><div class="h-2 w-12 bg-slate-700 rounded"></div><div class="h-2 w-12 rounded overflow-hidden bg-slate-300"><div class="h-full bg-indigo-500" style="width:55%"></div></div><div class="h-2 w-12 bg-slate-300 rounded"></div></div><div class="text-slate-500 mt-1">full = seen · partial = now · empty = upcoming</div></div>`, code:`<div class="bars">
+  <div class="seg"><div class="seg-fill"></div></div>  <!-- one -->
+  <div class="seg"><div class="seg-fill"></div></div>  <!-- per -->
+  <div class="seg"><div class="seg-fill"></div></div>  <!-- slide -->
+</div>` },
+
+  { title:"3. Driving the fill (CSS animation or a rAF timer)", why:"Only the active bar moves, and there are two clean ways to make it grow. The CSS way: give the active fill a width transition or a keyframe that runs from 0% to 100% over the slide's duration, and let the browser tween it. The JavaScript way: run a requestAnimationFrame loop that, every frame, adds the time since the last frame to an 'elapsed' counter and sets the fill's width to elapsed divided by duration. The rAF approach is a little more code but gives you exact control — you can pause it, read the current percentage, and decide precisely when the slide is finished. Either way, the fill width is just a number from 0 to 100.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="h-3 w-3/4 mx-auto rounded overflow-hidden bg-slate-300"><div class="h-full bg-indigo-500" style="width:70%"></div></div><div class="mt-2 text-slate-500">width = elapsed / duration · 0% → 100%</div></div>`, code:`// rAF timer: explicit, pausable, readable
+const pct = Math.min(elapsed / DURATION, 1) * 100;
+fills[index].style.width = pct + "%";
+
+/* or pure CSS:
+   .seg-fill.active { animation: grow 4s linear forwards; }
+   @keyframes grow { to { width:100%; } } */` },
+
+  { title:"4. Auto-advance when a slide completes", why:"The defining behaviour of Stories is that they move on by themselves. The moment the active bar's fill reaches 100%, you advance: increment the index to the next slide, reset the elapsed time back to zero, and start filling the next bar. Because the loop checks for completion on every frame, the hand-off feels instant and seamless. This is what makes Stories playable without any input — you can watch an entire set without lifting a finger. The completion check is literally 'if the percentage is at or past 100, call next()'.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>active bar hits <b>100%</b></div><div class="mt-1 text-indigo-600 font-semibold">→ index + 1</div><div class="mt-1">elapsed = 0, next bar starts filling</div></div>`, code:`if (pct >= 100) next();
+
+function next() {
+  index++;          // move to the next slide
+  elapsed = 0;      // restart the timer for it
+  paint();          // update bar states + slide
+}` },
+
+  { title:"5. Tap zones — left half prev, right half next", why:"Stories overlay two invisible touch areas over the slide: the left half and the right half. Tapping the right half jumps forward to the next slide immediately; tapping the left half jumps back to the previous one. You build them as two absolutely-positioned divs, each 50% wide, sitting above the slide but below the progress bars in stacking order. They carry no visible style — they are pure hit targets. This split is muscle memory for billions of people, so matching it exactly is what makes your viewer feel native rather than homemade.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex border border-slate-300 rounded overflow-hidden mx-auto" style="max-width:200px;height:70px;"><div class="flex-1 bg-slate-200 flex items-center justify-center">← prev</div><div class="flex-1 bg-indigo-100 flex items-center justify-center">next →</div></div><div class="mt-2 text-slate-500">two invisible 50% halves over the slide</div></div>`, code:`<div class="tapzone left"></div>   <!-- left 50%  -->
+<div class="tapzone right"></div>  <!-- right 50% -->
+
+left.onclick  = prev;   // back one slide
+right.onclick = next;   // forward one slide` },
+
+  { title:"6. Press-and-hold to pause", why:"If a slide has something worth reading, you can press and hold to stop the timer, then release to carry on. You implement it with pointer events: on pointerdown set a 'paused' flag, on pointerup (and pointerleave, in case the finger slides off) clear it. While paused, your animation loop simply stops adding to the elapsed counter, so the fill freezes exactly where it was. Pointer events are the right choice because one pair of handlers covers both mouse and touch. One subtle gotcha: when you resume, reset your 'last timestamp' so the paused gap is not suddenly counted as elapsed time on the next frame.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-2xl">👆⏸</div><div class="mt-1">hold → <code>paused = true</code> → fill freezes</div><div class="mt-1">release → <code>paused = false</code> → resumes</div></div>`, code:`let paused = false;
+el.addEventListener("pointerdown", () => paused = true);
+el.addEventListener("pointerup",   () => { paused = false; last = 0; });
+
+// in the loop: only add time when NOT paused
+if (!paused) elapsed += now - last;` },
+
+  { title:"7. Resetting past and future segment states", why:"Whenever the index changes — whether by auto-advance, a tap, or a rewind — you must repaint every bar to its correct state, not just the active one. Bars before the current index are forced to 100% width because those slides are finished; bars after it are forced to 0% because they have not started; the active bar is left for the animation loop to fill. A single small paint() function that loops over the segments and sets each width based on its position relative to the index keeps everything consistent. Without this, skipping backward would leave already-filled bars stuck full when they should reset.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-1 mb-2"><div class="h-2 w-10 bg-slate-700 rounded"></div><div class="h-2 w-10 rounded overflow-hidden bg-slate-300"><div class="h-full bg-indigo-500" style="width:40%"></div></div><div class="h-2 w-10 bg-slate-300 rounded"></div></div><div class="text-slate-500">i &lt; index → 100% · i &gt; index → 0% · active → growing</div></div>`, code:`function paint() {
+  fills.forEach((f, i) => {
+    if (i < index)      f.style.width = "100%"; // past = full
+    else if (i > index) f.style.width = "0%";   // future = empty
+    // active one: the rAF loop owns it
+  });
+}` },
+
+  { title:"8. Preloading the next slide", why:"If each slide is a photo or video, waiting until you advance to start loading it makes the next slide stutter or flash blank. The fix is to preload: as soon as a slide is showing, quietly start fetching the asset for the slide that comes after it, so it is already in the browser cache by the time the bar fills. For images this is as simple as creating a new Image and setting its src; for video you can prime it with a hidden element or a fetch. Preloading one slide ahead is usually enough and keeps memory modest. The payoff is that every auto-advance lands on content that is instantly ready.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>showing slide <b>N</b></div><div class="mt-1 text-indigo-600">↻ quietly load slide N+1</div><div class="mt-1">advance → it's already cached → no flash</div></div>`, code:`function showSlide(i) {
+  render(slides[i]);
+  const nextSlide = slides[i + 1];
+  if (nextSlide?.img) {
+    const im = new Image();
+    im.src = nextSlide.img;   // warm the cache
+  }
+}` },
+
+  { title:"9. Timing & accessibility (don't trap the user)", why:"Auto-advancing content is convenient but can be hostile if you cannot stop it, so the pause-on-hold is not a nicety — it is the accessibility escape hatch for anyone who reads slowly or needs more time. Keep the per-slide duration reasonable (a few seconds, longer if there is text), and expose real prev/next controls so the viewer works with a keyboard or screen reader, not only with taps. Honour prefers-reduced-motion by toning down slide transitions for users sensitive to movement. The guiding rule for any timed, moving UI is: never trap the user — always give them a way to pause, go back, and proceed at their own pace.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600 font-semibold">always offer pause + prev/next</div><div class="mt-1">reasonable per-slide time · keyboard reachable</div><div class="mt-1 text-rose-500">never trap the user in an auto-loop</div></div>`, code:`// pause is the escape hatch — keep it obvious
+// + real buttons so it isn't tap-only:
+prevBtn.onclick = prev;
+nextBtn.onclick = next;
+// + respect motion preferences:
+@media (prefers-reduced-motion: reduce) {
+  .stage { transition: none; }
+}` },
+
+  { title:"10. Building it as a reusable component", why:"Once the pieces click, wrap them into one component that takes a list of slides and a per-slide duration as inputs, and exposes events like onComplete when the whole set ends. Keep the state minimal — the current index, the elapsed time, and a paused flag are enough to drive everything else. The bars, tap zones, and timer all derive from those few variables, which makes the component easy to reason about and to drop into any feed. Build it by hand once so you understand the index-and-fill mechanics; after that you can reuse the same shell for any Stories-like experience: onboarding tours, product walkthroughs, or photo carousels.", concept:`<div class="text-center w-full"><div class="text-4xl mb-2">🎉</div><p class="font-bold text-slate-700">N bars, one rAF loop on the active one, an index you push with taps, hold-to-pause.</p><p class="text-xs text-slate-500 mt-1">Minimal state (index · elapsed · paused) drives the whole component.</p></div>`, code:`function Stories({ slides, duration = 4000, onComplete }) {
+  // state: index, elapsed, paused
+  // derive: bars from slides, active fill from elapsed/duration
+  // events: tap halves → prev/next, hold → pause, end → onComplete
+}` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
