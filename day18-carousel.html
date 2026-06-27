@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 18 — Carousel</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Carousel ===== */
+  /* the viewport clips the wide track to one slide's width */
+  .carousel {
+    width:520px; max-width:100%;
+    border-radius:20px;
+    overflow:hidden;                 /* clip everything outside one slide */
+    position:relative;
+    background:#000;
+    box-shadow:0 25px 60px rgba(0,0,0,.35);
+    user-select:none;
+    touch-action:pan-y;              /* let the browser keep vertical scroll, we own horizontal */
+  }
+  /* the track is one flex row N slides wide; we translateX it */
+  .track {
+    display:flex;
+    transition:transform .45s cubic-bezier(.22,.61,.36,1);
+    will-change:transform;
+    cursor:grab;
+  }
+  .track.dragging { transition:none; cursor:grabbing; }   /* no tween while finger is down */
+  /* each slide is exactly the viewport width */
+  .slide {
+    flex:0 0 100%;                   /* never shrink, never grow, full width */
+    height:320px;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; text-align:center;
+    -webkit-user-drag:none;
+  }
+  .slide .num {
+    position:absolute; top:12px; left:16px;
+    font-size:12px; font-weight:700; color:rgba(255,255,255,.7);
+    letter-spacing:.05em;
+  }
+  /* prev / next arrows float over the viewport edges */
+  .arrow {
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:42px; height:42px; border-radius:50%;
+    background:rgba(15,23,42,.55); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; cursor:pointer; z-index:10;
+    border:none; backdrop-filter:blur(4px);
+    transition:background .15s;
+  }
+  .arrow:hover { background:rgba(15,23,42,.85); }
+  .arrow.prev { left:12px; }
+  .arrow.next { right:12px; }
+  /* the dot indicators sit over the bottom edge */
+  .dots {
+    position:absolute; bottom:14px; left:0; right:0;
+    display:flex; justify-content:center; gap:8px; z-index:10;
+  }
+  .dot {
+    width:9px; height:9px; border-radius:50%;
+    background:rgba(255,255,255,.45);
+    cursor:pointer; border:none; padding:0;
+    transition:transform .2s, background .2s;
+  }
+  .dot.active { background:#fff; transform:scale(1.35); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .track { transition:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 18</div>
+      <h1 class="text-xl font-bold">🎠 Carousel — Slides, Dots, Swipe &amp; Autoplay</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">One wide row of slides, slid left and right.</h2>
+      <p class="text-white/80 mb-2">Every slide lives in a single flex row that is <b>N slides wide</b>. To show slide&nbsp;N we just push the row sideways with <code>translateX(-N&times;100%)</code> and let one CSS transition glide it into place. Use the <b>arrows</b> or the <b>dots</b>, <b>drag/swipe</b> the slide with your mouse or finger, press the <b>&larr; / &rarr; keys</b>, or flip on <b>autoplay</b> to let it advance itself every 3s (it pauses while you hover). It <b>wraps around</b> from the last slide back to the first.</p>
+    </div>
+
+    <!-- controls -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-5 py-3 mb-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full w-full" style="max-width:760px;">
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        <input id="autoToggle" type="checkbox" class="w-4 h-4 accent-indigo-600" />
+        autoplay (3s)
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        <input id="loopToggle" type="checkbox" class="w-4 h-4 accent-indigo-600" checked />
+        loop / wrap-around
+      </label>
+      <span id="status" class="text-xs font-semibold text-indigo-600 tabular-nums">slide 1 / 5</span>
+    </div>
+
+    <!-- the live carousel -->
+    <div class="carousel" id="carousel">
+      <div class="track" id="track">
+        <!-- slides injected by JS -->
+      </div>
+      <button class="arrow prev" id="prevBtn" aria-label="previous slide">&#8249;</button>
+      <button class="arrow next" id="nextBtn" aria-label="next slide">&#8250;</button>
+      <div class="dots" id="dots"><!-- dots injected by JS --></div>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">What's happening under the hood</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        The <code>.carousel</code> is a fixed-width window with <code>overflow:hidden</code>. Inside it the <code>.track</code> is a
+        flex row holding all 5 slides side by side, so it is 5&times; as wide. Showing slide <code>i</code> is just one line:
+        <code>track.style.transform = "translateX(" + (-i * 100) + "%)"</code>, and a CSS transition does the gliding.
+        While you <b>drag</b>, we turn the transition off and follow your finger: <code>translateX(base + dragDistance)</code>.
+        On release we measure how far you moved — past ~20% of the width (or a fast flick) snaps to the next/previous slide,
+        otherwise it springs back. The dots and the "slide x / 5" label just mirror the current index.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> one flex row of N slides, an index, and <code>translateX(-index&times;100%)</code>. Arrows and
+      dots change the index, drag follows your finger then snaps to the nearest slide, and autoplay nudges the index on a timer —
+      that is the entire carousel.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How an image carousel works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A clipped viewport, one flex row of slides, and a single index you move with <code>translateX</code>. Arrows, dots, autoplay, and swipe all just change that index. Pure CSS plus vanilla JS, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The viewport + track markup</h3></div>
+        <div class="relative"><pre>&lt;!-- the viewport clips to one slide; the track is the wide row --&gt;
+&lt;div class="carousel"&gt;
+  &lt;div class="track"&gt;
+    &lt;div class="slide"&gt;slide 1&lt;/div&gt;
+    &lt;div class="slide"&gt;slide 2&lt;/div&gt;
+    &lt;div class="slide"&gt;slide 3&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;!-- or build the slides from a data array: --&gt;
+&lt;script&gt;
+  track.innerHTML = slides.map(s =&gt;
+    `&lt;div class="slide" style="background:${s.bg}"&gt;${s.emoji}&lt;/div&gt;`
+  ).join("");
+&lt;/script&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Style: clip the window, lay slides in a flex row</h3></div>
+        <div class="relative"><pre>.carousel {
+  width:520px;
+  overflow:hidden;            /* hide everything but one slide */
+  position:relative;
+}
+.track {
+  display:flex;               /* slides sit side by side */
+  transition:transform .45s ease;
+}
+.slide {
+  flex:0 0 100%;             /* each slide = exactly viewport width */
+  height:320px;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">goTo(index) — the one line that does the work</h3></div>
+        <div class="relative"><pre>let index = 0;
+const track = document.querySelector(".track");
+const count = slides.length;
+
+function goTo(i) {
+  index = (i + count) % count;          // wrap negative + overflow
+  track.style.transform =
+    `translateX(${-index * 100}%)`;     // show slide `index`
+  updateDots();                         // keep dots in sync
+  status.textContent = `slide ${index + 1} / ${count}`;
+}
+goTo(0);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Prev / next arrows + keyboard</h3></div>
+        <div class="relative"><pre>nextBtn.onclick = () =&gt; goTo(index + 1);   // % count wraps to 0
+prevBtn.onclick = () =&gt; goTo(index - 1);   // % count wraps to last
+
+// arrow keys move the carousel too
+document.addEventListener("keydown", e =&gt; {
+  if (e.key === "ArrowRight") goTo(index + 1);
+  if (e.key === "ArrowLeft")  goTo(index - 1);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Dot indicators, synced to the index</h3></div>
+        <div class="relative"><pre>// one dot per slide; clicking a dot jumps to it
+dots.innerHTML = slides
+  .map((_, i) =&gt; `&lt;button class="dot" data-i="${i}"&gt;&lt;/button&gt;`)
+  .join("");
+dots.querySelectorAll(".dot").forEach(d =&gt;
+  d.onclick = () =&gt; goTo(+d.dataset.i)
+);
+
+function updateDots() {
+  dots.querySelectorAll(".dot").forEach((d, i) =&gt;
+    d.classList.toggle("active", i === index)
+  );
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Autoplay with setInterval + pause on hover</h3></div>
+        <div class="relative"><pre>let timer = null;
+function play()  { stop(); timer = setInterval(() =&gt; goTo(index + 1), 3000); }
+function stop()  { clearInterval(timer); timer = null; }
+
+// pause while the pointer is over the carousel, resume on leave
+carousel.addEventListener("mouseenter", stop);
+carousel.addEventListener("mouseleave", () =&gt; { if (autoOn) play(); });
+
+autoToggle.onchange = () =&gt; { autoOn = autoToggle.checked; autoOn ? play() : stop(); };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Drag / swipe — follow the finger, snap on release</h3></div>
+        <div class="relative"><pre>let startX = 0, dragging = false, width = 0;
+
+track.addEventListener("pointerdown", e =&gt; {
+  dragging = true; startX = e.clientX;
+  width = carousel.clientWidth;          // px per slide
+  track.classList.add("dragging");       // kill the transition
+  track.setPointerCapture(e.pointerId);
+});
+
+track.addEventListener("pointermove", e =&gt; {
+  if (!dragging) return;
+  const dx = e.clientX - startX;          // how far the finger moved
+  // base position for the current slide, plus the live drag (in %)
+  const pct = -index * 100 + (dx / width) * 100;
+  track.style.transform = `translateX(${pct}%)`;
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Release: snap to the nearest slide (the threshold)</h3></div>
+        <div class="relative"><pre>track.addEventListener("pointerup", e =&gt; {
+  if (!dragging) return;
+  dragging = false;
+  track.classList.remove("dragging");    // bring the transition back
+  const dx = e.clientX - startX;
+  // moved past 20% of the width? go that way. else spring back.
+  if (dx &lt; -width * 0.2)      goTo(index + 1);   // dragged left → next
+  else if (dx &gt; width * 0.2)  goTo(index - 1);   // dragged right → prev
+  else                         goTo(index);        // not enough → snap back
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 18 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">One flex row, an index, and <code>translateX(-index×100%)</code>. Arrows and dots set the index, drag follows your finger then snaps, and autoplay nudges it on a timer — the whole carousel in a screenful of code. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== CAROUSEL DEMO =====
+const carousel  = document.getElementById("carousel");
+const track     = document.getElementById("track");
+const dotsEl    = document.getElementById("dots");
+const prevBtn   = document.getElementById("prevBtn");
+const nextBtn   = document.getElementById("nextBtn");
+const autoToggle= document.getElementById("autoToggle");
+const loopToggle= document.getElementById("loopToggle");
+const statusEl  = document.getElementById("status");
+
+// the 5 slides (gradient backgrounds + a big emoji + a number)
+const SLIDES = [
+  { bg:"linear-gradient(160deg,#f97316,#db2777)", emoji:"🏝️", cap:"Island getaway" },
+  { bg:"linear-gradient(160deg,#6366f1,#0ea5e9)", emoji:"🌆", cap:"City lights" },
+  { bg:"linear-gradient(160deg,#10b981,#14b8a6)", emoji:"🏞️", cap:"Valley trail" },
+  { bg:"linear-gradient(160deg,#8b5cf6,#ec4899)", emoji:"🎡", cap:"Carnival" },
+  { bg:"linear-gradient(160deg,#0f172a,#334155)", emoji:"🌌", cap:"Stargazing" },
+];
+
+let index = 0;
+let dragging = false;
+let startX = 0;
+let vpWidth = 0;       // viewport width in px (one slide)
+let timer = null;
+let autoOn = false;
+
+// build the track + dots once
+function build() {
+  track.innerHTML = SLIDES.map((s, i) =>
+    `<div class="slide" style="background:${s.bg}">
+       <span class="num">${i + 1} / ${SLIDES.length}</span>
+       <div>
+         <div style="font-size:84px;line-height:1;">${s.emoji}</div>
+         <div class="mt-3 text-white font-semibold drop-shadow">${s.cap}</div>
+       </div>
+     </div>`
+  ).join("");
+
+  dotsEl.innerHTML = SLIDES.map((_, i) =>
+    `<button class="dot" data-i="${i}" aria-label="go to slide ${i + 1}"></button>`
+  ).join("");
+  dotsEl.querySelectorAll(".dot").forEach(d =>
+    d.onclick = () => goTo(+d.dataset.i)
+  );
+}
+
+// move the track to show `i`; honour wrap/clamp based on loop toggle
+function goTo(i) {
+  const count = SLIDES.length;
+  if (loopToggle.checked) {
+    index = (i + count) % count;            // wrap both ends
+  } else {
+    index = Math.max(0, Math.min(count - 1, i));  // clamp
+  }
+  track.style.transform = `translateX(${-index * 100}%)`;
+  updateDots();
+  statusEl.textContent = `slide ${index + 1} / ${count}`;
+}
+
+function updateDots() {
+  dotsEl.querySelectorAll(".dot").forEach((d, i) =>
+    d.classList.toggle("active", i === index)
+  );
+}
+
+// --- arrows + keyboard ---
+nextBtn.onclick = () => { goTo(index + 1); resetAuto(); };
+prevBtn.onclick = () => { goTo(index - 1); resetAuto(); };
+document.addEventListener("keydown", (e) => {
+  // only steer when the LOOK tab is visible
+  if (document.getElementById("look").classList.contains("hidden")) return;
+  if (e.key === "ArrowRight") { goTo(index + 1); resetAuto(); }
+  if (e.key === "ArrowLeft")  { goTo(index - 1); resetAuto(); }
+});
+
+// --- autoplay (3s) with pause on hover ---
+function play() { stop(); timer = setInterval(() => goTo(index + 1), 3000); }
+function stop() { if (timer) { clearInterval(timer); timer = null; } }
+function resetAuto() { if (autoOn && !dragging) play(); }  // restart the 3s after a manual move
+autoToggle.onchange = () => { autoOn = autoToggle.checked; autoOn ? play() : stop(); };
+carousel.addEventListener("mouseenter", stop);
+carousel.addEventListener("mouseleave", () => { if (autoOn) play(); });
+
+// loop toggle: re-clamp if we turned wrap off while past the end
+loopToggle.onchange = () => goTo(index);
+
+// --- drag / swipe via pointer events (mouse + touch) ---
+track.addEventListener("pointerdown", (e) => {
+  dragging = true;
+  startX = e.clientX;
+  vpWidth = carousel.clientWidth;
+  track.classList.add("dragging");          // no transition while dragging
+  track.setPointerCapture(e.pointerId);
+  stop();                                    // freeze autoplay during a drag
+});
+
+track.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - startX;
+  const pct = -index * 100 + (dx / vpWidth) * 100;   // base + live drag, in %
+  track.style.transform = `translateX(${pct}%)`;
+});
+
+function endDrag(e) {
+  if (!dragging) return;
+  dragging = false;
+  track.classList.remove("dragging");        // restore the transition
+  const dx = (e.clientX ?? startX) - startX;
+  if (dx < -vpWidth * 0.2)      goTo(index + 1);   // dragged left enough → next
+  else if (dx > vpWidth * 0.2)  goTo(index - 1);   // dragged right enough → prev
+  else                          goTo(index);        // not far enough → snap back
+  resetAuto();
+}
+track.addEventListener("pointerup", endDrag);
+track.addEventListener("pointercancel", endDrag);
+
+build();
+goTo(0);
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. The carousel mental model", why:"A carousel is a small fixed-size window that shows one slide at a time, with several more slides hidden just off-screen to the left and right. The trick is that all the slides actually sit next to each other in one long horizontal strip. You only ever see the part of that strip that lines up with the window, because everything outside the window is clipped away. Moving to another slide is nothing more than sliding the whole strip sideways until a different slide lands inside the window. Once you picture it as 'one wide strip behind a small window', every other feature becomes easy to reason about.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="mx-auto border-2 border-indigo-500 rounded overflow-hidden" style="max-width:120px;"><div class="flex" style="width:300%"><div class="flex-1 bg-indigo-400 h-12 flex items-center justify-center text-white">1</div><div class="flex-1 bg-slate-300 h-12 flex items-center justify-center">2</div><div class="flex-1 bg-slate-300 h-12 flex items-center justify-center">3</div></div></div><div class="mt-2 text-slate-500">a wide strip behind a small clipped window</div></div>`, code:`// the whole model in three lines:
+let index = 0;              // which slide is in the window
+const slides = [ ... ];     // one wide strip of slides
+// to show slide N, slide the strip left by N windows` },
+
+  { title:"2. The track-of-slides layout", why:"You build the strip as a single flex row called the track, and you put it inside a viewport that has overflow hidden so anything past one slide's width is clipped. Each slide is told to be exactly the viewport's width using flex with a zero grow, zero shrink, and a 100% basis, so no matter how many slides you add, each one fills the window exactly. Because the slides are flex items in a row, the track naturally becomes as wide as all the slides combined. This layout is the entire foundation: a clipped window on the outside, and a row that is N times wider than the window on the inside.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>.carousel { overflow:hidden }</div><div>.track   { display:flex }</div><div>.slide   { flex:0 0 100% }</div></div><div class="mt-2 text-slate-500">window clips · row holds all slides · each = full width</div></div>`, code:`.carousel { overflow:hidden; position:relative; }
+.track    { display:flex; }
+.slide    { flex:0 0 100%; }  /* each slide = one window wide */` },
+
+  { title:"3. Index → transform: the one piece of math", why:"To show a particular slide you do not move the slides individually — you move the entire track by one CSS transform. If the current index is the slide you want, you set the track's transform to translateX of negative index times one hundred percent. So index 0 means translateX(0%), index 1 means translateX(-100%), index 2 means translateX(-200%), and so on. Each step of the index shifts the strip left by exactly one window width, bringing the next slide into view. This single formula, transform = translateX(-index * 100%), is the heart of the whole component; everything else is just deciding what the index should be.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-sm">translateX(-index × 100%)</div><div class="mt-2 text-slate-500 text-[11px]">index 0 → 0% · index 1 → -100% · index 2 → -200%</div></div>`, code:`function goTo(i) {
+  index = i;
+  track.style.transform =
+    \`translateX(\${-index * 100}%)\`;  // shift one window per step
+}` },
+
+  { title:"4. The transition (and turning it off while dragging)", why:"When the index changes by a tap, an arrow, or a dot, you want the slide to glide smoothly rather than jump, so you put a CSS transition on the track's transform property — something like 0.45 seconds with an ease curve. The browser then animates from the old translateX to the new one for free. But there is one moment you must switch that transition off: while the user is physically dragging. During a drag you are setting the transform on every pointer-move to follow the finger in real time, and a transition would add a laggy delay that makes it feel rubbery. So you add a 'dragging' class that sets transition to none during the drag, then remove it on release so the final snap animates.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>tap / arrow / dot → <span class="text-indigo-600 font-semibold">transition ON</span> (glides)</div><div class="mt-1">finger down &amp; moving → <span class="text-rose-500 font-semibold">transition OFF</span> (instant)</div></div>`, code:`.track { transition:transform .45s ease; }
+.track.dragging { transition:none; }   /* follow the finger 1:1 */
+
+// on pointerdown:  track.classList.add("dragging");
+// on pointerup:    track.classList.remove("dragging");` },
+
+  { title:"5. Prev / next and wrap-around", why:"The arrows are the simplest controls: next means go to index plus one, previous means go to index minus one. The only subtlety is what happens at the ends. For an infinite, looping carousel you wrap the index using modulo arithmetic: take (i + count) % count, which turns -1 into the last slide and turns count into 0. Adding count before the modulo is what makes negative numbers wrap correctly. If instead you want the carousel to stop at the ends, you clamp the index between 0 and count minus one. Both behaviours live in the same goTo function, so a single loop toggle can switch between wrapping and clamping.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>at last slide, <b>next</b> → wraps to <b>first</b></div><div class="mt-1 font-mono text-[11px]">index = (i + count) % count</div><div class="mt-1 text-slate-500">+count first so -1 wraps to the end</div></div>`, code:`function goTo(i) {
+  // wrap: -1 → last, count → 0
+  index = (i + count) % count;
+  // or clamp instead:
+  // index = Math.max(0, Math.min(count - 1, i));
+  apply();
+}` },
+
+  { title:"6. Dot indicators synced to the index", why:"The dots do two jobs at once: they show how many slides exist and which one you are on, and they double as a jump control. You render one dot per slide, usually from the same slides array that built the track, and you give each dot its index. Clicking a dot simply calls goTo with that dot's index. To keep the dots honest, every time the index changes you run a small update that loops over the dots and toggles an 'active' class on the one whose position equals the current index. Because both the track and the dots are driven by the same single index variable, they can never disagree about which slide is showing.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-slate-300"></span><span class="w-4 h-4 rounded-full bg-indigo-500"></span><span class="w-3 h-3 rounded-full bg-slate-300"></span><span class="w-3 h-3 rounded-full bg-slate-300"></span></div><div class="text-slate-500">one dot per slide · active dot = current index</div></div>`, code:`dots.querySelectorAll(".dot").forEach((d, i) =>
+  d.onclick = () => goTo(i)        // jump to that slide
+);
+
+function updateDots() {
+  dots.querySelectorAll(".dot").forEach((d, i) =>
+    d.classList.toggle("active", i === index)
+  );
+}` },
+
+  { title:"7. Autoplay with setInterval + pause on hover", why:"Autoplay means the carousel advances itself on a timer. You start a setInterval that calls next (index plus one, wrapping) every few seconds — three seconds is a common, comfortable pace. The important courtesy is pausing it when the user is interacting: if they move their pointer over the carousel, you clear the interval so it stops advancing, and when they move away you start it again. You should also pause during a drag and restart the timer after any manual move, so the next auto-advance is a full interval away rather than firing right after the user just acted. Keep a single helper to stop and a single helper to start so this logic stays in one place.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>⏱ every 3s → <span class="text-indigo-600 font-semibold">goTo(index + 1)</span></div><div class="mt-1">pointer over carousel → <span class="text-rose-500 font-semibold">pause</span></div><div class="mt-1">pointer leaves → resume</div></div>`, code:`function play() { stop(); timer = setInterval(() => goTo(index + 1), 3000); }
+function stop() { clearInterval(timer); timer = null; }
+
+carousel.addEventListener("mouseenter", stop);
+carousel.addEventListener("mouseleave", () => { if (autoOn) play(); });` },
+
+  { title:"8. Swipe: drag delta → snap to the nearest slide", why:"Swipe is what makes a carousel feel native on touch, and pointer events let you support mouse and touch with one set of handlers. On pointerdown you record the starting X and the viewport width, add the dragging class to kill the transition, and capture the pointer so you keep getting moves even if the finger leaves the element. On every pointermove you compute how far the finger has travelled, convert that pixel distance into a percentage of the viewport width, and add it to the current slide's base position so the track follows the finger exactly. On pointerup you decide: if the drag passed a threshold — roughly twenty percent of the width, or a fast flick — you commit to the next or previous slide; otherwise you snap back to where you were. That threshold-and-snap is the whole gesture.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>drag delta = finger.x − start.x</div><div class="mt-1 font-mono text-[11px]">translateX(base + delta/width × 100%)</div><div class="mt-1 text-slate-500">release: past 20% → snap to next/prev · else spring back</div></div>`, code:`const dx = e.clientX - startX;            // pixels moved
+const pct = -index * 100 + (dx / width) * 100;
+track.style.transform = \`translateX(\${pct}%)\`; // follow finger
+
+// on release:
+if (dx < -width * 0.2) goTo(index + 1);   // far enough → next
+else if (dx > width * 0.2) goTo(index - 1);
+else goTo(index);                          // snap back` },
+
+  { title:"9. Accessibility & reduced motion", why:"A carousel can be hostile if it moves on its own or hides content from assistive tech, so a few habits matter. Always expose real buttons — arrows and dots are focusable controls, not just decorations — so the carousel works with a keyboard and a screen reader, and wire the left and right arrow keys to prev and next. Describe the region with aria-roledescription of 'carousel' and label each control, and consider announcing 'slide x of n' when the index changes. Crucially, do not auto-advance content that a user cannot stop; pause autoplay on hover and on focus, and give an obvious way to turn it off. Finally honour prefers-reduced-motion by removing or shortening the slide transition for people who are sensitive to movement.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600 font-semibold">focusable arrows + dots · arrow keys work</div><div class="mt-1">aria-roledescription="carousel" · label controls</div><div class="mt-1 text-rose-500">pausable autoplay · respect reduced-motion</div></div>`, code:`<div role="group" aria-roledescription="carousel">…</div>
+<button aria-label="previous slide">‹</button>
+
+@media (prefers-reduced-motion: reduce) {
+  .track { transition: none; }   /* no glide for motion-sensitive users */
+}` },
+
+  { title:"10. Lazy-loading & when to reach for a library", why:"With real photos you do not want to download all the slides up front, so you lazy-load: add loading='lazy' to the images, or only set an image's src when its slide is about to come into view, and optionally preload just the next one so advancing never flashes blank. That keeps the first paint fast and the data usage low. As for building versus borrowing: a hand-rolled carousel like this one is perfect for learning and for simple cases, and you now understand every line of it. But once you need precise momentum physics, variable-width slides, multiple slides per view, virtualisation for hundreds of items, or rock-solid accessibility, a focused library such as Embla or Swiper will save you real time. Build it once by hand to own the mechanics; reach for a library when the requirements outgrow a screenful of code.", concept:`<div class="text-center w-full"><div class="text-4xl mb-2">🎉</div><p class="font-bold text-slate-700">One flex row, an index, translateX(-index×100%).</p><p class="text-xs text-slate-500 mt-1">Hand-roll to learn the mechanics; reach for Embla / Swiper when needs outgrow a screenful.</p></div>`, code:`// lazy-load: only fetch slides as they approach
+<img src="..." loading="lazy" alt="...">
+
+// hand-rolled = great for simple cases & learning.
+// Embla / Swiper = momentum, multi-view, virtualisation,
+// and battle-tested a11y when you outgrow this.` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
