@@ -25,6 +25,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 16 — Skeleton Loaders](https://dev48v.infy.uk/design/day16-skeleton-loader.html) — `day16-skeleton-loader.html`
 - [DesignFromZero · Day 17 — Instagram Stories](https://dev48v.infy.uk/design/day17-instagram-stories.html) — `day17-instagram-stories.html`
 - [DesignFromZero · Day 18 — Carousel](https://dev48v.infy.uk/design/day18-carousel.html) — `day18-carousel.html`
+- [DesignFromZero · Day 19 — Date Picker](https://dev48v.infy.uk/design/day19-date-picker.html) — `day19-date-picker.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

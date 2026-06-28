@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 19 — Date Picker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Date Picker ===== */
+  /* the field is just a text input; the calendar is an absolutely-positioned popover */
+  .dp-wrap { position:relative; width:300px; max-width:100%; }
+  .dp-input {
+    width:100%; padding:12px 40px 12px 14px;
+    border:2px solid #e2e8f0; border-radius:12px;
+    font-size:15px; color:#0f172a; background:#fff;
+    cursor:pointer; transition:border-color .15s, box-shadow .15s;
+  }
+  .dp-input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 4px rgba(99,102,241,.15); }
+  .dp-icon {
+    position:absolute; right:12px; top:50%; transform:translateY(-50%);
+    pointer-events:none; font-size:18px; opacity:.6;
+  }
+  /* the calendar popover floats under the input, clipped corners + shadow */
+  .dp-pop {
+    position:absolute; top:calc(100% + 8px); left:0; z-index:40;
+    width:300px; max-width:100%;
+    background:#fff; border:1px solid #e2e8f0; border-radius:16px;
+    box-shadow:0 20px 50px rgba(15,23,42,.25);
+    padding:14px;
+    animation:fadeIn .18s ease-out;
+  }
+  .dp-pop.hidden { display:none; }
+  .dp-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .dp-nav {
+    width:32px; height:32px; border:none; border-radius:9px;
+    background:#f1f5f9; color:#475569; cursor:pointer;
+    font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .dp-nav:hover { background:#e2e8f0; }
+  .dp-title { font-weight:700; font-size:15px; color:#0f172a; }
+  /* the 7-column grid — same for the Su..Sa header and the days */
+  .dp-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; }
+  .dp-dow {
+    text-align:center; font-size:11px; font-weight:700;
+    color:#94a3b8; padding:6px 0; text-transform:uppercase;
+  }
+  .dp-day {
+    aspect-ratio:1/1; border:none; background:none; cursor:pointer;
+    border-radius:9px; font-size:13px; color:#334155;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .12s, color .12s;
+  }
+  .dp-day:hover { background:#eef2ff; }
+  .dp-day.blank { cursor:default; }            /* leading/trailing empty cells */
+  .dp-day.today { box-shadow:inset 0 0 0 2px #6366f1; font-weight:700; color:#4338ca; }
+  .dp-day.selected { background:#6366f1; color:#fff; font-weight:700; }
+  .dp-day.selected:hover { background:#4f46e5; }
+  .dp-day.focused { outline:2px solid #818cf8; outline-offset:-2px; }
+  .dp-day.disabled { color:#cbd5e1; cursor:not-allowed; }
+  .dp-day.disabled:hover { background:none; }
+  .dp-foot { display:flex; justify-content:space-between; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9; }
+  .dp-foot button { font-size:12px; font-weight:600; color:#6366f1; background:none; border:none; cursor:pointer; }
+  .dp-foot button:hover { text-decoration:underline; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 19</div>
+      <h1 class="text-xl font-bold">📅 Date Picker — A Calendar Dropdown From Scratch</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">A text field that opens a real calendar.</h2>
+      <p class="text-white/80 mb-2">Click the field below to drop open a <b>month grid</b>. The whole calendar is computed with plain <code>Date</code> math: the first cell is offset by the weekday the month starts on (<code>new Date(y, m, 1).getDay()</code>), then we fill in every day up to the month's length (<code>new Date(y, m+1, 0).getDate()</code> — which gives leap years for free). Use the <b>&larr; / &rarr; arrows</b> to change month (year rolls over automatically), the <b>today</b> cell is ringed, the <b>selected</b> day is filled. Click a day to drop it into the field and close. Bonus: <b>arrow keys</b> move the focused day, <b>Enter</b> selects, <b>click-outside</b> or <b>Esc</b> closes, and you can toggle <b>disable past dates</b>.</p>
+    </div>
+
+    <!-- controls -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-5 py-3 mb-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full w-full" style="max-width:760px;">
+      <label class="flex items-center gap-2 text-sm text-slate-600 font-medium">
+        <input id="pastToggle" type="checkbox" class="w-4 h-4 accent-indigo-600" />
+        disable past dates (min = today)
+      </label>
+      <span id="status" class="text-xs font-semibold text-indigo-600 tabular-nums">no date selected</span>
+    </div>
+
+    <!-- the live date picker -->
+    <div class="dp-wrap" id="dpWrap">
+      <input class="dp-input" id="dpInput" type="text" readonly placeholder="Select a date…" aria-haspopup="dialog" aria-expanded="false" />
+      <span class="dp-icon">📅</span>
+      <div class="dp-pop hidden" id="dpPop" role="dialog" aria-label="choose date">
+        <div class="dp-head">
+          <button class="dp-nav" id="dpPrev" aria-label="previous month">&#8249;</button>
+          <div class="dp-title" id="dpTitle">Month YYYY</div>
+          <button class="dp-nav" id="dpNext" aria-label="next month">&#8250;</button>
+        </div>
+        <div class="dp-grid" id="dpDow"><!-- Su..Sa header injected --></div>
+        <div class="dp-grid mt-1" id="dpDays" role="grid"><!-- day cells injected --></div>
+        <div class="dp-foot">
+          <button id="dpToday" type="button">Today</button>
+          <button id="dpClear" type="button">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-6 max-w-full w-full" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">The month-grid math</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        A calendar is just a 7-column grid. Two <code>Date</code> calls build it. The <b>first-day offset</b> —
+        <code>new Date(year, month, 1).getDay()</code> — tells you which weekday the 1st lands on (0 = Sunday), so you
+        emit that many <b>blank cells</b> before day 1, which lines every date up under its weekday. The <b>days-in-month</b> —
+        <code>new Date(year, month + 1, 0).getDate()</code> — asks for "day 0 of next month", which JavaScript reads as the
+        last day of <i>this</i> month, so it returns 28/29/30/31 correctly, leap years included. Then you just loop 1…N
+        emitting a cell per day. Navigation is <code>month ± 1</code> on a Date and re-rendering; a value past 11 or below 0
+        rolls the year automatically.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> a read-only input, a popover, and a 7-column grid. Offset the first cell by the month's starting
+      weekday, fill in days-in-month, highlight today + the selected day, and changing month is just <code>month ± 1</code> on a
+      <code>Date</code> object — that is the entire date picker.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a date picker works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A read-only input, a popover, and a 7-column grid built from two <code>Date</code> calls. Offset by the first weekday, fill days-in-month, then highlight today and the selection. Pure CSS plus vanilla JS, no libraries.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The input + popover markup</h3></div>
+        <div class="relative"><pre>&lt;!-- a read-only field; the calendar is a popover anchored under it --&gt;
+&lt;div class="dp-wrap"&gt;
+  &lt;input class="dp-input" id="dpInput" type="text" readonly
+         placeholder="Select a date…"&gt;
+  &lt;span class="dp-icon"&gt;📅&lt;/span&gt;
+
+  &lt;div class="dp-pop hidden" id="dpPop" role="dialog"&gt;
+    &lt;div class="dp-head"&gt;
+      &lt;button id="dpPrev"&gt;‹&lt;/button&gt;
+      &lt;div id="dpTitle"&gt;&lt;/div&gt;
+      &lt;button id="dpNext"&gt;›&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class="dp-grid" id="dpDow"&gt;&lt;/div&gt;   &lt;!-- Su..Sa --&gt;
+    &lt;div class="dp-grid" id="dpDays"&gt;&lt;/div&gt;  &lt;!-- day cells --&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Style: anchor the popover, lay days in a 7-col grid</h3></div>
+        <div class="relative"><pre>.dp-wrap { position:relative; width:300px; }
+.dp-pop {
+  position:absolute; top:calc(100% + 8px); left:0;  /* under the field */
+  background:#fff; border-radius:16px;
+  box-shadow:0 20px 50px rgba(15,23,42,.25);
+}
+.dp-pop.hidden { display:none; }
+
+/* the SAME grid for the Su..Sa header and the days */
+.dp-grid { display:grid; grid-template-columns:repeat(7, 1fr); }
+.dp-day  { aspect-ratio:1/1; display:flex;
+           align-items:center; justify-content:center; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">render(year, month) — the two Date calls</h3></div>
+        <div class="relative"><pre>let view = new Date();                 // the month currently shown
+view.setDate(1);                       // pin to the 1st (avoids overflow)
+
+function render() {
+  const y = view.getFullYear(), m = view.getMonth();   // m is 0..11!
+
+  // which weekday does the 1st fall on?  0 = Sun
+  const firstDow   = new Date(y, m, 1).getDay();
+  // how many days in this month?  "day 0 of next month" = last of this
+  const daysInMonth = new Date(y, m + 1, 0).getDate();  // leap years free
+
+  dpTitle.textContent =
+    view.toLocaleString("en", { month:"long", year:"numeric" });
+  // ...build cells below
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Offset with blanks, then fill the days</h3></div>
+        <div class="relative"><pre>  let cells = "";
+  // leading blanks so day 1 lands under its real weekday column
+  for (let i = 0; i &lt; firstDow; i++)
+    cells += `&lt;div class="dp-day blank"&gt;&lt;/div&gt;`;
+
+  // one cell per real day, 1 … daysInMonth
+  for (let d = 1; d &lt;= daysInMonth; d++) {
+    cells += `&lt;button class="dp-day" data-day="${d}"&gt;${d}&lt;/button&gt;`;
+  }
+  dpDays.innerHTML = cells;
+
+  // the Su..Sa header (once is fine, but easy here)
+  dpDow.innerHTML = ["Su","Mo","Tu","We","Th","Fr","Sa"]
+    .map(d =&gt; `&lt;div class="dp-dow"&gt;${d}&lt;/div&gt;`).join("");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Open / close + pick a day, format the field</h3></div>
+        <div class="relative"><pre>dpInput.onclick = () =&gt; { render(); dpPop.classList.remove("hidden"); };
+
+dpDays.onclick = (e) =&gt; {
+  const btn = e.target.closest(".dp-day[data-day]");
+  if (!btn) return;
+  const d = +btn.dataset.day;
+  selected = new Date(view.getFullYear(), view.getMonth(), d);
+  dpInput.value = selected.toLocaleDateString("en", {
+    day:"numeric", month:"short", year:"numeric"   // e.g. 5 Jul 2026
+  });
+  dpPop.classList.add("hidden");      // close after picking
+};
+
+// click outside or Esc closes it too
+document.addEventListener("click", (e) =&gt; {
+  if (!dpWrap.contains(e.target)) dpPop.classList.add("hidden");
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Prev / next month (year rolls over for free)</h3></div>
+        <div class="relative"><pre>dpPrev.onclick = () =&gt; { view.setMonth(view.getMonth() - 1); render(); };
+dpNext.onclick = () =&gt; { view.setMonth(view.getMonth() + 1); render(); };
+
+// setMonth(-1) or setMonth(12) auto-adjusts the YEAR:
+//   Jan 2026 → setMonth(-1) → Dec 2025
+//   Dec 2026 → setMonth(12) → Jan 2027
+// no manual year handling needed.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Highlight today + the selected day</h3></div>
+        <div class="relative"><pre>// compare by Y-M-D, NOT by timestamp (times would differ)
+const sameDay = (a, b) =&gt; a &amp;&amp; b &amp;&amp;
+  a.getFullYear() === b.getFullYear() &amp;&amp;
+  a.getMonth()    === b.getMonth() &amp;&amp;
+  a.getDate()     === b.getDate();
+
+// inside the day loop:
+const cellDate = new Date(y, m, d);
+let cls = "dp-day";
+if (sameDay(cellDate, new Date())) cls += " today";     // ring it
+if (sameDay(cellDate, selected))   cls += " selected";  // fill it
+cells += `&lt;button class="${cls}" data-day="${d}"&gt;${d}&lt;/button&gt;`;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard nav + disable past dates</h3></div>
+        <div class="relative"><pre>// arrow keys move a "focused" day; Enter selects it
+document.addEventListener("keydown", (e) =&gt; {
+  if (dpPop.classList.contains("hidden")) return;
+  const moves = { ArrowLeft:-1, ArrowRight:1, ArrowUp:-7, ArrowDown:7 };
+  if (e.key in moves) {
+    e.preventDefault();
+    focusDate.setDate(focusDate.getDate() + moves[e.key]); // may cross months
+    view = new Date(focusDate); view.setDate(1); render();
+  }
+  if (e.key === "Enter") selectDate(focusDate);
+  if (e.key === "Escape") dpPop.classList.add("hidden");
+});
+
+// min = today: disable + block clicks on earlier days
+const min = new Date(); min.setHours(0,0,0,0);
+if (disablePast &amp;&amp; cellDate &lt; min) cls += " disabled";</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 19 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">A read-only input, a popover, and a 7-column grid. Offset the first cell by <code>getDay()</code>, fill <code>getDate()</code> days, ring today, fill the selection, and <code>setMonth(±1)</code> handles month and year nav — the whole calendar in a screenful of code. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DATE PICKER DEMO =====
+const dpWrap   = document.getElementById("dpWrap");
+const dpInput  = document.getElementById("dpInput");
+const dpPop    = document.getElementById("dpPop");
+const dpTitle  = document.getElementById("dpTitle");
+const dpPrev   = document.getElementById("dpPrev");
+const dpNext   = document.getElementById("dpNext");
+const dpDow    = document.getElementById("dpDow");
+const dpDays   = document.getElementById("dpDays");
+const dpToday  = document.getElementById("dpToday");
+const dpClear  = document.getElementById("dpClear");
+const pastToggle = document.getElementById("pastToggle");
+const statusEl = document.getElementById("status");
+
+const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+
+let view      = startOfDay(new Date()); view.setDate(1);  // the month being shown
+let selected  = null;                                     // the chosen Date (or null)
+let focusDate = startOfDay(new Date());                   // the keyboard-focused day
+
+// same calendar day? compare Y-M-D, not timestamps
+function sameDay(a, b) {
+  return a && b &&
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth()    === b.getMonth() &&
+    a.getDate()     === b.getDate();
+}
+
+function fmt(d) {
+  return d.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
+}
+
+// the Su..Sa header (built once)
+dpDow.innerHTML = DOW.map(d => `<div class="dp-dow">${d}</div>`).join("");
+
+// build the month grid for whatever `view` currently points at
+function render() {
+  const y = view.getFullYear();
+  const m = view.getMonth();                       // 0..11
+
+  // the two Date calls that drive everything
+  const firstDow    = new Date(y, m, 1).getDay();          // weekday of the 1st (0=Sun)
+  const daysInMonth = new Date(y, m + 1, 0).getDate();     // last day = days in month
+
+  dpTitle.textContent = view.toLocaleString("en", { month:"long", year:"numeric" });
+
+  const today = startOfDay(new Date());
+  const min   = pastToggle.checked ? today : null;
+
+  let cells = "";
+  // leading blanks so day 1 lands under its real weekday column
+  for (let i = 0; i < firstDow; i++) cells += `<div class="dp-day blank"></div>`;
+
+  // one cell per day, 1 … daysInMonth
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cellDate = new Date(y, m, d);
+    let cls = "dp-day";
+    if (sameDay(cellDate, today))     cls += " today";
+    if (sameDay(cellDate, selected))  cls += " selected";
+    if (sameDay(cellDate, focusDate)) cls += " focused";
+    const disabled = min && cellDate < min;
+    if (disabled) cls += " disabled";
+    cells += `<button class="${cls}" data-day="${d}"${disabled ? " disabled" : ""}>${d}</button>`;
+  }
+  dpDays.innerHTML = cells;
+}
+
+function open() {
+  // jump the view to the selected (or focused) day's month
+  view = startOfDay(selected || focusDate || new Date()); view.setDate(1);
+  render();
+  dpPop.classList.remove("hidden");
+  dpInput.setAttribute("aria-expanded", "true");
+}
+function close() {
+  dpPop.classList.add("hidden");
+  dpInput.setAttribute("aria-expanded", "false");
+}
+function isOpen() { return !dpPop.classList.contains("hidden"); }
+
+function selectDate(d) {
+  if (pastToggle.checked && startOfDay(d) < startOfDay(new Date())) return;  // respect min
+  selected = startOfDay(d);
+  focusDate = new Date(selected);
+  dpInput.value = fmt(selected);
+  statusEl.textContent = "selected: " + fmt(selected);
+  close();
+}
+
+// --- open on focus / click ---
+dpInput.onclick = () => isOpen() ? close() : open();
+dpInput.onfocus = () => { if (!isOpen()) open(); };
+
+// --- click a day ---
+dpDays.onclick = (e) => {
+  const btn = e.target.closest(".dp-day[data-day]");
+  if (!btn || btn.classList.contains("disabled")) return;
+  const d = +btn.dataset.day;
+  selectDate(new Date(view.getFullYear(), view.getMonth(), d));
+};
+
+// --- prev / next month (setMonth auto-rolls the year) ---
+dpPrev.onclick = () => { view.setMonth(view.getMonth() - 1); render(); };
+dpNext.onclick = () => { view.setMonth(view.getMonth() + 1); render(); };
+
+// --- footer shortcuts ---
+dpToday.onclick = () => selectDate(new Date());
+dpClear.onclick = () => { selected = null; dpInput.value = ""; statusEl.textContent = "no date selected"; render(); };
+
+// --- the min toggle re-renders (and can invalidate the view) ---
+pastToggle.onchange = () => { if (isOpen()) render(); };
+
+// --- keyboard: arrows move the focused day, Enter selects, Esc closes ---
+document.addEventListener("keydown", (e) => {
+  if (!isOpen()) return;
+  const moves = { ArrowLeft:-1, ArrowRight:1, ArrowUp:-7, ArrowDown:7 };
+  if (e.key in moves) {
+    e.preventDefault();
+    focusDate = new Date(focusDate);
+    focusDate.setDate(focusDate.getDate() + moves[e.key]);   // may cross a month boundary
+    view = startOfDay(focusDate); view.setDate(1);            // follow the focus
+    render();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    selectDate(focusDate);
+  } else if (e.key === "Escape") {
+    close();
+  }
+});
+
+// --- click outside closes ---
+document.addEventListener("click", (e) => {
+  if (isOpen() && !dpWrap.contains(e.target)) close();
+});
+
+render();   // first paint (popover stays hidden until opened)
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. Why build a custom date picker", why:"The browser does ship a native date field, written as input type equals date, and it is genuinely useful when you just need a working control fast. The catch is styling and consistency: every browser draws its own calendar popup, the look barely responds to CSS, and the layout differs across Chrome, Safari, and Firefox, so it rarely matches the rest of your design. You also cannot easily control niceties like the month header, the day cells, animations, or extra footer buttons. A hand-built picker gives you full control over every pixel and behaviour, and the surprising part is that the underlying logic is only a little arithmetic on the Date object. Building it once teaches you exactly how calendars line up, which pays off any time you touch scheduling, ranges, or formatting.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px]">&lt;input type="date"&gt; → works, but unstyleable</div><div class="mt-2 text-slate-500">a custom grid → your design, your behaviour, your control</div></div>`, code:`<!-- native: works everywhere, looks different everywhere -->
+<input type="date">
+
+<!-- custom: a text field + your own calendar popover -->
+<input class="dp-input" readonly placeholder="Select a date…">
+<div class="dp-pop">…your month grid…</div>` },
+
+  { title:"2. The Date object & the 0-indexed month gotcha", why:"Everything here rides on JavaScript's built-in Date object, which represents a single moment in time. You read its parts with getFullYear, getMonth, getDate, and getDay, and you construct one with new Date of year, month, and day. The single most common bug is that getMonth and the month argument are zero-indexed: January is 0, February is 1, and December is 11, even though getDate returns a normal 1-based day. So new Date of 2026, 0, 1 is the 1st of January 2026, not February. Keep month as a 0 to 11 number all the way through your code and only add 1 when you show a human-readable month, and you will avoid the off-by-one that trips up almost everyone the first time.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>getMonth(): Jan=<b>0</b> · Dec=<b>11</b></div><div>getDate():  1..31 (normal)</div><div>getDay():   Sun=0 .. Sat=6</div></div><div class="mt-2 text-rose-500 text-[11px]">new Date(2026, 0, 1) = 1 Jan, not 1 Feb!</div></div>`, code:`const d = new Date(2026, 6, 5);  // 5 JULY 2026 (month 6 = July!)
+d.getFullYear(); // 2026
+d.getMonth();    // 6   (0-indexed → July)
+d.getDate();     // 5
+d.getDay();      // weekday of that date, 0=Sun` },
+
+  { title:"3. Days in a month (leap years for free)", why:"To draw a month you must know how many day cells it has, which varies between 28, 29, 30, and 31. Rather than memorise a table or write leap-year rules, you lean on a clever trick: ask the Date constructor for day zero of the next month. The expression new Date of year, month plus one, zero gives you the day before the first of next month, which is by definition the last day of the current month, and calling getDate on it returns that number. Because the engine computes the real calendar, February automatically returns 29 in leap years and 28 otherwise, with no special handling from you. This one line is the cleanest way to get a month's length and it is the second half of the grid math.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px]">new Date(y, m+1, 0).getDate()</div><div class="mt-2 text-slate-500 text-[11px]">"day 0 of next month" = last day of this month</div><div class="mt-1 text-indigo-600">Feb 2024 → 29 · Feb 2025 → 28 (automatic)</div></div>`, code:`function daysIn(y, m) {
+  return new Date(y, m + 1, 0).getDate();  // day 0 = last of prev
+}
+daysIn(2024, 1);  // 29  (Feb 2024, leap year)
+daysIn(2025, 1);  // 28  (Feb 2025)
+daysIn(2026, 3);  // 30  (April)` },
+
+  { title:"4. The first-weekday offset", why:"A month rarely starts on Sunday, so if you just dumped days 1 through 31 into a 7-column grid, every date would sit under the wrong weekday. The fix is to find which weekday the 1st falls on using new Date of year, month, 1 then getDay, which returns 0 for Sunday up to 6 for Saturday. That number is exactly how many empty cells you must place before day 1 so that it lands in the correct column. For example if the 1st is a Wednesday, getDay returns 3, you emit three blank cells, and then day 1 appears under the Wednesday header. This single offset is what makes the whole grid line up, and combined with the days-in-month count it fully determines the layout.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="grid grid-cols-7 gap-1 max-w-[180px] mx-auto text-[10px]"><div class="text-slate-400">Su</div><div class="text-slate-400">Mo</div><div class="text-slate-400">Tu</div><div class="text-slate-400">We</div><div class="text-slate-400">Th</div><div class="text-slate-400">Fr</div><div class="text-slate-400">Sa</div><div class="bg-slate-200 rounded">·</div><div class="bg-slate-200 rounded">·</div><div class="bg-slate-200 rounded">·</div><div class="bg-indigo-500 text-white rounded">1</div><div class="bg-white rounded">2</div><div class="bg-white rounded">3</div><div class="bg-white rounded">4</div></div><div class="mt-2 text-slate-500">1st is a Wed → getDay()=3 → 3 blanks first</div></div>`, code:`const firstDow = new Date(y, m, 1).getDay();  // 0..6
+// emit that many blanks BEFORE day 1
+for (let i = 0; i < firstDow; i++)
+  cells += '<div class="dp-day blank"></div>';` },
+
+  { title:"5. Building the 6×7 grid", why:"With the offset and the length in hand, the grid is a simple loop. You start by emitting firstDow blank cells, then you loop from 1 up to daysInMonth and emit one real cell per day, each carrying its day number both as visible text and as a data attribute you can read on click. A month needs at most six rows of seven to hold a 31-day month that starts late in the week, which is why fixed calendars reserve 42 cells, but a grid that simply grows with content works fine too. Because the cells are plain grid items in a 7-column CSS grid, the browser wraps them into rows automatically; you never compute rows yourself. The same 7-column grid also renders the Sunday-through-Saturday header so the columns always align.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>blanks × firstDow</div><div>+ days 1 … daysInMonth</div><div>= the month, wrapped into rows</div></div><div class="mt-2 text-slate-500">grid-template-columns: repeat(7, 1fr) does the wrapping</div></div>`, code:`let cells = "";
+for (let i = 0; i < firstDow; i++)
+  cells += '<div class="dp-day blank"></div>';   // leading gap
+for (let d = 1; d <= daysInMonth; d++)
+  cells += \`<button class="dp-day" data-day="\${d}">\${d}</button>\`;
+dpDays.innerHTML = cells;   // CSS grid wraps it into weeks` },
+
+  { title:"6. Selecting a day & formatting the field", why:"When the user clicks a day cell you read its day number from the data attribute and build a real Date from the currently viewed year and month plus that day. You store it as the selected value, write a nicely formatted string into the read-only input, and then close the popover. For formatting, toLocaleDateString is your friend: you pass options like day numeric, month short, and year numeric to get something readable such as 5 Jul 2026, and the locale handles ordering and language. Keeping the canonical value as a Date object while showing a formatted string means you always have a clean value to submit or compare, separate from how it happens to be displayed. That separation of stored value versus shown text is a good habit for any input.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div>click day → store a Date → format → fill field → close</div><div class="mt-2 font-mono text-[11px]">toLocaleDateString("en-GB", {day,month:"short",year})</div><div class="mt-1 text-indigo-600">→ "5 Jul 2026"</div></div>`, code:`const d = +btn.dataset.day;
+selected = new Date(view.getFullYear(), view.getMonth(), d);
+dpInput.value = selected.toLocaleDateString("en-GB", {
+  day:"numeric", month:"short", year:"numeric"   // 5 Jul 2026
+});
+dpPop.classList.add("hidden");   // close after the pick` },
+
+  { title:"7. Prev / next month & year rollover", why:"Navigation keeps a single Date called the view that always points at the first of the month being shown. To go back a month you call setMonth of getMonth minus one, and to go forward you call setMonth of getMonth plus one, then you re-render. The beautiful part is that setMonth handles year boundaries for you: stepping below 0 rolls the year back, so January becomes the previous December, and stepping past 11 rolls the year forward, so December becomes the next January. You never write year math yourself. Pinning the view to the 1st with setDate of 1 before navigating avoids a subtle bug where moving from a 31-day month to a shorter one would otherwise overflow into the wrong month.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>Jan 2026 → setMonth(-1) → <b>Dec 2025</b></div><div>Dec 2026 → setMonth(12) → <b>Jan 2027</b></div></div><div class="mt-2 text-slate-500">setMonth rolls the year automatically</div></div>`, code:`dpPrev.onclick = () => { view.setMonth(view.getMonth()-1); render(); };
+dpNext.onclick = () => { view.setMonth(view.getMonth()+1); render(); };
+
+// pin to the 1st first so 31→shorter month never overflows
+view.setDate(1);` },
+
+  { title:"8. Today & selected highlight", why:"Two cells deserve special styling: today, so users get a sense of where they are, and the currently selected date, so the picker reflects the field's value. The right way to test these is to compare by calendar day, not by timestamp, because two Date objects for the same day can carry different times and would never be equal as raw values. So you write a small helper that returns true only when the year, the month, and the date all match. Inside the day loop you build each cell's Date and add a today class when it matches the real today, and a selected class when it matches the stored selection. Driving both highlights from the same render means they update automatically whenever you navigate months or pick a new day.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="flex justify-center gap-2 mb-2"><span class="w-8 h-8 rounded-lg flex items-center justify-center text-xs" style="box-shadow:inset 0 0 0 2px #6366f1;color:#4338ca;font-weight:700">12</span><span class="w-8 h-8 rounded-lg flex items-center justify-center text-xs text-white font-bold" style="background:#6366f1">18</span></div><div class="text-slate-500 text-[11px]">ringed = today · filled = selected · compare Y-M-D</div></div>`, code:`const sameDay = (a,b) => a && b &&
+  a.getFullYear()===b.getFullYear() &&
+  a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+
+if (sameDay(cellDate, new Date())) cls += " today";
+if (sameDay(cellDate, selected))   cls += " selected";` },
+
+  { title:"9. Keyboard nav, click-outside & accessibility", why:"A good date picker is fully usable without a mouse and friendly to screen readers. For keyboard control you keep a focused day and move it with the arrow keys, left and right by one day, up and down by a week, and because you move a real Date with setDate, crossing into the previous or next month just works; pressing Enter selects the focused day and Escape closes the popover. You should also close on a click outside, which you detect by checking that the click target is not inside the picker's wrapper. For assistive tech, give the popover a dialog role, label the navigation buttons, and mark the chosen cell with aria-selected so its state is announced. These touches turn a pretty widget into one everyone can actually operate.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600 font-semibold">← → move 1 day · ↑ ↓ move 1 week · Enter selects</div><div class="mt-1">Esc / click-outside → close</div><div class="mt-1 text-indigo-600 text-[11px]">role="dialog" · aria-selected · labelled arrows</div></div>`, code:`const moves = { ArrowLeft:-1, ArrowRight:1, ArrowUp:-7, ArrowDown:7 };
+if (e.key in moves) {
+  focusDate.setDate(focusDate.getDate() + moves[e.key]);
+  view = new Date(focusDate); view.setDate(1); render();
+}
+if (e.key === "Enter")  selectDate(focusDate);
+if (e.key === "Escape") close();
+
+document.addEventListener("click", e => {        // click outside
+  if (!dpWrap.contains(e.target)) close();
+});` },
+
+  { title:"10. Timezone & formatting pitfalls (and min dates)", why:"The Date object stores an instant in time, so a careless construction can land on the wrong calendar day depending on the user's timezone, which is the classic off-by-one in date pickers. To stay safe, work with whole days: build dates with the year, month, day constructor rather than parsing strings, and normalise times to midnight before comparing so two values for the same day really are equal. When you parse the ISO form like 2026-07-05, remember the browser treats that as UTC midnight, which can display as the previous evening in negative-offset zones, so prefer the numeric constructor for local dates. The same midnight-normalised comparison powers a min date or disable-past feature: compute today at midnight and mark any earlier cell disabled so it cannot be clicked. Mind these and your picker will be correct everywhere.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-rose-500 text-[11px]">new Date("2026-07-05") = UTC midnight → can shift a day!</div><div class="mt-1 text-emerald-600 text-[11px]">new Date(2026, 6, 5) = local, safe</div><div class="mt-2">normalise to midnight before comparing → min/past works</div></div>`, code:`// safe: numeric constructor builds a LOCAL day
+const d = new Date(2026, 6, 5);          // not "2026-07-05"
+
+// normalise then compare for min / disable-past
+const min = new Date(); min.setHours(0,0,0,0);
+if (cellDate < min) cls += " disabled";   // block earlier days` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
