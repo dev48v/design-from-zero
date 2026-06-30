@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 20 — Modal Dialog</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Modal Dialog ===== */
+  /* the trigger is just a button; the modal is a fixed-position overlay + centered card */
+  .md-trigger {
+    padding:12px 22px; border:none; border-radius:12px;
+    font-size:15px; font-weight:700; color:#fff; background:#6366f1;
+    cursor:pointer; transition:background .15s, box-shadow .15s, transform .08s;
+    box-shadow:0 6px 18px rgba(99,102,241,.35);
+  }
+  .md-trigger:hover { background:#4f46e5; }
+  .md-trigger:active { transform:translateY(1px); }
+  .md-trigger:focus-visible { outline:none; box-shadow:0 0 0 4px rgba(99,102,241,.3); }
+  .md-trigger.ghost { background:#fff; color:#4338ca; box-shadow:0 4px 14px rgba(15,23,42,.12); }
+  .md-trigger.ghost:hover { background:#eef2ff; }
+
+  /* the overlay fills the viewport, dims the page, and centers its child */
+  .md-overlay {
+    position:fixed; inset:0; z-index:60;
+    background:rgba(15,23,42,.55);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+    opacity:0; transition:opacity .2s ease;
+  }
+  .md-overlay.open { opacity:1; }
+  .md-overlay.hidden { display:none; }
+
+  /* the dialog card: starts slightly small + transparent, scales+fades in */
+  .md-dialog {
+    width:440px; max-width:100%;
+    background:#fff; border-radius:18px;
+    box-shadow:0 30px 70px rgba(15,23,42,.35);
+    padding:24px;
+    transform:scale(.94); opacity:0;
+    transition:transform .2s ease, opacity .2s ease;
+  }
+  .md-overlay.open .md-dialog { transform:scale(1); opacity:1; }
+  .md-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .md-title { font-weight:800; font-size:19px; color:#0f172a; line-height:1.3; }
+  .md-close {
+    width:34px; height:34px; flex:none; border:none; border-radius:10px;
+    background:#f1f5f9; color:#475569; cursor:pointer;
+    font-size:20px; line-height:1; display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .md-close:hover { background:#e2e8f0; }
+  .md-close:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(99,102,241,.35); }
+  .md-body { font-size:14px; color:#475569; line-height:1.6; }
+  .md-foot { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+  .md-btn {
+    padding:9px 18px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer;
+    border:1px solid transparent; transition:background .15s, border-color .15s;
+  }
+  .md-btn:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(99,102,241,.35); }
+  .md-btn.secondary { background:#fff; color:#475569; border-color:#e2e8f0; }
+  .md-btn.secondary:hover { background:#f8fafc; }
+  .md-btn.primary { background:#6366f1; color:#fff; }
+  .md-btn.primary:hover { background:#4f46e5; }
+  .md-btn.danger { background:#e11d48; color:#fff; }
+  .md-btn.danger:hover { background:#be123c; }
+  /* form-dialog field */
+  .md-field { margin-top:14px; }
+  .md-field label { display:block; font-size:12px; font-weight:700; color:#64748b; margin-bottom:5px; text-transform:uppercase; letter-spacing:.03em; }
+  .md-field input, .md-field textarea {
+    width:100%; padding:10px 12px; border:2px solid #e2e8f0; border-radius:10px;
+    font-size:14px; color:#0f172a; background:#fff; transition:border-color .15s, box-shadow .15s;
+  }
+  .md-field input:focus, .md-field textarea:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 4px rgba(99,102,241,.15); }
+  /* body scroll lock — applied to <html> while a modal is open */
+  .md-scroll-locked { overflow:hidden; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 20</div>
+      <h1 class="text-xl font-bold">🪟 Modal Dialog — Focus Trap, Esc, and Done Right</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">A dialog that traps focus and locks the page behind it.</h2>
+      <p class="text-white/80 mb-2">Click a button below to open a real modal: it fades the backdrop in, <b>scales the card</b> up, moves focus inside, and freezes the page behind it. Try every way out — the <b>× button</b>, a click on the <b>dimmed backdrop</b>, or the <b>Esc</b> key. While it is open, press <b>Tab</b> and <b>Shift+Tab</b>: focus <b>cycles inside the dialog</b> and can never reach the page underneath. Notice the page does not scroll while it is open, and when you close, focus <b>returns to the exact button you opened it with</b> — no getting stranded. All vanilla JS and CSS, with <code>role="dialog"</code>, <code>aria-modal="true"</code>, and a labelled title.</p>
+    </div>
+
+    <!-- triggers -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-6 py-5 mb-5 flex flex-wrap items-center justify-center gap-4 max-w-full w-full" style="max-width:760px;">
+      <button class="md-trigger" data-open="dlgConfirm">Delete account…</button>
+      <button class="md-trigger ghost" data-open="dlgForm">Edit profile…</button>
+      <button class="md-trigger ghost" data-open="dlgInfo">What's new ℹ︎</button>
+      <span id="status" class="w-full text-center text-xs font-semibold text-indigo-600">no dialog open — try Tab inside one once it's up</span>
+    </div>
+
+    <!-- a long spacer so you can SEE that the page can't scroll while a modal is open -->
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 max-w-full w-full mb-4" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2 text-center">Why a modal is more than a centered box</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        A modal interrupts the user on purpose: it puts one decision in front of everything else and dims the rest.
+        That promise only holds if the dialog actually <b>captures</b> the user — focus must stay inside it (a focus trap),
+        the page behind must not scroll, every obvious exit must work, and focus must come back to where it started.
+        Skip any of these and a keyboard or screen-reader user can Tab straight off into the hidden page behind the dim,
+        click controls they can't see, and lose their place entirely.
+      </p>
+    </div>
+
+    <!-- the three dialogs (markup lives here, JS wires them) -->
+    <div class="md-overlay hidden" id="dlgConfirm" data-overlay>
+      <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="dlgConfirmTitle">
+        <div class="md-head">
+          <div class="md-title" id="dlgConfirmTitle">Delete your account?</div>
+          <button class="md-close" data-close aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="md-body">This permanently removes your account and all of its data. This action <b>cannot be undone</b>. Are you sure you want to continue?</div>
+        <div class="md-foot">
+          <button class="md-btn secondary" data-close>Cancel</button>
+          <button class="md-btn danger" data-close data-action="deleted">Yes, delete it</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="md-overlay hidden" id="dlgForm" data-overlay>
+      <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="dlgFormTitle">
+        <div class="md-head">
+          <div class="md-title" id="dlgFormTitle">Edit profile</div>
+          <button class="md-close" data-close aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="md-body">
+          Update your details below. Tab through the fields — focus stays inside this dialog.
+          <div class="md-field">
+            <label for="fName">Display name</label>
+            <input id="fName" type="text" value="Devanshu" />
+          </div>
+          <div class="md-field">
+            <label for="fBio">Short bio</label>
+            <textarea id="fBio" rows="3">Builds things from zero.</textarea>
+          </div>
+        </div>
+        <div class="md-foot">
+          <button class="md-btn secondary" data-close>Cancel</button>
+          <button class="md-btn primary" data-close data-action="saved">Save changes</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="md-overlay hidden" id="dlgInfo" data-overlay>
+      <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="dlgInfoTitle">
+        <div class="md-head">
+          <div class="md-title" id="dlgInfoTitle">What's new ℹ︎</div>
+          <button class="md-close" data-close aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="md-body">This dialog traps focus, locks page scroll, closes on Esc or a backdrop click, and returns focus to the button that opened it. That is the whole accessibility contract for a modal — and it is only a screenful of code.</div>
+        <div class="md-foot">
+          <button class="md-btn primary" data-close>Got it</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-2 max-w-full w-full" style="max-width:760px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">Hand-rolled vs the native &lt;dialog&gt; element</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        Everything here is built by hand so you can see each piece. The browser also ships a real element —
+        <code>&lt;dialog&gt;</code> with <code>.showModal()</code> — that gives you the focus trap, the Esc-to-close, the
+        backdrop (<code>::backdrop</code>), <code>aria-modal</code>, and inertness of the page behind it <b>for free</b>.
+        In production you'd usually reach for that. Build it once by hand, though, and you'll understand exactly what
+        <code>showModal()</code> is doing under the hood — and why a centered <code>&lt;div&gt;</code> alone is not a modal.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> a real modal isn't just a centered box — it traps focus, locks scroll, closes on Esc/backdrop,
+      and returns focus, or it's an accessibility trap.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a modal dialog works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A trigger button, a fixed overlay, and a centered card. Fade the backdrop, scale the card, then add the four things that make it a <i>real</i> modal: Esc/backdrop close, a focus trap, a scroll lock, and return-focus. Pure CSS plus vanilla JS, no libraries — then the one-line native alternative.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The trigger + overlay + dialog markup</h3></div>
+        <div class="relative"><pre>&lt;!-- the button that opens it --&gt;
+&lt;button class="md-trigger" data-open="dlg"&gt;Open dialog&lt;/button&gt;
+
+&lt;!-- overlay = full-screen dim; dialog = the centered card --&gt;
+&lt;div class="md-overlay hidden" id="dlg" data-overlay&gt;
+  &lt;div class="md-dialog" role="dialog" aria-modal="true"
+       aria-labelledby="dlgTitle"&gt;
+    &lt;div class="md-head"&gt;
+      &lt;div class="md-title" id="dlgTitle"&gt;Title&lt;/div&gt;
+      &lt;button class="md-close" data-close aria-label="Close"&gt;&amp;times;&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class="md-body"&gt;…content…&lt;/div&gt;
+    &lt;div class="md-foot"&gt;
+      &lt;button class="md-btn secondary" data-close&gt;Cancel&lt;/button&gt;
+      &lt;button class="md-btn primary"   data-close&gt;Confirm&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Style: full-screen overlay, centered card, fade + scale</h3></div>
+        <div class="relative"><pre>/* overlay covers the viewport and centers its child */
+.md-overlay {
+  position:fixed; inset:0; z-index:60;
+  background:rgba(15,23,42,.55);          /* the dim */
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; transition:opacity .2s ease;
+}
+.md-overlay.open   { opacity:1; }         /* fade the backdrop in */
+.md-overlay.hidden { display:none; }      /* fully removed when closed */
+
+/* the card starts a touch small + transparent, then scales in */
+.md-dialog {
+  background:#fff; border-radius:18px;
+  transform:scale(.94); opacity:0;
+  transition:transform .2s ease, opacity .2s ease;
+}
+.md-overlay.open .md-dialog { transform:scale(1); opacity:1; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">open() / close() — flip hidden, then animate</h3></div>
+        <div class="relative"><pre>function open(overlay) {
+  overlay.classList.remove("hidden");     // mount it (display:flex)
+  // next frame: add .open so the transition actually runs
+  requestAnimationFrame(() =&gt; overlay.classList.add("open"));
+}
+
+function close(overlay) {
+  overlay.classList.remove("open");       // play fade/scale OUT
+  overlay.addEventListener("transitionend", function done() {
+    overlay.classList.add("hidden");      // unmount AFTER the animation
+    overlay.removeEventListener("transitionend", done);
+  }, { once:true });
+}
+
+// wire the triggers
+document.querySelectorAll("[data-open]").forEach(btn =&gt;
+  btn.onclick = () =&gt; open(document.getElementById(btn.dataset.open)));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Close on ×, on backdrop click, and on Esc — all three</h3></div>
+        <div class="relative"><pre>// × buttons and any [data-close] inside the dialog
+overlay.querySelectorAll("[data-close]").forEach(el =&gt;
+  el.onclick = () =&gt; close(overlay));
+
+// backdrop click: only when the click is the OVERLAY itself,
+// not a click that bubbled up from inside the card
+overlay.addEventListener("mousedown", (e) =&gt; {
+  if (e.target === overlay) close(overlay);
+});
+
+// Esc closes the topmost open dialog
+document.addEventListener("keydown", (e) =&gt; {
+  if (e.key === "Escape" &amp;&amp; current) close(current);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The focus trap — keep Tab inside the dialog</h3></div>
+        <div class="relative"><pre>const SEL = 'a[href], button:not([disabled]), input, textarea, ' +
+            'select, [tabindex]:not([tabindex="-1"])';
+
+function trap(e, dialog) {
+  if (e.key !== "Tab") return;
+  const f = [...dialog.querySelectorAll(SEL)]
+              .filter(el =&gt; el.offsetParent !== null);   // visible only
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+
+  if (e.shiftKey &amp;&amp; document.activeElement === first) {
+    e.preventDefault(); last.focus();   // wrap to the end
+  } else if (!e.shiftKey &amp;&amp; document.activeElement === last) {
+    e.preventDefault(); first.focus();  // wrap to the start
+  }
+}
+// on open, move focus INTO the dialog (first field/button)
+dialog.querySelector(SEL)?.focus();</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Lock body scroll (and pad for the scrollbar)</h3></div>
+        <div class="relative"><pre>function lockScroll() {
+  // the scrollbar vanishes when overflow is hidden — its width would
+  // make the page JUMP. Pad the body by that exact width to hold still.
+  const sbw = window.innerWidth - document.documentElement.clientWidth;
+  document.body.style.paddingRight = sbw + "px";
+  document.documentElement.classList.add("md-scroll-locked");  // overflow:hidden
+}
+function unlockScroll() {
+  document.documentElement.classList.remove("md-scroll-locked");
+  document.body.style.paddingRight = "";
+}
+/* .md-scroll-locked { overflow:hidden; } */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Return focus to the trigger on close</h3></div>
+        <div class="relative"><pre>let lastTrigger = null;
+
+function open(overlay) {
+  lastTrigger = document.activeElement;   // remember who opened us
+  overlay.classList.remove("hidden");
+  requestAnimationFrame(() =&gt; overlay.classList.add("open"));
+  lockScroll();
+  overlay.querySelector(SEL)?.focus();    // focus into the dialog
+}
+
+function close(overlay) {
+  overlay.classList.remove("open");
+  unlockScroll();
+  lastTrigger?.focus();   // DON'T strand the user — send focus back
+  // …then unmount on transitionend as in step 3
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The native &lt;dialog&gt; alternative — most of this for free</h3></div>
+        <div class="relative"><pre>&lt;dialog id="dlg"&gt;
+  &lt;h2&gt;Title&lt;/h2&gt;
+  &lt;p&gt;…content…&lt;/p&gt;
+  &lt;form method="dialog"&gt;            &lt;!-- a submit auto-closes it --&gt;
+    &lt;button&gt;Cancel&lt;/button&gt;
+    &lt;button value="ok"&gt;Confirm&lt;/button&gt;
+  &lt;/form&gt;
+&lt;/dialog&gt;
+
+&lt;script&gt;
+  const dlg = document.getElementById("dlg");
+  openBtn.onclick = () =&gt; dlg.showModal();   // focus trap + Esc + inert page
+&lt;/script&gt;
+
+&lt;style&gt;
+  dialog::backdrop { background:rgba(15,23,42,.55); }  /* the dim, free */
+&lt;/style&gt;
+
+&lt;!-- showModal() gives: focus trap, Esc-to-close, top layer,
+     ::backdrop, aria-modal, and the page behind made inert. --&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 20 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">A trigger, a fixed overlay, and a centered card — then the four things that make it real: a <b>focus trap</b>, a <b>scroll lock</b>, <b>Esc + backdrop close</b>, and <b>return-focus</b>. Skip those and a centered box is just an accessibility trap. The native <code>&lt;dialog&gt;</code> with <code>showModal()</code> hands you most of it for free. Tomorrow: another build.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== MODAL DIALOG DEMO =====
+const statusEl = document.getElementById("status");
+// every focusable thing inside a dialog (for the focus trap)
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+let current     = null;   // the currently-open overlay (or null)
+let lastTrigger = null;   // the element that opened it — focus returns here
+
+function focusable(dialog) {
+  return [...dialog.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
+}
+
+// the scrollbar disappears under overflow:hidden, which would shift the page;
+// pad the body by the scrollbar's width so nothing jumps.
+function lockScroll() {
+  const sbw = window.innerWidth - document.documentElement.clientWidth;
+  if (sbw > 0) document.body.style.paddingRight = sbw + "px";
+  document.documentElement.classList.add("md-scroll-locked");
+}
+function unlockScroll() {
+  document.documentElement.classList.remove("md-scroll-locked");
+  document.body.style.paddingRight = "";
+}
+
+function openDialog(overlay) {
+  if (current) return;                         // one at a time here
+  lastTrigger = document.activeElement;        // remember who opened us
+  current = overlay;
+  overlay.classList.remove("hidden");
+  // next frame so the .open transition actually animates
+  requestAnimationFrame(() => overlay.classList.add("open"));
+  lockScroll();
+  // move focus INTO the dialog (first focusable, else the dialog card)
+  const dialog = overlay.querySelector('[role="dialog"]');
+  const first = focusable(dialog)[0];
+  (first || dialog).focus();
+  statusEl.textContent = "dialog open — Tab cycles inside · Esc / backdrop / × to close";
+}
+
+function closeDialog(overlay) {
+  if (!overlay) return;
+  overlay.classList.remove("open");
+  unlockScroll();
+  current = null;
+  // unmount only after the fade/scale-out finishes
+  const onEnd = () => { overlay.classList.add("hidden"); overlay.removeEventListener("transitionend", onEnd); };
+  overlay.addEventListener("transitionend", onEnd, { once:true });
+  // safety net if transitionend doesn't fire (e.g. reduced motion)
+  setTimeout(() => { if (!overlay.classList.contains("open")) overlay.classList.add("hidden"); }, 320);
+  // DON'T strand the user — return focus to the trigger
+  if (lastTrigger) { lastTrigger.focus(); lastTrigger = null; }
+  statusEl.textContent = "no dialog open — try Tab inside one once it's up";
+}
+
+// --- wire the triggers ---
+document.querySelectorAll("[data-open]").forEach(btn => {
+  btn.onclick = () => openDialog(document.getElementById(btn.dataset.open));
+});
+
+// --- × buttons, Cancel/Confirm, anything [data-close] ---
+document.querySelectorAll(".md-overlay").forEach(overlay => {
+  overlay.querySelectorAll("[data-close]").forEach(el => {
+    el.addEventListener("click", () => {
+      const act = el.dataset.action;
+      closeDialog(overlay);
+      if (act === "deleted")    statusEl.textContent = "account deleted (demo) — focus returned to the trigger";
+      else if (act === "saved") statusEl.textContent = "profile saved (demo) — focus returned to the trigger";
+    });
+  });
+  // --- backdrop click closes (only when the OVERLAY itself is the target) ---
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) closeDialog(overlay); });
+});
+
+// --- keyboard: Esc closes · Tab is trapped inside the open dialog ---
+document.addEventListener("keydown", (e) => {
+  if (!current) return;
+  if (e.key === "Escape") { e.preventDefault(); closeDialog(current); return; }
+  if (e.key === "Tab") {
+    const dialog = current.querySelector('[role="dialog"]');
+    const f = focusable(dialog);
+    if (!f.length) { e.preventDefault(); return; }
+    const first = f[0], last = f[f.length - 1];
+    // wrap around so focus can never leave the dialog
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  }
+});
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. What a modal is — and when NOT to use one", why:"A modal dialog is a small surface that opens on top of the page, dims everything behind it, and demands attention before the user can do anything else. It is the right tool when you genuinely must interrupt the flow: confirming a destructive action, capturing a short focused decision, or showing something the user must acknowledge before continuing. The cost is real, though, because a modal takes over the whole screen, blocks the page behind it, and traps the keyboard, so it is heavy-handed for anything that is not urgent. If the content is large, browsable, or non-blocking, a normal page, a side panel, or an inline expansion is almost always kinder. Reach for a modal only when the answer to which one thing do I need from the user right now is clear and small.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>page dimmed · one decision · blocks everything</div></div><div class="mt-2 text-emerald-600 text-[11px]">good: confirm delete · short form · must-acknowledge</div><div class="mt-1 text-rose-500 text-[11px]">bad: big content · browsing · non-urgent → use a page/panel</div></div>`, code:`<!-- a modal is an INTERRUPTION: use it sparingly -->
+<!-- good fit -->
+<button data-open="confirmDelete">Delete…</button>
+
+<!-- bad fit — don't trap the user for this -->
+<!-- a long settings page, a product list, casual info -->
+<!-- → render those inline or on their own route instead -->` },
+
+  { title:"2. The overlay + backdrop structure", why:"A hand-built modal is really two nested boxes. The outer box is the overlay: a fixed-position element pinned to all four edges of the viewport with a semi-transparent dark background, which is the dim you see over the page. The inner box is the dialog itself, the white card that holds your title, content, and buttons. Pinning the overlay with position fixed and inset zero means it always covers the entire screen regardless of scrolling, and a high z-index keeps it above the rest of the page. The dim background does two jobs at once: it visually pushes the page back so the dialog stands out, and it gives you a large click target for closing. Getting this two-layer structure right is what every later behaviour hangs off of.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="relative mx-auto" style="width:200px;height:110px;background:#cbd5e1;border-radius:8px;overflow:hidden"><div class="absolute inset-0" style="background:rgba(15,23,42,.55)"></div><div class="absolute" style="left:50%;top:50%;transform:translate(-50%,-50%);width:110px;height:60px;background:#fff;border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.3)"></div></div><div class="mt-2 text-slate-500 text-[11px]">overlay (fixed, dim) → centers → dialog card</div></div>`, code:`.md-overlay {
+  position:fixed; inset:0;          /* cover whole viewport */
+  z-index:60;                        /* above the page */
+  background:rgba(15,23,42,.55);     /* the dim backdrop */
+}
+.md-dialog {
+  background:#fff; border-radius:18px;   /* the card itself */
+  box-shadow:0 30px 70px rgba(15,23,42,.35);
+}` },
+
+  { title:"3. Centering the dialog (flex or grid)", why:"The card needs to sit in the middle of the screen no matter the screen size, and the modern way is to let the overlay center it instead of doing margin math. Turn the overlay into a flex container and set align-items to center and justify-content to center, and its single child, the dialog, lands dead center both vertically and horizontally. Grid does the same with place-items center if you prefer. This approach beats the old absolute-positioning-with-negative-margins trick because it adapts automatically to any dialog height and never overflows off the top on short screens. Add some padding on the overlay so that on small viewports the card keeps a little breathing room from the edges rather than touching them.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>.md-overlay {</div><div>&nbsp;&nbsp;display:flex;</div><div>&nbsp;&nbsp;align-items:center;</div><div>&nbsp;&nbsp;justify-content:center;</div><div>}</div></div><div class="mt-2 text-slate-500 text-[11px]">one flex container → child sits dead center</div></div>`, code:`.md-overlay {
+  display:flex;
+  align-items:center;       /* vertical center */
+  justify-content:center;   /* horizontal center */
+  padding:20px;             /* breathing room on small screens */
+}
+/* (grid equivalent: display:grid; place-items:center;) */` },
+
+  { title:"4. The fade + scale transition", why:"An abrupt pop is jarring, so a modal should ease in. The pattern is to animate two things: fade the dim overlay from transparent to opaque, and scale the card from slightly small up to full size while fading it in. You do this with CSS transitions keyed off an open class. When closed, the overlay has opacity zero and the card sits at scale point nine four; adding the open class transitions both to their final values over a couple hundred milliseconds. The one subtlety is timing: if you remove display none and add the open class in the same frame, the browser sees no change to animate, so you remove hidden first, then add open on the next animation frame so the transition actually runs. On close you reverse it and only set display none after the transition ends.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>closed: opacity:0 · scale(.94)</div><div>open:&nbsp;&nbsp; opacity:1 · scale(1)</div></div><div class="mt-2 text-indigo-600 text-[11px]">transition .2s → fades + grows into place</div><div class="mt-1 text-slate-500 text-[11px]">add .open on the NEXT frame so it animates</div></div>`, code:`.md-overlay { opacity:0; transition:opacity .2s; }
+.md-overlay.open { opacity:1; }
+.md-dialog { transform:scale(.94); opacity:0;
+             transition:transform .2s, opacity .2s; }
+.md-overlay.open .md-dialog { transform:scale(1); opacity:1; }
+
+overlay.classList.remove("hidden");        // mount
+requestAnimationFrame(() =>                // THEN animate
+  overlay.classList.add("open"));` },
+
+  { title:"5. Closing affordances — ×, backdrop, and Esc (all three)", why:"Users expect more than one way out of a modal, and a good one offers all three. The visible × button in the corner is the obvious mouse target. Clicking the dimmed backdrop should also dismiss it, which you detect by checking that the click landed on the overlay element itself and not on something inside the card, so a click on a button or text does not accidentally close. And the Escape key must close it too, because keyboard users reach for Esc instinctively and screen-reader users are told that Esc closes dialogs. Offering only one of these frustrates someone: a keyboard user stuck without Esc, or a mouse user hunting for a tiny ×. Wire up all three and the dialog feels effortless to leave, which paradoxically makes people more comfortable opening it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-emerald-600 font-semibold text-[12px]">× button · backdrop click · Esc key</div><div class="mt-2 text-slate-500 text-[11px]">all three close it — omit one and someone gets stuck</div><div class="mt-1 text-indigo-600 text-[11px]">backdrop: close only if e.target === overlay</div></div>`, code:`// × and any [data-close] button
+el.onclick = () => close(overlay);
+
+// backdrop: the overlay itself, NOT a bubbled inner click
+overlay.addEventListener("mousedown", e => {
+  if (e.target === overlay) close(overlay);
+});
+
+// Esc closes the open dialog
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && current) close(current);
+});` },
+
+  { title:"6. The focus trap — why, and how to cycle first/last", why:"This is the part most hand-built modals get wrong, and it is what makes a centered box accessible or not. When a modal is open, pressing Tab should cycle only through the controls inside the dialog and never reach the page hidden behind the dim. Without a trap, a keyboard or screen-reader user tabs straight off the dialog into links and buttons they cannot even see, which is disorienting and broken. To build it, you collect every focusable element inside the dialog, identify the first and last, and intercept the Tab key: if Tab is pressed on the last element you send focus back to the first, and if Shift+Tab is pressed on the first you send it to the last. That wrap-around keeps focus circling inside the dialog for as long as it is open.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">Tab on <b>last</b> → wrap to <b>first</b></div><div class="text-[12px]">Shift+Tab on <b>first</b> → wrap to <b>last</b></div><div class="mt-2 text-rose-500 text-[11px]">no trap → Tab escapes to the hidden page = broken</div><div class="mt-1 text-emerald-600 text-[11px]">focus circles inside the dialog forever</div></div>`, code:`const f = [...dialog.querySelectorAll(FOCUSABLE)];
+const first = f[0], last = f[f.length - 1];
+
+if (e.key === "Tab") {
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault(); last.focus();   // wrap backward
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault(); first.focus();  // wrap forward
+  }
+}` },
+
+  { title:"7. Locking body scroll (and the scrollbar-shift gotcha)", why:"While a modal is open the page behind it must not scroll, or the user can spin the wheel and watch content slide around under the dim, which feels broken and defeats the point of focusing them on the dialog. The simplest lock is to set overflow hidden on the html or body element while the modal is open and remove it on close. There is a famous gotcha, though: when you hide overflow the vertical scrollbar disappears, and on desktop that scrollbar had width, so the page suddenly gets wider and everything jumps to the right by a few pixels. The fix is to measure the scrollbar width, the difference between the window inner width and the document client width, and add that as right padding on the body so the layout holds perfectly still as the scrollbar vanishes.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">overflow:hidden on &lt;html&gt; while open</div><div class="mt-2 text-rose-500 text-[11px]">gotcha: scrollbar vanishes → page jumps right</div><div class="mt-1 text-emerald-600 text-[11px]">fix: pad body by the scrollbar's width</div></div>`, code:`// scrollbar width = window width − content width
+const sbw = window.innerWidth -
+            document.documentElement.clientWidth;
+document.body.style.paddingRight = sbw + "px";  // no jump
+document.documentElement.classList.add("md-scroll-locked");
+
+/* .md-scroll-locked { overflow:hidden; } */
+
+// on close: remove the class AND the padding
+` },
+
+  { title:"8. Returning focus to the trigger (don't strand the user)", why:"Opening a modal moves keyboard focus into the dialog, which is correct, but you must remember where focus came from so you can put it back when the dialog closes. If you forget, focus falls back to the top of the document or simply vanishes, and a keyboard user is suddenly lost, having to tab all the way from the start of the page to find their place again. The fix is small and important: just before opening, save document.activeElement, which is the button that was clicked, and after closing call focus on that saved element. Now closing the dialog returns the user precisely to the control they used to open it, so the experience is seamless and reversible. Saving and restoring focus is a hallmark of a properly built dialog and is exactly what the native element does for you.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">open → remember the trigger</div><div class="text-[12px]">close → focus it again</div><div class="mt-2 text-rose-500 text-[11px]">forget → focus lost at top of page, user stranded</div><div class="mt-1 text-emerald-600 text-[11px]">lastTrigger.focus() → seamless return</div></div>`, code:`let lastTrigger = null;
+
+function open(overlay) {
+  lastTrigger = document.activeElement;   // who opened us
+  /* …show + focus into dialog… */
+}
+function close(overlay) {
+  /* …hide… */
+  lastTrigger?.focus();   // send focus back to the trigger
+  lastTrigger = null;
+}` },
+
+  { title:"9. ARIA roles — dialog, aria-modal, labelled-by", why:"Visual styling alone tells a sighted mouse user this is a dialog, but a screen reader needs to be told in code. Three attributes carry the meaning. Put role dialog on the card so assistive tech announces it as a dialog rather than a generic box. Add aria-modal true to signal that the content behind it is inert and should be ignored while the dialog is open, which reinforces your focus trap and scroll lock for screen-reader users. And connect aria-labelledby to the id of your title element so the dialog is announced with a meaningful name the moment it opens, instead of an anonymous unlabeled dialog. Together these three turn a pretty box into something a screen-reader user can recognise, navigate, and understand, which is the difference between accessible and merely good-looking.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>role="dialog"</div><div>aria-modal="true"</div><div>aria-labelledby="titleId"</div></div><div class="mt-2 text-indigo-600 text-[11px]">announced as a named dialog · page behind = inert</div></div>`, code:`<div class="md-dialog"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="dlgTitle">
+  <div class="md-title" id="dlgTitle">Delete your account?</div>
+  …
+</div>` },
+
+  { title:"10. The native <dialog> element (most of this for free)", why:"After building all of that by hand, here is the punchline: the browser ships an element that does most of it for you. The dialog element, opened with its showModal method, automatically renders on a top layer above everything, provides a ::backdrop pseudo-element you can style as the dim, traps focus inside, closes on the Escape key, sets aria-modal, and makes the rest of the page inert so screen readers ignore it. A form with method dialog inside it closes the dialog on submit and reports which button was used. You still want to handle backdrop-click closing and return-focus is largely handled too, so in real projects you would usually start here rather than hand-rolling. Building it manually first is worth it, though, because now you know precisely what showModal is doing and why each piece matters.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[12px]">&lt;dialog&gt; + dlg.showModal()</div><div class="mt-2 text-emerald-600 text-[11px]">free: focus trap · Esc · ::backdrop · aria-modal · inert page</div><div class="mt-1 text-slate-500 text-[11px]">build it by hand once → understand what it does</div></div>`, code:`<dialog id="dlg">
+  <h2>Title</h2>
+  <form method="dialog">     <!-- submit auto-closes -->
+    <button value="ok">Confirm</button>
+  </form>
+</dialog>
+
+<style> dialog::backdrop { background:rgba(15,23,42,.55); } </style>
+
+<scr` + `ipt> openBtn.onclick = () => dlg.showModal(); </scr` + `ipt>` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
