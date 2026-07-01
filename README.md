@@ -27,6 +27,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 18 — Carousel](https://dev48v.infy.uk/design/day18-carousel.html) — `day18-carousel.html`
 - [DesignFromZero · Day 19 — Date Picker](https://dev48v.infy.uk/design/day19-date-picker.html) — `day19-date-picker.html`
 - [DesignFromZero · Day 20 — Modal Dialog](https://dev48v.infy.uk/design/day20-modal-dialog.html) — `day20-modal-dialog.html`
+- [DesignFromZero · Day 21 — Virtual Scroll](https://dev48v.infy.uk/design/day21-virtual-scroll.html) — `day21-virtual-scroll.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

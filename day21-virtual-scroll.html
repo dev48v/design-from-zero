@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DesignFromZero · Day 21 — Virtual Scroll</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ===== Virtual Scroll ===== */
+  /* the viewport is a fixed-height, scrollable box. Inside it a single tall
+     "sizer" div gives the scrollbar the FULL height of all rows, while only a
+     handful of real rows are absolutely positioned into the visible window. */
+  .vs-viewport {
+    position:relative; height:420px; overflow-y:auto;
+    background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+    box-shadow:0 10px 30px rgba(15,23,42,.12);
+  }
+  /* the sizer holds the full scrollable height (rows * rowHeight) but is empty */
+  .vs-sizer { position:relative; width:100%; }
+  /* each row is absolutely positioned by top = index * rowHeight */
+  .vs-row {
+    position:absolute; left:0; right:0; height:36px;
+    display:flex; align-items:center; gap:12px;
+    padding:0 16px; box-sizing:border-box;
+    border-bottom:1px solid #f1f5f9; font-size:13px; color:#334155;
+  }
+  .vs-row:nth-child(even) { background:#f8fafc; }   /* zebra by DOM order */
+  .vs-row .vs-idx {
+    width:74px; flex:none; font-variant-numeric:tabular-nums;
+    color:#94a3b8; font-size:11px; font-weight:700; letter-spacing:.02em;
+  }
+  .vs-row .vs-dot { width:9px; height:9px; flex:none; border-radius:50%; }
+  .vs-row .vs-name { font-weight:600; color:#0f172a; }
+  .vs-row .vs-meta { margin-left:auto; color:#64748b; font-size:11px; font-variant-numeric:tabular-nums; }
+
+  /* naive mode: normal document flow, every row a real element = the jank demo */
+  .vs-viewport.naive .vs-sizer { height:auto !important; }
+  .vs-viewport.naive .vs-row { position:static; }
+
+  .vs-btn {
+    padding:9px 16px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer;
+    border:1px solid transparent; transition:background .15s, border-color .15s, transform .08s;
+  }
+  .vs-btn:active { transform:translateY(1px); }
+  .vs-btn:focus-visible { outline:none; box-shadow:0 0 0 3px rgba(99,102,241,.35); }
+  .vs-btn.primary { background:#6366f1; color:#fff; box-shadow:0 6px 18px rgba(99,102,241,.35); }
+  .vs-btn.primary:hover { background:#4f46e5; }
+  .vs-btn.ghost { background:#fff; color:#4338ca; box-shadow:0 4px 14px rgba(15,23,42,.12); }
+  .vs-btn.ghost:hover { background:#eef2ff; }
+  .vs-btn.danger { background:#e11d48; color:#fff; }
+  .vs-btn.danger:hover { background:#be123c; }
+
+  .vs-stat {
+    background:#0f172a; color:#e2e8f0; border-radius:12px; padding:12px 16px;
+    font-variant-numeric:tabular-nums;
+  }
+  .vs-stat b { color:#a5b4fc; }
+  .vs-stat .big { font-size:22px; font-weight:800; color:#fff; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 21</div>
+      <h1 class="text-xl font-bold">📜 Virtual Scroll — 100,000 Rows, ~20 DOM Nodes</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 flex flex-col items-center"
+       style="background:linear-gradient(160deg,#5b6ee1 0%,#8e6ee8 45%,#c86ec0 100%);">
+    <div class="max-w-2xl mx-auto text-center mb-6 mt-2">
+      <h2 class="text-2xl font-bold mb-1 text-white drop-shadow">A list of 100,000 rows that scrolls at 60fps — with only ~20 rows in the DOM.</h2>
+      <p class="text-white/80 mb-2">The box below holds <b>one hundred thousand</b> rows, but at any instant only the handful that fit the visible window actually exist as HTML. Scroll it and watch the <b>live counter</b>: the number of real DOM nodes stays tiny and flat no matter how far you fly down the list. A single empty <b>spacer</b> gives the scrollbar the full height so it behaves exactly as if all 100k rows were there. Then hit <b>Render all (naive)</b> to mount every row for real — feel the page hitch, watch the node count explode into six figures, and see why big lists need windowing. Toggle back to <b>Virtual</b> and it is instantly smooth again. All vanilla JS, fixed row height, no libraries.</p>
+    </div>
+
+    <!-- controls + live stats -->
+    <div class="bg-white/95 rounded-2xl shadow-xl px-6 py-5 mb-5 w-full" style="max-width:820px;">
+      <div class="flex flex-wrap items-center justify-center gap-3 mb-4">
+        <button class="vs-btn primary" id="btnVirtual">Virtual (windowed)</button>
+        <button class="vs-btn danger"  id="btnNaive">Render all (naive) ⚠</button>
+        <button class="vs-btn ghost"   id="btnTop">↑ Jump to top</button>
+        <button class="vs-btn ghost"   id="btnBottom">↓ Jump to row 100,000</button>
+      </div>
+      <div class="grid grid-cols-3 gap-3 text-center text-xs">
+        <div class="vs-stat"><div class="big" id="statNodes">0</div><div>rendered <b>DOM nodes</b> of 100,000</div></div>
+        <div class="vs-stat"><div class="big" id="statMode">Virtual</div><div>current <b>mode</b></div></div>
+        <div class="vs-stat"><div class="big" id="statRange">0–0</div><div>visible <b>row range</b></div></div>
+      </div>
+    </div>
+
+    <!-- the scroller -->
+    <div class="w-full" style="max-width:820px;">
+      <div class="vs-viewport" id="viewport" tabindex="0" aria-label="Virtualized list of 100000 rows">
+        <div class="vs-sizer" id="sizer"></div>
+      </div>
+      <p class="text-xs text-white/70 mt-2 text-center" id="hint">Scroll the box — only the visible window is mounted. The scrollbar is the real 100k-row height.</p>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-5 w-full" style="max-width:820px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2 text-center">Why the browser can't just render them all</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        Every DOM node costs memory, a slice of layout time, and paint work. A hundred thousand rows means the browser must
+        create, style, lay out, and track a hundred thousand elements before a single pixel appears — seconds of frozen tab,
+        hundreds of megabytes of memory, and janky scrolling forever after. Virtual scrolling flips it: the list <i>data</i> can be
+        as large as you like, but the number of <b>elements on screen</b> is bounded by what fits the window. You render a moving
+        window, not the whole document. That is the entire trick — and it is what powers every chat log, spreadsheet, and infinite feed you use.
+      </p>
+    </div>
+
+    <div class="bg-white/95 rounded-2xl shadow-xl p-6 mt-2 w-full" style="max-width:820px;">
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 text-center">Fixed height here · variable height is the advanced case</div>
+      <p class="text-sm text-slate-600 text-center max-w-2xl mx-auto">
+        This demo uses a <b>fixed row height</b>, which makes the math exact: any row's top is just <code>index × rowHeight</code>,
+        and the first visible row is <code>Math.floor(scrollTop / rowHeight)</code>. When rows can be <i>different</i> heights you lose that
+        closed-form answer and must measure rows as they render, keep a running offset map, and estimate the rest — libraries like
+        TanStack Virtual and react-window exist largely to handle that bookkeeping. Start with fixed height, get the window right,
+        then reach for a library the day you truly need variable rows.
+      </p>
+    </div>
+
+    <p class="text-xs text-white/70 mt-6 max-w-lg text-center">
+      <b>The whole idea:</b> a big list is just data. Keep the DOM the size of the <i>window</i>, give the scrollbar a spacer the size of the <i>data</i>,
+      and move the window on scroll — that's virtual scrolling.
+    </p>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How virtual scrolling works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A scrollable viewport, one tall empty spacer, and a fistful of absolutely-positioned rows. Compute which rows are visible from <code>scrollTop</code>, add a small overscan buffer, and re-render on scroll. Fixed row height keeps the math a one-liner. Pure CSS plus vanilla JS, no libraries — then a note on variable heights.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The viewport + the tall empty spacer</h3></div>
+        <div class="relative"><pre>&lt;!-- fixed-height scroll box; the sizer is empty but TALL --&gt;
+&lt;div class="vs-viewport" id="viewport"&gt;
+  &lt;div class="vs-sizer" id="sizer"&gt;&lt;/div&gt;
+&lt;/div&gt;
+
+&lt;style&gt;
+  .vs-viewport { position:relative; height:420px; overflow-y:auto; }
+  .vs-sizer    { position:relative; width:100%; }  /* height set in JS */
+  .vs-row      { position:absolute; left:0; right:0; height:36px; }
+&lt;/style&gt;
+
+// give the scrollbar the FULL height of all rows, up front
+const ROW_H = 36, TOTAL = 100000;
+sizer.style.height = (ROW_H * TOTAL) + "px";   // 3,600,000px tall</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Which rows are visible? (from scrollTop)</h3></div>
+        <div class="relative"><pre>function visibleRange() {
+  const scrollTop = viewport.scrollTop;
+  const height    = viewport.clientHeight;
+
+  // fixed height ⇒ closed-form: first row = scrollTop / rowHeight
+  const first = Math.floor(scrollTop / ROW_H);
+  const count = Math.ceil(height / ROW_H);      // rows that fit the window
+  const last  = Math.min(TOTAL - 1, first + count);
+  return { first, last };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Add an overscan buffer</h3></div>
+        <div class="relative"><pre>const OVERSCAN = 4;   // render a few extra rows above & below
+
+function windowRange() {
+  const { first, last } = visibleRange();
+  return {
+    from: Math.max(0, first - OVERSCAN),
+    to:   Math.min(TOTAL - 1, last + OVERSCAN),
+  };
+}
+// the buffer means rows already exist just off-screen,
+// so fast scrolling never flashes a blank gap</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Render only that window, positioned by index</h3></div>
+        <div class="relative"><pre>function render() {
+  const { from, to } = windowRange();
+  sizer.innerHTML = "";                     // clear the old window
+  const frag = document.createDocumentFragment();
+  for (let i = from; i &lt;= to; i++) {
+    const row = document.createElement("div");
+    row.className = "vs-row";
+    row.style.top = (i * ROW_H) + "px";     // absolute position by index
+    row.textContent = "Row " + i;
+    frag.appendChild(row);
+  }
+  sizer.appendChild(frag);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Re-render on scroll (throttled with rAF)</h3></div>
+        <div class="relative"><pre>let ticking = false;
+viewport.addEventListener("scroll", () =&gt; {
+  if (ticking) return;
+  ticking = true;
+  // coalesce many scroll events into one paint per frame
+  requestAnimationFrame(() =&gt; { render(); ticking = false; });
+});
+render();   // first paint</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Skip re-render when the window hasn't changed</h3></div>
+        <div class="relative"><pre>let lastFrom = -1;
+
+function render() {
+  const { from, to } = windowRange();
+  if (from === lastFrom) return;   // still the same window → do nothing
+  lastFrom = from;
+  /* …build rows from..to as before… */
+}
+// most scroll pixels don't cross a row boundary,
+// so this skips the vast majority of DOM work</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Optional: recycle nodes instead of rebuilding</h3></div>
+        <div class="relative"><pre>// advanced: keep a pool of ~(window+overscan) row elements and just
+// re-point each one's top + text as the window moves. No create/destroy.
+pool.forEach((row, k) =&gt; {
+  const i = from + k;
+  row.style.top   = (i * ROW_H) + "px";
+  row.textContent = "Row " + i;
+  row.style.display = (i &lt;= to) ? "" : "none";
+});
+// fewer allocations, less GC → smoother on low-end devices</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-6"><div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Variable heights + accessibility (the hard parts)</h3></div>
+        <div class="relative"><pre>// VARIABLE HEIGHT: no closed-form index. Measure rows as they render,
+// store cumulative offsets, binary-search scrollTop → firstIndex,
+// and use an estimate for rows not yet measured.
+//   offsets = [0, h0, h0+h1, ...];  first = binarySearch(offsets, scrollTop)
+
+// A11Y: only ~20 rows exist, so screen readers / Ctrl-F see only those.
+// Add aria-rowcount / aria-rowindex, don't virtualize tiny lists,
+// and give a real "results: N" count elsewhere.
+// Reach for TanStack Virtual / react-window for the bookkeeping.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 21 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">A scroll box, one tall empty <b>spacer</b> for the scrollbar, and a moving <b>window</b> of absolutely-positioned rows. Compute the first visible row from <code>scrollTop / rowHeight</code>, add an <b>overscan</b> buffer, and re-render on scroll — skipping when the window hasn't moved. Fixed height makes it a one-liner; variable height is where the libraries earn their keep. Tomorrow: Tooltip with smart positioning.</p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== VIRTUAL SCROLL DEMO =====
+const ROW_H    = 36;        // fixed row height in px
+const TOTAL     = 100000;   // one hundred thousand rows of DATA
+const OVERSCAN  = 5;        // extra rows above & below the window
+
+const viewport  = document.getElementById("viewport");
+const sizer     = document.getElementById("sizer");
+const statNodes = document.getElementById("statNodes");
+const statMode  = document.getElementById("statMode");
+const statRange = document.getElementById("statRange");
+const hint      = document.getElementById("hint");
+
+// a stable palette so each row looks like real data, computed from its index
+const DOTS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#e11d48","#8b5cf6"];
+function rowData(i) {
+  const dot  = DOTS[i % DOTS.length];
+  const name = "Item " + (i + 1).toLocaleString();
+  // deterministic pseudo-size so meta looks varied but is pure of i
+  const kb   = ((i * 2654435761) % 9000 + 100);
+  return { dot, name, kb };
+}
+
+let mode     = "virtual";   // "virtual" | "naive"
+let lastFrom = -1;          // last window start we rendered (skip if unchanged)
+
+// --- the closed-form window from scrollTop (fixed row height) ---
+function windowRange() {
+  const scrollTop = viewport.scrollTop;
+  const height    = viewport.clientHeight;
+  const first = Math.floor(scrollTop / ROW_H);              // firstVisibleIndex
+  const visible = Math.ceil(height / ROW_H);                // rows that fit
+  const from = Math.max(0, first - OVERSCAN);
+  const to   = Math.min(TOTAL - 1, first + visible + OVERSCAN);
+  return { first, visible, from, to };
+}
+
+function makeRow(i) {
+  const d = rowData(i);
+  const row = document.createElement("div");
+  row.className = "vs-row";
+  row.style.top = (i * ROW_H) + "px";      // position by index — the whole trick
+  row.innerHTML =
+    '<span class="vs-idx">#' + (i + 1).toLocaleString() + '</span>' +
+    '<span class="vs-dot" style="background:' + d.dot + '"></span>' +
+    '<span class="vs-name">' + d.name + '</span>' +
+    '<span class="vs-meta">' + d.kb.toLocaleString() + ' KB</span>';
+  return row;
+}
+
+// --- VIRTUAL render: only the window exists in the DOM ---
+function renderVirtual(force) {
+  const { first, visible, from, to } = windowRange();
+  if (!force && from === lastFrom) { updateStats(first, visible); return; }
+  lastFrom = from;
+  const frag = document.createDocumentFragment();
+  for (let i = from; i <= to; i++) frag.appendChild(makeRow(i));
+  sizer.replaceChildren(frag);             // swap the whole window in one go
+  updateStats(first, visible);
+}
+
+// --- NAIVE render: mount ALL rows (the jank / node-explosion demo) ---
+function renderNaive() {
+  const frag = document.createDocumentFragment();
+  // cap the DOM catastrophe a little so the tab survives to be measured;
+  // even this reduced count makes the point loudly.
+  const N = 20000;
+  for (let i = 0; i < N; i++) {
+    const row = makeRow(i);
+    row.style.top = "";           // back to normal document flow
+    frag.appendChild(row);
+  }
+  sizer.replaceChildren(frag);
+  const first = Math.floor(viewport.scrollTop / ROW_H);
+  const visible = Math.ceil(viewport.clientHeight / ROW_H);
+  updateStats(first, visible);
+}
+
+function updateStats(first, visible) {
+  statNodes.textContent = sizer.childElementCount.toLocaleString();
+  statMode.textContent  = mode === "virtual" ? "Virtual" : "Naive ⚠";
+  const last = Math.min(TOTAL - 1, first + visible);
+  statRange.textContent = (first + 1).toLocaleString() + "–" + (last + 1).toLocaleString();
+}
+
+// --- mode switches ---
+function setVirtual() {
+  mode = "virtual";
+  viewport.classList.remove("naive");
+  sizer.style.height = (ROW_H * TOTAL) + "px";   // full data height → real scrollbar
+  lastFrom = -1;
+  hint.textContent = "Scroll the box — only the visible window is mounted. The scrollbar is the real 100k-row height.";
+  renderVirtual(true);
+}
+function setNaive() {
+  mode = "naive";
+  viewport.classList.add("naive");
+  sizer.style.height = "auto";                   // flow decides height now
+  hint.textContent = "Naive mode: 20,000 real rows mounted at once. Feel the hitch, watch the node count — and imagine 100k.";
+  renderNaive();
+}
+
+// --- scroll handler: coalesce to one render per animation frame ---
+let ticking = false;
+viewport.addEventListener("scroll", () => {
+  if (mode !== "virtual") return;   // naive mode has nothing to recompute
+  if (ticking) return;
+  ticking = true;
+  requestAnimationFrame(() => { renderVirtual(false); ticking = false; });
+});
+
+document.getElementById("btnVirtual").onclick = setVirtual;
+document.getElementById("btnNaive").onclick   = setNaive;
+document.getElementById("btnTop").onclick     = () => { viewport.scrollTop = 0; };
+document.getElementById("btnBottom").onclick  = () => { viewport.scrollTop = viewport.scrollHeight; };
+
+window.addEventListener("resize", () => { if (mode === "virtual") renderVirtual(true); });
+
+setVirtual();   // boot in virtual mode
+
+// ===== UNDERSTAND STEP ENGINE =====
+const STEPS = [
+  { title:"1. Why rendering 100k nodes kills the browser", why:"Every element you add to the page is not free: the browser allocates memory for it, runs it through style resolution, includes it in layout, and paints it. A hundred thousand rows means a hundred thousand of each of those, all before the first pixel shows, which on a real machine is seconds of a frozen tab and often hundreds of megabytes of memory. Worse, that cost does not go away after load: every scroll, resize, or DOM change now has a giant tree to walk, so the list stays janky for its whole life. The browser is genuinely fast, but it is fast at rendering what fits on screen, not at holding an entire novel of hidden elements. The moment your list is bigger than a screenful, brute force stops being an option.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-rose-500 font-semibold text-[12px]">100,000 nodes = 100,000 × (memory + style + layout + paint)</div><div class="mt-2 text-slate-500 text-[11px]">seconds of frozen tab · hundreds of MB · permanent jank</div><div class="mt-1 text-emerald-600 text-[11px]">browsers are fast at what FITS — not at hidden novels</div></div>`, code:`// the naive version — do NOT ship this for a big list
+for (let i = 0; i < 100000; i++) {
+  const row = document.createElement("div");
+  row.textContent = "Row " + i;
+  list.appendChild(row);        // 100k elements, layout, paint…
+}
+// tab freezes on load, scroll stutters forever after` },
+
+  { title:"2. The viewport / window concept", why:"The key mental shift is separating the data from what is on screen. Your list has a hundred thousand entries of data, but the scrollable box, the viewport, only ever shows maybe a dozen of them at once. Everything above the viewport has scrolled out of view and everything below has not scrolled in yet, so at any instant the user can only perceive that one screenful, the window. Virtual scrolling is the decision to make the DOM match what the user can see rather than what the data contains. You keep the full dataset in a plain JavaScript array, cheap and huge, and mount only the window as real elements. The number of DOM nodes is then bounded by the size of the viewport, not the size of the data, which is the whole game.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="relative mx-auto" style="width:120px;height:150px;background:#e2e8f0;border-radius:6px;overflow:hidden"><div class="absolute left-0 right-0" style="top:50px;height:50px;background:#c7d2fe;border-top:2px solid #6366f1;border-bottom:2px solid #6366f1"></div><div class="absolute left-1 text-[9px] text-slate-500" style="top:2px">…rows above…</div><div class="absolute left-1 text-[9px] text-indigo-700 font-bold" style="top:60px">WINDOW (in DOM)</div><div class="absolute left-1 text-[9px] text-slate-500" style="top:120px">…rows below…</div></div><div class="mt-2 text-slate-500 text-[11px]">data = 100k array · DOM = only the window</div></div>`, code:`const data = Array.from({length: 100000}, (_, i) => "Row " + i);
+// ↑ huge & cheap: just JS memory, no elements
+
+// the DOM only ever holds the WINDOW the user can see:
+//   ~12 visible rows  (+ a small buffer)  ≈ 20 elements total
+// nodes are bounded by the VIEWPORT, not by data.length` },
+
+  { title:"3. Computing firstVisibleIndex from scrollTop", why:"With a fixed row height the connection between scroll position and data index is exact arithmetic, no guessing. The viewport exposes scrollTop, the number of pixels scrolled down from the top, and if every row is the same height then the first row poking into view is simply scrollTop divided by that row height, floored to an integer. From there the number of rows that fit the window is the viewport's height divided by the row height, rounded up, so the last visible index is the first plus that count. Those two numbers, first and last, define the window you must render this frame. Because it is pure division there is nothing to measure and nothing to store, which is exactly why fixed-height virtual scrolling is the easy, fast case to build first.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="font-mono text-[11px] leading-5"><div>first = ⌊ scrollTop / rowHeight ⌋</div><div>count = ⌈ viewportHeight / rowHeight ⌉</div><div>last&nbsp; = first + count</div></div><div class="mt-2 text-indigo-600 text-[11px]">fixed height ⇒ pure arithmetic, nothing to measure</div></div>`, code:`const scrollTop = viewport.scrollTop;      // px scrolled down
+const first = Math.floor(scrollTop / ROW_H);          // first visible index
+const count = Math.ceil(viewport.clientHeight / ROW_H); // rows that fit
+const last  = first + count;                          // last visible index
+// [first, last] is exactly the window to render this frame` },
+
+  { title:"4. The spacer / total-height trick (keep the scrollbar honest)", why:"If you only put a dozen rows in the DOM, the scroll box is only a dozen rows tall and there is nothing to scroll, which breaks the illusion instantly. The fix is a single empty element, the spacer or sizer, whose height is set to the full number of rows times the row height. For a hundred thousand rows at thirty-six pixels each that is a three-point-six-million-pixel-tall empty div. That one number gives the scrollbar the correct size and range, so it behaves exactly as if all the rows were really there, even though the div is empty. Your real rows are then absolutely positioned inside that tall spacer at top equals index times row height, so each one lands at the pixel it would occupy in the full list. The scrollbar tracks the data; the DOM tracks the window.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">sizer height = TOTAL × rowHeight</div><div class="font-mono text-[11px] mt-1">100000 × 36 = 3,600,000px</div><div class="mt-2 text-emerald-600 text-[11px]">empty & tall → scrollbar acts like all rows exist</div><div class="mt-1 text-slate-500 text-[11px]">rows: position:absolute; top = index × rowHeight</div></div>`, code:`// one empty, very tall element gives the scrollbar its range
+sizer.style.height = (ROW_H * TOTAL) + "px";   // 3,600,000px
+
+// every real row is absolutely placed at its true pixel offset
+row.style.position = "absolute";
+row.style.top = (index * ROW_H) + "px";
+// scrollbar = size of DATA · DOM = size of WINDOW` },
+
+  { title:"5. The overscan buffer (no blank flashes)", why:"If you render exactly and only the rows that are visible, then during a fast flick the browser can paint a scroll frame before your handler has mounted the newly-exposed rows, and the user sees a blank strip at the leading edge. The cure is overscan: render a few extra rows just above and just below the visible window, say four or five on each side. Those buffer rows already exist off-screen, so when a scroll nudges them into view there is nothing to create and no gap appears. The buffer is small, so it barely changes the node count, but it makes scrolling feel solid rather than flickery. Pick the overscan to trade a handful of extra nodes for smoothness: larger buffers survive faster flings, smaller ones keep the DOM leaner.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="relative mx-auto" style="width:110px;height:140px;background:#e2e8f0;border-radius:6px;overflow:hidden"><div class="absolute left-0 right-0" style="top:30px;height:20px;background:#fde68a"></div><div class="absolute left-0 right-0" style="top:50px;height:40px;background:#c7d2fe;border-top:2px solid #6366f1;border-bottom:2px solid #6366f1"></div><div class="absolute left-0 right-0" style="top:90px;height:20px;background:#fde68a"></div></div><div class="mt-2 text-indigo-600 text-[11px]">blue = visible · yellow = overscan buffer</div><div class="mt-1 text-slate-500 text-[11px]">a few extra rows each side → no blank flash on fast scroll</div></div>`, code:`const OVERSCAN = 5;   // extra rows above AND below the window
+
+const from = Math.max(0, first - OVERSCAN);
+const to   = Math.min(TOTAL - 1, last + OVERSCAN);
+// those buffer rows already exist just off-screen,
+// so a fast fling never reveals an unrendered blank strip` },
+
+  { title:"6. Re-rendering on scroll (throttle with rAF)", why:"The scroll event fires a lot, potentially dozens of times per visible frame, and doing a full window recompute plus DOM update on every single one is wasteful and can itself cause jank. The standard fix is to throttle with requestAnimationFrame: on the first scroll event set a flag and schedule one render for the next animation frame, and ignore further scroll events until that frame runs and clears the flag. This collapses a burst of scroll events into exactly one render per frame, which is all the screen can show anyway, so you never do more work than the display can present. It keeps the handler cheap and the scrolling buttery. It is the same coalescing pattern you would use for any high-frequency event that drives a visual update.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">many scroll events → <b>1</b> render per frame</div><div class="mt-2 font-mono text-[11px]">if (ticking) return; ticking = true;<br>rAF(() =&gt; { render(); ticking = false; })</div><div class="mt-2 text-slate-500 text-[11px]">never do more work than the screen can paint</div></div>`, code:`let ticking = false;
+viewport.addEventListener("scroll", () => {
+  if (ticking) return;          // already scheduled this frame
+  ticking = true;
+  requestAnimationFrame(() => { // one render per animation frame
+    render();
+    ticking = false;
+  });
+});` },
+
+  { title:"7. Skipping work when the window hasn't moved", why:"Most scroll pixels do not actually change which rows are visible: scrolling ten pixels inside a thirty-six-pixel row still shows the same set of rows, just shifted, and the browser handles that shift for free because the rows are absolutely positioned. So you can compare the new first-visible index to the one you rendered last time, and if it is unchanged, return immediately without touching the DOM at all. This turns the common case, small scrolls within a row, into essentially zero work, and you only rebuild the window when the scroll actually crosses a row boundary. Combined with the animation-frame throttle, it means the expensive path runs only a few times a second even during a hard scroll. Cheap comparisons guarding expensive DOM writes is the pattern that keeps virtual lists fast.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">scroll within a row → <b>same window</b> → do nothing</div><div class="mt-2 font-mono text-[11px]">if (from === lastFrom) return;</div><div class="mt-2 text-emerald-600 text-[11px]">rebuild ONLY when the window crosses a row boundary</div></div>`, code:`let lastFrom = -1;
+
+function render() {
+  const { from, to } = windowRange();
+  if (from === lastFrom) return;   // window unchanged → skip all DOM work
+  lastFrom = from;
+  // …only now rebuild the rows from..to…
+}
+// small scrolls are free; rebuild only on a boundary cross` },
+
+  { title:"8. Recycling nodes (the pro optimisation)", why:"The simplest version throws away all the row elements and creates fresh ones every time the window moves, and for a couple dozen rows that is perfectly fine. But creating and destroying elements churns memory and gives the garbage collector work, which can show up as tiny hitches on low-end devices. Node recycling avoids that by keeping a fixed pool of row elements, roughly window plus overscan many, and never creating or destroying them again. As the window moves you just re-point each pooled element: set its top to the new index times row height and overwrite its text and contents with the new row's data. The DOM node count then stays perfectly constant for the life of the list. This is what serious libraries do under the hood, and it is the difference between good and great scrolling performance.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">fixed pool of ~20 rows, <b>never</b> destroyed</div><div class="mt-2 text-slate-500 text-[11px]">window moves → re-point each row's top + text</div><div class="mt-1 text-emerald-600 text-[11px]">no create/destroy → no GC churn → smoother</div></div>`, code:`// keep ~ (windowSize + overscan) elements forever; reuse them
+pool.forEach((row, k) => {
+  const i = from + k;
+  row.style.top   = (i * ROW_H) + "px";   // re-position
+  row.textContent = data[i];              // re-fill
+});
+// node count stays constant — no allocations, no GC pauses` },
+
+  { title:"9. Variable row heights (the advanced case)", why:"Everything so far leaned on one assumption: every row is the same height, which made first-visible-index a single division. The moment rows can differ, chat bubbles, cards, wrapped text, that closed-form answer disappears, because you cannot know a row's top without knowing the heights of all the rows above it. The usual approach is to measure each row's height as it renders, store a cumulative-offset array where entry i is the total height of rows zero through i minus one, and then binary-search that array to turn a scrollTop into a first-visible index. Rows you have not measured yet get an estimated height so the spacer total is roughly right, and you correct it as they scroll into view. This bookkeeping is fiddly and full of edge cases, which is exactly why battle-tested libraries like TanStack Virtual and react-window exist; build fixed-height by hand, reach for them when you truly need variable rows.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-[12px]">rows differ ⇒ no <code>scrollTop / rowHeight</code></div><div class="mt-2 font-mono text-[10px] leading-4">offsets = [0, h0, h0+h1, h0+h1+h2, …]<br>first = binarySearch(offsets, scrollTop)</div><div class="mt-2 text-slate-500 text-[11px]">measure · accumulate · estimate the rest</div><div class="mt-1 text-indigo-600 text-[11px]">use TanStack Virtual / react-window for this</div></div>`, code:`// no closed form — build a cumulative offset table as rows render
+const offsets = [0];
+for (let i = 0; i < measured.length; i++)
+  offsets[i + 1] = offsets[i] + measured[i];   // running total
+
+// scrollTop → first visible index via binary search
+const first = binarySearch(offsets, viewport.scrollTop);
+// unmeasured rows use an ESTIMATE; correct once they render` },
+
+  { title:"10. Accessibility caveats (only the window exists)", why:"Virtual scrolling has a real cost you must own: because only about twenty rows exist in the DOM, everything that inspects the DOM sees only those twenty. The browser's own Ctrl-F find-in-page cannot match text that is not mounted, screen readers announce only the rendered window, and Tab order skips rows that are not there. You mitigate this by telling assistive tech the true shape of the list with ARIA: aria-rowcount on the container declares the real total, and aria-rowindex on each row states its true position, so a screen reader can say row four hundred of one hundred thousand even though only a slice is present. You should also never virtualize a list small enough to render whole, and provide the real result count in plain text nearby. Virtual scrolling is a performance tool with an accessibility tax, and a responsible build pays that tax deliberately rather than pretending it is free.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center"><div class="text-rose-500 text-[11px]">only ~20 rows exist → Ctrl-F, screen readers, Tab see only those</div><div class="mt-2 font-mono text-[11px] leading-5"><div>aria-rowcount="100000"</div><div>aria-rowindex="401"</div></div><div class="mt-2 text-emerald-600 text-[11px]">declare the TRUE shape · don't virtualize tiny lists</div></div>`, code:`<div role="grid" aria-rowcount="100000">   <!-- true total -->
+  <div class="vs-viewport">
+    <div role="row" aria-rowindex="401">…</div>  <!-- true position -->
+    …only the window is here…
+  </div>
+</div>
+<!-- also: give a plain-text "100,000 results" count nearby -->` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },2800); };
+show(0);
+
+function copy(btn) {
+  const pre = btn.parentElement.querySelector("pre");
+  navigator.clipboard.writeText(pre.textContent);
+  const orig = btn.textContent;
+  btn.textContent = "✓ Copied!";
+  setTimeout(() => btn.textContent = orig, 1200);
+}
+</script>
+</body>
+</html>
