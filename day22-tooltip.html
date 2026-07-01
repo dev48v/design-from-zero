@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 22 — Smart Tooltip</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  #stage { position:relative; height:460px; background:#fff; border:2px dashed #c7d2fe; border-radius:14px; overflow:hidden;
+           box-shadow:0 18px 40px rgba(0,0,0,.10); }
+  .trig { position:absolute; background:#6366f1; color:#fff; border:none; padding:8px 12px; border-radius:8px;
+          font-size:13px; font-weight:700; cursor:pointer; }
+  .trig:focus-visible { outline:3px solid #a5b4fc; outline-offset:2px; }
+  /* the floating tooltip */
+  #tip { position:fixed; z-index:60; max-width:220px; background:#0f172a; color:#fff; font-size:13px; line-height:1.4;
+         padding:8px 11px; border-radius:8px; pointer-events:none; opacity:0; transform:translateY(2px);
+         transition:opacity .12s, transform .12s; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+  #tip.show { opacity:1; transform:none; }
+  #tip .arrow { position:absolute; width:10px; height:10px; background:#0f172a; transform:rotate(45deg); }
+  .stat { font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 22</div>
+      <h1 class="text-xl font-bold">💬 Smart Tooltip — Flip &amp; Shift to Stay On-Screen</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Hover the buttons — especially the ones jammed into the corners.</h2>
+        <p class="text-slate-500 mb-5">A naïve tooltip always opens above its trigger. But a trigger near the top edge would push the tooltip off-screen, and one near the right edge would clip it. A <strong>smart</strong> tooltip measures itself and the viewport, then <strong>flips</strong> to the opposite side when it would overflow and <strong>shifts</strong> sideways to stay fully visible — the core trick behind libraries like Floating&nbsp;UI, hand-built here in vanilla JS. Hover or keyboard-focus (Tab) any button; watch the readout show the placement it chose.</p>
+      </div>
+      <div class="flex justify-center items-center gap-4 mb-3 text-sm font-bold text-slate-600">
+        <div>Chosen placement: <span id="placeOut" class="stat text-indigo-600">—</span></div>
+        <div>Shift: <span id="shiftOut" class="stat text-indigo-600">0px</span></div>
+      </div>
+      <div id="stage"></div>
+      <p class="text-xs text-slate-400 mt-4 text-center">Preferred side is <strong>top</strong>. When the tooltip would overflow the top it flips to <strong>bottom</strong> (and vice-versa on the sides); then it's clamped horizontally so it never leaves the viewport, and the little arrow slides to stay pointed at the trigger. Everything is measured live with <code>getBoundingClientRect()</code> — resize the window and re-hover to see the decisions change.</p>
+    </div>
+  </div>
+</section>
+<div id="tip"><span id="tipText"></span><span class="arrow"></span></div>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How smart positioning works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">One shared floating element, a measure step with <code>getBoundingClientRect()</code>, a flip decision, a shift-and-clamp, an arrow that tracks the trigger, and hover/focus wiring with a small delay. ~80 lines of vanilla JS.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">One reusable floating element</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Instead of a tooltip per trigger, keep a single <code>#tip</code> element positioned with <code>position:fixed</code> so its coordinates are relative to the viewport (not any scrolled parent). It stays hidden until a trigger asks for it, then we move and fill it. <code>pointer-events:none</code> means the tooltip never steals the hover from the element underneath.</p>
+        <div class="relative"><pre>const tip = document.getElementById("tip");   // position:fixed; opacity:0
+function showTip(target, text){
+  tip.querySelector("#tipText").textContent = text;
+  tip.classList.add("show");
+  place(target);        // measure + position (next steps)
+}
+function hideTip(){ tip.classList.remove("show"); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Measure the trigger &amp; the tooltip</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>getBoundingClientRect()</code> gives the trigger's position and size in viewport coordinates, and the tooltip's own width/height once it's rendered. With those two rectangles and the viewport size (<code>innerWidth/innerHeight</code>) we have everything needed to decide where it fits. Measuring the tooltip <em>after</em> making it visible is important — a hidden element has no size.</p>
+        <div class="relative"><pre>const r = target.getBoundingClientRect();   // trigger box
+const t = tip.getBoundingClientRect();      // tooltip box
+const vw = innerWidth, vh = innerHeight;
+const GAP = 8;   // space between trigger and tooltip</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Flip when the preferred side overflows</h3></div>
+        <p class="text-sm text-slate-600 mb-3">We prefer <em>top</em>. If placing the tooltip above the trigger would push its top edge above 0 (off the top of the screen), we flip to <em>bottom</em>. The vertical coordinate is computed for whichever side we settle on. The same idea handles left/right for side placements — always flip to the side with more room.</p>
+        <div class="relative"><pre>let placement = "top";
+let top = r.top - t.height - GAP;      // try above
+if (top &lt; 0){ placement = "bottom"; top = r.bottom + GAP; }
+// (if bottom also overflowed we'd clamp; here top/bottom always fit)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Centre, then shift &amp; clamp</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Horizontally we start centred on the trigger, then clamp so the tooltip never crosses the left (0) or right (<code>vw − width</code>) edge. The amount we moved from centre is the "shift". We remember it so the arrow can be nudged back the other way and keep pointing at the trigger.</p>
+        <div class="relative"><pre>let left = r.left + r.width/2 - t.width/2;   // centred
+const clamped = Math.max(GAP, Math.min(left, vw - t.width - GAP));
+const shift = left - clamped;                // how far we moved
+left = clamped;
+tip.style.left = left + "px";
+tip.style.top  = top  + "px";</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Arrow, delay, keyboard &amp; ARIA</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The arrow sits at the tooltip's edge, offset by the shift so it still points at the trigger's centre. A short show-delay (~80ms) avoids flicker when the pointer just passes over. We wire <code>mouseenter/leave</code> <em>and</em> <code>focus/blur</code> so keyboard users get tooltips too, add <code>role="tooltip"</code> + <code>aria-describedby</code> for screen readers, and close on <kbd>Esc</kbd>.</p>
+        <div class="relative"><pre>arrow.style.left = (t.width/2 + shift - 5) + "px";
+arrow.style.top  = placement === "top" ? "100%" : "-10px";
+
+trigger.addEventListener("mouseenter", () =&gt; timer = setTimeout(open, 80));
+trigger.addEventListener("mouseleave", () =&gt; { clearTimeout(timer); hideTip(); });
+trigger.addEventListener("focus", open);
+trigger.addEventListener("blur", hideTip);
+addEventListener("keydown", e =&gt; { if (e.key === "Escape") hideTip(); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 22 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a collision-aware tooltip: measure with <code>getBoundingClientRect()</code>, flip when the preferred side overflows, shift-and-clamp to stay on-screen, an arrow that tracks the trigger, and hover + keyboard + ARIA support. This is the heart of what Floating UI, Popper and Radix do. Next: reuse the exact same engine for popovers, dropdowns and context menus. <strong>👉 Tomorrow — Day 23: Autocomplete / Combobox.</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SMART TOOLTIP =====
+const tip = document.getElementById("tip");
+const tipText = document.getElementById("tipText");
+const arrow = tip.querySelector(".arrow");
+const placeOut = document.getElementById("placeOut");
+const shiftOut = document.getElementById("shiftOut");
+const GAP = 10;
+let openTimer = null, activeTrigger = null;
+
+// scatter triggers around the stage, incl. every edge & corner
+const stage = document.getElementById("stage");
+const TRIGGERS = [
+  {x:"50%", y:"6px",  t:"top-t"},   {x:"6px", y:"6px", t:"top-left corner"},   {x:"calc(100% - 90px)", y:"6px", t:"top-right corner"},
+  {x:"6px", y:"48%",  t:"left edge"},{x:"calc(100% - 78px)", y:"48%", t:"right edge"},
+  {x:"50%", y:"calc(100% - 40px)", t:"bottom-mid"}, {x:"6px", y:"calc(100% - 40px)", t:"bottom-left corner"}, {x:"calc(100% - 96px)", y:"calc(100% - 40px)", t:"bottom-right corner"},
+  {x:"38%", y:"42%", t:"centre"}
+];
+const TEXTS = {
+  "top-t":"I prefer to open above — but here I have room, so I stay on top.",
+  "top-left corner":"Jammed in the corner: I flip below and shift right so I don't clip the edge.",
+  "top-right corner":"Near the top-right: I flip below and shift left to stay fully on-screen.",
+  "left edge":"Hugging the left edge — I open above and clamp so my left side stays visible.",
+  "right edge":"Against the right edge — I open above and clamp against the right side.",
+  "bottom-mid":"Near the bottom I have room above, so I keep my preferred top placement.",
+  "bottom-left corner":"Bottom-left corner: still open above, shifted right to avoid the edge.",
+  "bottom-right corner":"Bottom-right corner: open above, shifted left. Arrow still points at me.",
+  "centre":"Plenty of room here — centred above with no shift needed."
+};
+TRIGGERS.forEach(cfg => {
+  const b = document.createElement("button");
+  b.className = "trig"; b.textContent = cfg.t; b.style.left = cfg.x; b.style.top = cfg.y;
+  b.setAttribute("aria-describedby","tip");
+  const text = TEXTS[cfg.t];
+  const open = () => { activeTrigger = b; tipText.textContent = text; tip.classList.add("show"); place(b); };
+  b.addEventListener("mouseenter", () => { clearTimeout(openTimer); openTimer = setTimeout(open, 80); });
+  b.addEventListener("mouseleave", () => { clearTimeout(openTimer); hide(); });
+  b.addEventListener("focus", open);
+  b.addEventListener("blur", hide);
+  stage.appendChild(b);
+});
+function hide(){ tip.classList.remove("show"); activeTrigger = null; }
+addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
+
+tip.setAttribute("role","tooltip"); tip.id = "tip";
+
+function place(target){
+  const r = target.getBoundingClientRect();
+  const t = tip.getBoundingClientRect();
+  const vw = innerWidth, vh = innerHeight;
+
+  // vertical: prefer top, flip to bottom if it overflows the top
+  let placement = "top";
+  let top = r.top - t.height - GAP;
+  if (top < 0){ placement = "bottom"; top = r.bottom + GAP; }
+  if (placement === "bottom" && top + t.height > vh){ placement = "top"; top = r.top - t.height - GAP; }
+
+  // horizontal: centre, then shift & clamp inside the viewport
+  let left = r.left + r.width/2 - t.width/2;
+  const clamped = Math.max(GAP, Math.min(left, vw - t.width - GAP));
+  const shift = left - clamped;
+  left = clamped;
+
+  tip.style.left = left + "px";
+  tip.style.top  = top  + "px";
+  arrow.style.left = (t.width/2 + shift - 5) + "px";
+  arrow.style.top  = placement === "top" ? "calc(100% - 5px)" : "-5px";
+
+  placeOut.textContent = placement + (shift ? " + shifted" : "");
+  shiftOut.textContent = Math.round(shift) + "px";
+}
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Why title=\"\" isn't enough", why:"The browser's built-in tooltip (the native title attribute) is unstyleable, appears after a long unpredictable delay, can't hold rich content, and never appears for keyboard or touch users. Real product tooltips are custom elements you control. The moment you build your own, though, you inherit a hard problem the browser was quietly solving for you: keeping the little box on-screen no matter where the trigger sits. That positioning problem is the whole subject of this page.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">native title="" → ugly, slow, no styling<br>custom tooltip → full control<br>...but YOU must keep it on-screen</div>`, code:`// &lt;button title="hi"&gt; is unstyleable + keyboard-hostile.
+// A real tooltip is your own element you position yourself.` },
+ { title:"2. Anchor and floating element", why:"Positioning is a relationship between two boxes: the anchor (the trigger you hover) and the floating element (the tooltip). The tooltip uses position:fixed so its coordinates are measured against the viewport, which is exactly the frame we test overflow against. Keeping one shared floating element — rather than one per trigger — means less DOM and a single place to compute geometry.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">anchor (trigger) ⚓<br>floating element (tooltip) 🎈<br>position:fixed → viewport coordinates</div>`, code:`#tip { position: fixed; opacity: 0; pointer-events: none; }
+// one shared tooltip, moved to whichever anchor is active` },
+ { title:"3. Measure everything with getBoundingClientRect", why:"getBoundingClientRect() returns an element's top/left/right/bottom/width/height in viewport pixels — accounting for scroll and layout. We read the anchor's rect (where it is) and the tooltip's rect (how big it is), plus window.innerWidth/innerHeight for the viewport. These measurements are the raw material for every decision. Crucially you must measure the tooltip after it's visible, because a display:none element reports zero size.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">r = trigger.getBoundingClientRect()<br>t = tooltip.getBoundingClientRect()<br>vw, vh = innerWidth, innerHeight<br>→ enough to decide placement</div>`, code:`const r = target.getBoundingClientRect();
+const t = tip.getBoundingClientRect();
+const vw = innerWidth, vh = innerHeight;` },
+ { title:"4. The preferred placement", why:"Every tooltip has a preferred side — commonly top. We compute where it would go there: horizontally centred on the anchor, vertically one gap above it. If nothing is in the way, that's the final position. Starting from a single clear preference (rather than trying all sides at once) keeps the logic simple; flipping and shifting are just corrections applied when the preference doesn't fit.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">preferred = TOP<br>x = trigger centre − tooltip width/2<br>y = trigger top − tooltip height − gap</div>`, code:`let placement = "top";
+let top  = r.top - t.height - GAP;
+let left = r.left + r.width/2 - t.width/2;   // centred` },
+ { title:"5. Collision detection", why:"A collision is simply the tooltip's box crossing a viewport edge: top < 0, left < 0, right > viewport width, or bottom > viewport height. We test the preferred position against these four edges. Each collision tells us a specific fix is needed — an overflow on the preferred side calls for a flip; an overflow on the perpendicular axis calls for a shift. Detection is just arithmetic on the rectangles we already measured.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">top &lt; 0 ? &nbsp;left &lt; 0 ?<br>right &gt; vw ? &nbsp;bottom &gt; vh ?<br>each overflow → a fix (flip or shift)</div>`, code:`const overTop    = top < 0;
+const overBottom = top + t.height > vh;
+const overLeft   = left < 0;
+const overRight  = left + t.width > vw;` },
+ { title:"6. Flip to the side with room", why:"If the preferred side overflows, flip to the opposite side. A top tooltip that would go off the top becomes a bottom tooltip below the anchor; a right tooltip that clips becomes a left one. This is the single most noticeable smart behaviour — it's why a tooltip on a button at the very top of the page appears below it instead of being cut off. If both sides are too tight you pick the side with more space and let the shift/clamp handle the rest.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">preferred TOP overflows ⛔<br>→ FLIP to BOTTOM ✅<br>(choose the side with more room)</div>`, code:`if (top < 0){          // preferred top doesn't fit
+  placement = "bottom";
+  top = r.bottom + GAP;  // reposition below the anchor
+}` },
+ { title:"7. Shift &amp; clamp along the cross-axis", why:"Flipping fixes the main axis; shifting fixes the other one. A top tooltip centred on an anchor near the right edge would still spill off the right. So we clamp the left coordinate between a small margin and (viewport width − tooltip width). The distance we moved from the centred position is the 'shift'. This keeps the whole box visible while staying as close to centred on the anchor as possible.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">centre on anchor → then clamp<br>left = max(gap, min(left, vw − w − gap))<br>shift = original − clamped</div>`, code:`let left = r.left + r.width/2 - t.width/2;
+const clamped = Math.max(GAP, Math.min(left, vw - t.width - GAP));
+const shift = left - clamped;   // remember for the arrow
+left = clamped;` },
+ { title:"8. The arrow that keeps pointing", why:"The little arrow must point at the anchor even after the box has been shifted. Since the box moved by 'shift' pixels away from centre, we move the arrow back by the same amount so it lands over the anchor's centre. When the tooltip is flipped to the bottom, the arrow moves to the top edge of the box and points upward. It's a small touch, but without it a shifted tooltip looks disconnected from what it describes.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">box shifted by S px<br>→ arrow offset by −S to re-centre on anchor<br>flipped? arrow jumps to the other edge</div>`, code:`arrow.style.left = (t.width/2 + shift - 5) + "px";
+arrow.style.top  = placement === "top" ? "100%" : "-10px";` },
+ { title:"9. Triggers, delays, keyboard &amp; ARIA", why:"Positioning is only half a tooltip; behaviour is the rest. Open on mouseenter after a short delay (so a pointer merely passing over doesn't flash it) and also on keyboard focus, so Tab users see it. Close on mouseleave, blur, and the Escape key. Give the tooltip role=\"tooltip\" and link it to the trigger with aria-describedby so screen readers announce it. Use pointer-events:none so the tooltip can never intercept the hover it depends on.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">open: mouseenter(+80ms) / focus<br>close: mouseleave / blur / Esc<br>role=tooltip + aria-describedby<br>pointer-events:none on the tooltip</div>`, code:`trigger.addEventListener("mouseenter", () => timer = setTimeout(open, 80));
+trigger.addEventListener("focus", open);
+trigger.addEventListener("blur", hide);
+addEventListener("keydown", e => { if (e.key==="Escape") hide(); });
+// tip: role="tooltip", trigger: aria-describedby="tip"` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
