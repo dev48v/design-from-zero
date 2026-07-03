@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 23 — Autocomplete / Combobox</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  /* ===== combobox ===== */
+  .ac-wrap { position:relative; width:100%; max-width:420px; margin:0 auto; }
+  .ac-input { width:100%; padding:12px 40px 12px 14px; font-size:15px; border:2px solid #c7d2fe; border-radius:12px;
+              background:#fff; outline:none; box-shadow:0 8px 24px rgba(0,0,0,.06); }
+  .ac-input:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.25); }
+  .ac-chev { position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#94a3b8; pointer-events:none;
+             transition:transform .15s; font-size:12px; }
+  .ac-wrap.open .ac-chev { transform:translateY(-50%) rotate(180deg); }
+  .ac-list { position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:40; background:#fff; border:1px solid #e2e8f0;
+             border-radius:12px; box-shadow:0 18px 40px rgba(0,0,0,.14); max-height:280px; overflow-y:auto; padding:6px;
+             margin:0; list-style:none; }
+  .ac-opt { padding:9px 12px; border-radius:8px; font-size:14px; cursor:pointer; display:flex; align-items:center;
+            justify-content:space-between; gap:10px; color:#0f172a; }
+  .ac-opt .flag { font-size:16px; }
+  .ac-opt[aria-selected="true"] { background:#eef2ff; color:#4338ca; }
+  .ac-opt:hover { background:#f1f5f9; }
+  .ac-opt mark { background:transparent; color:#6366f1; font-weight:800; }
+  .ac-empty { padding:14px 12px; font-size:13px; color:#94a3b8; text-align:center; }
+  .ac-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .stat { font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 23</div>
+      <h1 class="text-xl font-bold">🔎 Autocomplete / Combobox — Accessible Typeahead</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Start typing a country — the list filters as you type.</h2>
+        <p class="text-slate-500 mb-6">This is a real combobox over ~200 countries. As you type it does a case-insensitive <strong>substring</strong> match, <strong>highlights</strong> the matched letters, and drops a suggestions listbox below the input. Everything works from the keyboard: <kbd>↓</kbd>/<kbd>↑</kbd> move the active option (wrapping around the ends), <kbd>Enter</kbd> selects it, <kbd>Esc</kbd> closes, <kbd>Tab</kbd> moves on. Click a row to pick it, click anywhere outside to close, and the filter is <strong>debounced (~120ms)</strong> so it doesn't run on every single keystroke. When nothing matches you get a friendly empty state — no dead-end.</p>
+      </div>
+
+      <div class="ac-wrap" id="acWrap">
+        <input id="acInput" class="ac-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Type a country… (try &quot;ind&quot;, &quot;land&quot;, &quot;stan&quot;)"
+               role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="acList" />
+        <span class="ac-chev">▼</span>
+        <ul id="acList" class="ac-list" role="listbox" aria-label="Countries" hidden></ul>
+      </div>
+      <div class="ac-sr" id="acLive" aria-live="polite"></div>
+
+      <div class="flex justify-center items-center gap-6 mt-6 text-sm font-bold text-slate-600">
+        <div>Matches: <span id="matchOut" class="stat text-indigo-600">200</span></div>
+        <div>Active: <span id="activeOut" class="stat text-indigo-600">none</span></div>
+        <div>Selected: <span id="selOut" class="stat text-indigo-600">—</span></div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">The input is <code>role="combobox"</code> with <code>aria-expanded</code> and <code>aria-activedescendant</code>; the dropdown is a <code>role="listbox"</code> of <code>role="option"</code> items. The <em>active</em> option (keyboard highlight) is tracked with <code>aria-activedescendant</code> so focus never leaves the input, while <code>aria-selected</code> marks the visually-highlighted row. A polite live region announces the match count for screen readers. This is the WAI-ARIA "editable combobox with list autocomplete" pattern, built in ~110 lines of vanilla JS.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a combobox works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A text input, a debounced filter over an array, a rendered listbox, keyboard navigation with a tracked active index, selection, close-on-outside-click, and the ARIA combobox wiring. ~110 lines of vanilla JS — no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: a combobox, not a &lt;datalist&gt;</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A plain text input plus a <code>&lt;ul role="listbox"&gt;</code> you control yourself. The input gets <code>role="combobox"</code>, <code>aria-expanded</code>, <code>aria-autocomplete="list"</code> and <code>aria-controls</code> pointing at the list. This gives you full control over styling, filtering and highlighting — none of which native <code>&lt;datalist&gt;</code> lets you touch.</p>
+        <div class="relative"><pre>&lt;div class="ac-wrap"&gt;
+  &lt;input id="acInput" role="combobox" aria-expanded="false"
+         aria-autocomplete="list" aria-controls="acList" autocomplete="off"&gt;
+  &lt;ul id="acList" role="listbox" hidden&gt;&lt;/ul&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Debounce the filter</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Filtering on <em>every</em> keystroke is wasteful — a fast typist fires 8–10 <code>input</code> events a second. A tiny debounce collapses a burst of keystrokes into one filter run after the user pauses ~120ms. For a local array it's mostly a nicety; for a remote API (Step 9) it's what stops you hammering the server with a request per letter.</p>
+        <div class="relative"><pre>function debounce(fn, ms){
+  let t; return (...a) =&gt; { clearTimeout(t); t = setTimeout(() =&gt; fn(...a), ms); };
+}
+input.addEventListener("input", debounce(onType, 120));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Filter + highlight the match</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Lower-case both the query and each candidate, keep the ones whose name contains the query (substring match), and wrap the matched span in <code>&lt;mark&gt;</code> so it stands out. An empty query shows the full list. Render the survivors into the listbox; if there are none, render an empty state instead of a blank box.</p>
+        <div class="relative"><pre>function filter(q){
+  q = q.trim().toLowerCase();
+  if (!q) return COUNTRIES;
+  return COUNTRIES.filter(c =&gt; c.name.toLowerCase().includes(q));
+}
+function highlight(name, q){
+  const i = name.toLowerCase().indexOf(q.toLowerCase());
+  if (i &lt; 0 || !q) return name;
+  return name.slice(0,i) + "&lt;mark&gt;" + name.slice(i,i+q.length) + "&lt;/mark&gt;" + name.slice(i+q.length);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Render options with stable ids</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each option is a <code>&lt;li role="option"&gt;</code> with a unique <code>id</code> (e.g. <code>opt-3</code>) so <code>aria-activedescendant</code> can point at it. Give it a <code>data-index</code> so a click knows which item it is. Open the list by unhiding it and flipping <code>aria-expanded="true"</code> on the input.</p>
+        <div class="relative"><pre>list.innerHTML = results.map((c, i) =&gt;
+  `&lt;li id="opt-${i}" role="option" data-index="${i}" aria-selected="false" class="ac-opt"&gt;
+     &lt;span&gt;${highlight(c.name, q)}&lt;/span&gt;&lt;span class="flag"&gt;${c.flag}&lt;/span&gt;
+   &lt;/li&gt;`).join("");
+list.hidden = false;
+input.setAttribute("aria-expanded", "true");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Keyboard nav with a tracked active index</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Hold one number — <code>active</code> — the index of the highlighted option. <kbd>↓</kbd> does <code>(active+1) % n</code> and <kbd>↑</kbd> does <code>(active-1+n) % n</code> so it wraps at the ends. Call <code>preventDefault()</code> on the arrows so the caret doesn't jump. After moving, paint the row and scroll it into view.</p>
+        <div class="relative"><pre>input.addEventListener("keydown", e =&gt; {
+  const n = results.length; if (!n) return;
+  if (e.key === "ArrowDown"){ e.preventDefault(); setActive((active + 1) % n); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); setActive((active - 1 + n) % n); }
+});
+function setActive(i){
+  active = i;
+  [...list.children].forEach((li, idx) =&gt; li.setAttribute("aria-selected", idx === i));
+  input.setAttribute("aria-activedescendant", "opt-" + i);
+  list.children[i].scrollIntoView({ block: "nearest" });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Select — Enter, click, Esc</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><kbd>Enter</kbd> commits the active option; a click commits the clicked one (use <code>mousedown</code> so it fires before the input blurs). Selecting writes the value into the input and closes the list. <kbd>Esc</kbd> closes without choosing. Closing means hide the list, reset <code>active = -1</code>, clear <code>aria-activedescendant</code> and set <code>aria-expanded="false"</code>.</p>
+        <div class="relative"><pre>if (e.key === "Enter" && active &gt; -1){ e.preventDefault(); select(active); }
+if (e.key === "Escape") close();
+list.addEventListener("mousedown", e =&gt; {
+  const li = e.target.closest("[data-index]"); if (li) select(+li.dataset.index);
+});
+function select(i){ input.value = results[i].name; close(); }
+function close(){ list.hidden = true; active = -1;
+  input.setAttribute("aria-expanded","false"); input.removeAttribute("aria-activedescendant"); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Close on outside click + announce</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A document-level <code>pointerdown</code> listener closes the list whenever the click lands outside the wrapper. Guard it with <code>wrap.contains(e.target)</code> so clicks inside are ignored. Finally, drop the match count into an <code>aria-live="polite"</code> region so screen-reader users hear "12 results" without the announcement stealing focus.</p>
+        <div class="relative"><pre>document.addEventListener("pointerdown", e =&gt; {
+  if (!wrap.contains(e.target)) close();
+});
+live.textContent = results.length + " result" + (results.length === 1 ? "" : "s");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Remote data (bonus)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Swap the local <code>filter()</code> for a <code>fetch()</code> and the debounce earns its keep — you fire one request per pause, not per letter. Track a request id (or an <code>AbortController</code>) so a slow earlier response can't overwrite a fresh one — the classic out-of-order race. Show a loading row while it's in flight. The keyboard, ARIA and selection code above don't change at all.</p>
+        <div class="relative"><pre>let reqId = 0;
+async function remote(q){
+  const my = ++reqId;
+  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (my !== reqId) return;        // a newer request already won — drop this
+  render(data, q);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 23 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built an accessible combobox: a debounced substring filter with match highlighting, a rendered listbox, wrap-around keyboard navigation via a tracked active index, selection by Enter/click, close-on-Esc/outside-click, and the full WAI-ARIA combobox wiring (<code>role="combobox"</code>, <code>aria-expanded</code>, <code>aria-activedescendant</code>, <code>role="option"</code>). This is exactly what Downshift, Combobox in Headless UI and React-Select do under the hood. <strong>👉 Tomorrow — Day 24: Dropdown menu (roving-tabindex menu button).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== AUTOCOMPLETE / COMBOBOX =====
+const COUNTRIES = [
+  ["Afghanistan","🇦🇫"],["Albania","🇦🇱"],["Algeria","🇩🇿"],["Andorra","🇦🇩"],["Angola","🇦🇴"],
+  ["Antigua and Barbuda","🇦🇬"],["Argentina","🇦🇷"],["Armenia","🇦🇲"],["Australia","🇦🇺"],["Austria","🇦🇹"],
+  ["Azerbaijan","🇦🇿"],["Bahamas","🇧🇸"],["Bahrain","🇧🇭"],["Bangladesh","🇧🇩"],["Barbados","🇧🇧"],
+  ["Belarus","🇧🇾"],["Belgium","🇧🇪"],["Belize","🇧🇿"],["Benin","🇧🇯"],["Bhutan","🇧🇹"],
+  ["Bolivia","🇧🇴"],["Bosnia and Herzegovina","🇧🇦"],["Botswana","🇧🇼"],["Brazil","🇧🇷"],["Brunei","🇧🇳"],
+  ["Bulgaria","🇧🇬"],["Burkina Faso","🇧🇫"],["Burundi","🇧🇮"],["Cambodia","🇰🇭"],["Cameroon","🇨🇲"],
+  ["Canada","🇨🇦"],["Cape Verde","🇨🇻"],["Central African Republic","🇨🇫"],["Chad","🇹🇩"],["Chile","🇨🇱"],
+  ["China","🇨🇳"],["Colombia","🇨🇴"],["Comoros","🇰🇲"],["Congo","🇨🇬"],["Costa Rica","🇨🇷"],
+  ["Croatia","🇭🇷"],["Cuba","🇨🇺"],["Cyprus","🇨🇾"],["Czechia","🇨🇿"],["Denmark","🇩🇰"],
+  ["Djibouti","🇩🇯"],["Dominica","🇩🇲"],["Dominican Republic","🇩🇴"],["Ecuador","🇪🇨"],["Egypt","🇪🇬"],
+  ["El Salvador","🇸🇻"],["Equatorial Guinea","🇬🇶"],["Eritrea","🇪🇷"],["Estonia","🇪🇪"],["Eswatini","🇸🇿"],
+  ["Ethiopia","🇪🇹"],["Fiji","🇫🇯"],["Finland","🇫🇮"],["France","🇫🇷"],["Gabon","🇬🇦"],
+  ["Gambia","🇬🇲"],["Georgia","🇬🇪"],["Germany","🇩🇪"],["Ghana","🇬🇭"],["Greece","🇬🇷"],
+  ["Grenada","🇬🇩"],["Guatemala","🇬🇹"],["Guinea","🇬🇳"],["Guinea-Bissau","🇬🇼"],["Guyana","🇬🇾"],
+  ["Haiti","🇭🇹"],["Honduras","🇭🇳"],["Hungary","🇭🇺"],["Iceland","🇮🇸"],["India","🇮🇳"],
+  ["Indonesia","🇮🇩"],["Iran","🇮🇷"],["Iraq","🇮🇶"],["Ireland","🇮🇪"],["Israel","🇮🇱"],
+  ["Italy","🇮🇹"],["Jamaica","🇯🇲"],["Japan","🇯🇵"],["Jordan","🇯🇴"],["Kazakhstan","🇰🇿"],
+  ["Kenya","🇰🇪"],["Kiribati","🇰🇮"],["Kuwait","🇰🇼"],["Kyrgyzstan","🇰🇬"],["Laos","🇱🇦"],
+  ["Latvia","🇱🇻"],["Lebanon","🇱🇧"],["Lesotho","🇱🇸"],["Liberia","🇱🇷"],["Libya","🇱🇾"],
+  ["Liechtenstein","🇱🇮"],["Lithuania","🇱🇹"],["Luxembourg","🇱🇺"],["Madagascar","🇲🇬"],["Malawi","🇲🇼"],
+  ["Malaysia","🇲🇾"],["Maldives","🇲🇻"],["Mali","🇲🇱"],["Malta","🇲🇹"],["Marshall Islands","🇲🇭"],
+  ["Mauritania","🇲🇷"],["Mauritius","🇲🇺"],["Mexico","🇲🇽"],["Micronesia","🇫🇲"],["Moldova","🇲🇩"],
+  ["Monaco","🇲🇨"],["Mongolia","🇲🇳"],["Montenegro","🇲🇪"],["Morocco","🇲🇦"],["Mozambique","🇲🇿"],
+  ["Myanmar","🇲🇲"],["Namibia","🇳🇦"],["Nauru","🇳🇷"],["Nepal","🇳🇵"],["Netherlands","🇳🇱"],
+  ["New Zealand","🇳🇿"],["Nicaragua","🇳🇮"],["Niger","🇳🇪"],["Nigeria","🇳🇬"],["North Korea","🇰🇵"],
+  ["North Macedonia","🇲🇰"],["Norway","🇳🇴"],["Oman","🇴🇲"],["Pakistan","🇵🇰"],["Palau","🇵🇼"],
+  ["Palestine","🇵🇸"],["Panama","🇵🇦"],["Papua New Guinea","🇵🇬"],["Paraguay","🇵🇾"],["Peru","🇵🇪"],
+  ["Philippines","🇵🇭"],["Poland","🇵🇱"],["Portugal","🇵🇹"],["Qatar","🇶🇦"],["Romania","🇷🇴"],
+  ["Russia","🇷🇺"],["Rwanda","🇷🇼"],["Saint Kitts and Nevis","🇰🇳"],["Saint Lucia","🇱🇨"],["Samoa","🇼🇸"],
+  ["San Marino","🇸🇲"],["Sao Tome and Principe","🇸🇹"],["Saudi Arabia","🇸🇦"],["Senegal","🇸🇳"],["Serbia","🇷🇸"],
+  ["Seychelles","🇸🇨"],["Sierra Leone","🇸🇱"],["Singapore","🇸🇬"],["Slovakia","🇸🇰"],["Slovenia","🇸🇮"],
+  ["Solomon Islands","🇸🇧"],["Somalia","🇸🇴"],["South Africa","🇿🇦"],["South Korea","🇰🇷"],["South Sudan","🇸🇸"],
+  ["Spain","🇪🇸"],["Sri Lanka","🇱🇰"],["Sudan","🇸🇩"],["Suriname","🇸🇷"],["Sweden","🇸🇪"],
+  ["Switzerland","🇨🇭"],["Syria","🇸🇾"],["Taiwan","🇹🇼"],["Tajikistan","🇹🇯"],["Tanzania","🇹🇿"],
+  ["Thailand","🇹🇭"],["Timor-Leste","🇹🇱"],["Togo","🇹🇬"],["Tonga","🇹🇴"],["Trinidad and Tobago","🇹🇹"],
+  ["Tunisia","🇹🇳"],["Turkey","🇹🇷"],["Turkmenistan","🇹🇲"],["Tuvalu","🇹🇻"],["Uganda","🇺🇬"],
+  ["Ukraine","🇺🇦"],["United Arab Emirates","🇦🇪"],["United Kingdom","🇬🇧"],["United States","🇺🇸"],["Uruguay","🇺🇾"],
+  ["Uzbekistan","🇺🇿"],["Vanuatu","🇻🇺"],["Vatican City","🇻🇦"],["Venezuela","🇻🇪"],["Vietnam","🇻🇳"],
+  ["Yemen","🇾🇪"],["Zambia","🇿🇲"],["Zimbabwe","🇿🇼"]
+].map(([name, flag]) => ({ name, flag }));
+
+const wrap    = document.getElementById("acWrap");
+const input   = document.getElementById("acInput");
+const list    = document.getElementById("acList");
+const live     = document.getElementById("acLive");
+const matchOut  = document.getElementById("matchOut");
+const activeOut = document.getElementById("activeOut");
+const selOut    = document.getElementById("selOut");
+
+let results = COUNTRIES.slice();   // current filtered list
+let active  = -1;                   // index of the keyboard-highlighted option
+
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function filter(q){
+  q = q.trim().toLowerCase();
+  if (!q) return COUNTRIES.slice();
+  return COUNTRIES.filter(c => c.name.toLowerCase().includes(q));
+}
+
+function highlight(name, q){
+  q = q.trim();
+  const safe = escapeHtml(name);
+  if (!q) return safe;
+  const i = name.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return safe;
+  return escapeHtml(name.slice(0, i)) + "<mark>" + escapeHtml(name.slice(i, i + q.length)) + "</mark>" + escapeHtml(name.slice(i + q.length));
+}
+
+function render(q){
+  if (!results.length){
+    list.innerHTML = `<li class="ac-empty" role="option" aria-disabled="true">No countries match &ldquo;${escapeHtml(q.trim())}&rdquo;</li>`;
+  } else {
+    list.innerHTML = results.map((c, i) =>
+      `<li id="opt-${i}" role="option" data-index="${i}" aria-selected="false" class="ac-opt">
+         <span>${highlight(c.name, q)}</span><span class="flag">${c.flag}</span>
+       </li>`).join("");
+  }
+  matchOut.textContent = results.length;
+  live.textContent = results.length + " result" + (results.length === 1 ? "" : "s");
+}
+
+function open(){
+  list.hidden = false;
+  wrap.classList.add("open");
+  input.setAttribute("aria-expanded", "true");
+}
+function close(){
+  list.hidden = true;
+  wrap.classList.remove("open");
+  active = -1;
+  activeOut.textContent = "none";
+  input.setAttribute("aria-expanded", "false");
+  input.removeAttribute("aria-activedescendant");
+}
+
+function setActive(i){
+  active = i;
+  const opts = list.querySelectorAll("[data-index]");
+  opts.forEach((li) => li.setAttribute("aria-selected", (+li.dataset.index === i) ? "true" : "false"));
+  if (i > -1 && opts[i]){
+    input.setAttribute("aria-activedescendant", "opt-" + i);
+    opts[i].scrollIntoView({ block: "nearest" });
+    activeOut.textContent = results[i].name;
+  } else {
+    input.removeAttribute("aria-activedescendant");
+    activeOut.textContent = "none";
+  }
+}
+
+function select(i){
+  if (i < 0 || !results[i]) return;
+  input.value = results[i].name;
+  selOut.textContent = results[i].name;
+  close();
+}
+
+const onType = () => {
+  results = filter(input.value);
+  render(input.value);
+  open();
+  setActive(results.length ? 0 : -1);   // auto-highlight the first match
+};
+
+input.addEventListener("input", debounce(onType, 120));
+
+input.addEventListener("keydown", (e) => {
+  const n = results.length;
+  if (e.key === "ArrowDown"){
+    e.preventDefault();
+    if (list.hidden){ open(); }
+    if (n) setActive((active + 1) % n);
+  } else if (e.key === "ArrowUp"){
+    e.preventDefault();
+    if (list.hidden){ open(); }
+    if (n) setActive((active - 1 + n) % n);
+  } else if (e.key === "Enter"){
+    if (!list.hidden && active > -1){ e.preventDefault(); select(active); }
+  } else if (e.key === "Escape"){
+    close();
+  } else if (e.key === "Tab"){
+    close();   // let focus move on naturally
+  }
+});
+
+// open on focus/click when there's already a list to show
+input.addEventListener("focus", () => { results = filter(input.value); render(input.value); open(); setActive(results.length ? 0 : -1); });
+
+// click / tap a row to select (mousedown fires before the input blurs)
+list.addEventListener("mousedown", (e) => {
+  const li = e.target.closest("[data-index]");
+  if (li) { e.preventDefault(); select(+li.dataset.index); }
+});
+// hover moves the active option too
+list.addEventListener("mousemove", (e) => {
+  const li = e.target.closest("[data-index]");
+  if (li && +li.dataset.index !== active) setActive(+li.dataset.index);
+});
+
+// close when clicking outside the whole widget
+document.addEventListener("pointerdown", (e) => { if (!wrap.contains(e.target)) close(); });
+
+// initial paint (list stays hidden until focus)
+render("");
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Why native <datalist> falls short", why:"HTML's <input list> + <datalist> looks like a free autocomplete, but it's a trap for real products. You can't style the dropdown, you can't control the filtering (browsers differ on prefix vs substring), you can't highlight the match, you can't show rich rows with icons, and the keyboard and screen-reader behaviour varies wildly across browsers. The moment a designer asks for a custom look or a two-line result, datalist is out. So we build a real combobox: an input plus a listbox we own end to end.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;datalist&gt; → no styling, no highlight,<br>inconsistent keyboard + a11y<br>custom combobox → full control</div>`, code:`<!-- looks tempting, but unstyleable + inconsistent -->
+<input list="cc"><datalist id="cc">...</datalist>
+<!-- so we own the list ourselves instead -->` },
+ { title:"2. Controlled input + a data source", why:"A combobox is one text input tied to an array of candidates. The input is the query; the array is the truth. On every change we read input.value and derive the visible list from it — the DOM list is never the source of data, just a projection of the filtered array. Keeping one array (results) as state, and re-rendering from it, is what makes navigation and selection simple later: an index into that array is all we need to track.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">input.value → query<br>COUNTRIES[] → source of truth<br>results[] = filtered projection<br>DOM list = render(results)</div>`, code:`let results = COUNTRIES.slice();  // state
+input.addEventListener("input", () => {
+  results = filter(input.value);   // derive from query
+  render(results);                 // DOM = projection
+});` },
+ { title:"3. Debounce — why not filter on every keystroke", why:"An input event fires on every single keypress — a fast typist generates 8–10 per second. Running the filter (and re-rendering the DOM) that often is wasteful, and if the data is remote it means one network request per letter, which floods the server and produces out-of-order results. A debounce waits until the user pauses (~120ms) and only then runs the work, collapsing a burst of keystrokes into one run. It's cheap insurance locally and essential once the data comes from an API.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">keystrokes: i·n·d·i·a (5 events)<br>debounce 120ms<br>→ filter runs ONCE after the pause</div>`, code:`function debounce(fn, ms){
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+input.addEventListener("input", debounce(onType, 120));` },
+ { title:"4. Filter + highlight the match", why:"Filtering is a case-insensitive substring test: lower-case the query and each name, keep the ones that include the query. An empty query returns the whole list so focusing the field shows everything. To make the match obvious we find where the query lands in the name and wrap those characters in <mark>. Because we're injecting HTML, every non-matched slice is escaped first — otherwise a country name (or a malicious remote result) could break the markup or inject script.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">"ind" → India, Indonesia<br>Ind<mark>ia</mark>? no — <mark>Ind</mark>ia<br>(escape everything you didn't match)</div>`, code:`function filter(q){
+  q = q.trim().toLowerCase();
+  if (!q) return COUNTRIES.slice();
+  return COUNTRIES.filter(c => c.name.toLowerCase().includes(q));
+}
+// highlight() wraps the matched slice in <mark>, escaping the rest` },
+ { title:"5. The listbox + active-descendant model", why:"The dropdown is a role=\"listbox\" containing role=\"option\" items, each with a unique id. Crucially, DOM focus never leaves the input — instead the input carries aria-activedescendant pointing at the id of the 'active' option. This is the combobox pattern's key trick: the user keeps typing while a virtual cursor moves through the list. aria-selected marks which option is visually highlighted. Screen readers read the active option aloud as the pointer moves, without ever moving real focus.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">focus stays on the INPUT<br>input aria-activedescendant="opt-3"<br>#opt-3 aria-selected="true"<br>(virtual cursor, real focus unmoved)</div>`, code:`<input role="combobox" aria-expanded="true"
+       aria-activedescendant="opt-3">
+<ul role="listbox">
+  <li id="opt-3" role="option" aria-selected="true">India</li>
+</ul>` },
+ { title:"6. Keyboard navigation state (wrap-around)", why:"All the keyboard logic hangs off one integer: active, the index of the highlighted option (-1 = none). ArrowDown is (active+1) % n and ArrowUp is (active-1+n) % n — the modulo makes it wrap from last back to first and vice-versa, which feels natural. We call preventDefault() on the arrows so the text caret doesn't jump to the start/end of the field. After each move we repaint aria-selected, update aria-activedescendant, and scroll the row into view so it's never hidden below the fold.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">active = 4 (last)<br>↓ → (4+1) % 5 = 0  (wrap to top)<br>↑ → (0-1+5) % 5 = 4 (wrap to bottom)<br>scrollIntoView({block:"nearest"})</div>`, code:`if (e.key === "ArrowDown"){ e.preventDefault(); setActive((active+1) % n); }
+if (e.key === "ArrowUp"){   e.preventDefault(); setActive((active-1+n) % n); }
+function setActive(i){
+  active = i;
+  opts.forEach((li,idx) => li.setAttribute("aria-selected", idx===i));
+  input.setAttribute("aria-activedescendant", "opt-"+i);
+  opts[i].scrollIntoView({ block:"nearest" });
+}` },
+ { title:"7. Selection — Enter, click, and commit", why:"Selecting means: write the chosen name into the input and close the list. Enter commits the active option (guarded by active > -1 so Enter on nothing does nothing). A click on a row commits that row — and we listen on mousedown rather than click, because a plain click would first blur the input and could close the list before the click registers. preventDefault() on that mousedown keeps focus in the input. One select(i) function handles both paths so behaviour is identical from mouse and keyboard.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Enter (active > -1) → select(active)<br>mousedown on row → select(index)<br>select(): input.value = name; close()<br>(mousedown, not click — beats blur)</div>`, code:`if (e.key === "Enter" && active > -1){ e.preventDefault(); select(active); }
+list.addEventListener("mousedown", e => {
+  const li = e.target.closest("[data-index]");
+  if (li){ e.preventDefault(); select(+li.dataset.index); }
+});
+function select(i){ input.value = results[i].name; close(); }` },
+ { title:"8. Dismiss — Esc and outside click", why:"A dropdown must be easy to escape. Esc closes it without selecting, leaving whatever the user had typed. An outside click closes it too: a single document-level pointerdown listener checks wrap.contains(e.target) and closes only when the target is outside the whole widget — clicks inside are ignored so they don't fight the selection logic. Closing is one function that hides the list, resets active to -1, sets aria-expanded=\"false\" and clears aria-activedescendant, keeping the ARIA state honest.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Esc → close (keep typed text)<br>pointerdown outside wrap → close<br>close(): hide + active=-1 +<br>aria-expanded=false + clear activedescendant</div>`, code:`if (e.key === "Escape") close();
+document.addEventListener("pointerdown", e => {
+  if (!wrap.contains(e.target)) close();   // ignore clicks inside
+});
+function close(){ list.hidden = true; active = -1;
+  input.setAttribute("aria-expanded","false");
+  input.removeAttribute("aria-activedescendant"); }` },
+ { title:"9. The WAI-ARIA combobox pattern", why:"Assistive tech only understands the widget if the roles and states are right. The input is role=\"combobox\" with aria-expanded (is the list open?), aria-autocomplete=\"list\" (suggestions appear in a list), aria-controls (which element is the list), and aria-activedescendant (which option is active). The list is role=\"listbox\", each row role=\"option\" with aria-selected. A polite aria-live region announces the match count so a screen-reader user knows the results changed. Get these right and the widget is usable without ever seeing it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">input: combobox + aria-expanded +<br>aria-autocomplete=list + aria-controls +<br>aria-activedescendant<br>list: listbox / option / aria-selected<br>+ aria-live="polite" count</div>`, code:`<input role="combobox" aria-expanded="true"
+  aria-autocomplete="list" aria-controls="acList"
+  aria-activedescendant="opt-0">
+<ul id="acList" role="listbox">
+  <li role="option" aria-selected="true">…</li>
+</ul>
+<div aria-live="polite">12 results</div>` },
+ { title:"10. Remote data & the race condition", why:"For big or server-side datasets you fetch results instead of filtering a local array — and this is where the debounce truly pays off, firing one request per pause instead of one per letter. The subtle bug is ordering: type 'in', then 'ind'; if the 'in' response is slow it may land after 'ind' and clobber the correct list. Fix it by tagging each request with an incrementing id (or an AbortController) and ignoring any response that isn't the latest. Everything else — keyboard, selection, ARIA — stays identical.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">"in" request (slow) ↴<br>"ind" request (fast) ✅ renders<br>"in" lands late → DROP it (stale id)<br>guard: if (myId !== reqId) return;</div>`, code:`let reqId = 0;
+async function remote(q){
+  const my = ++reqId;
+  const data = await (await fetch("/api/search?q="+encodeURIComponent(q))).json();
+  if (my !== reqId) return;   // a newer request already won
+  results = data; render(q);
+}` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let cur = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ cur=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,cur-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,cur+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(cur>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(cur+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>

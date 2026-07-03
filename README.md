@@ -32,3 +32,4 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk
 - Day 22 — Smart Tooltip (flip + shift) → `day22-tooltip.html`
+- Day 23 — Autocomplete / Combobox (accessible typeahead) → `day23-autocomplete.html`
