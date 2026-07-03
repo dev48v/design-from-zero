@@ -28,8 +28,8 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 19 — Date Picker](https://dev48v.infy.uk/design/day19-date-picker.html) — `day19-date-picker.html`
 - [DesignFromZero · Day 20 — Modal Dialog](https://dev48v.infy.uk/design/day20-modal-dialog.html) — `day20-modal-dialog.html`
 - [DesignFromZero · Day 21 — Virtual Scroll](https://dev48v.infy.uk/design/day21-virtual-scroll.html) — `day21-virtual-scroll.html`
+- [DesignFromZero · Day 22 — Smart Tooltip](https://dev48v.infy.uk/design/day22-tooltip.html) — `day22-tooltip.html`
+- [DesignFromZero · Day 23 — Autocomplete / Combobox](https://dev48v.infy.uk/design/day23-autocomplete.html) — `day23-autocomplete.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk
-- Day 22 — Smart Tooltip (flip + shift) → `day22-tooltip.html`
-- Day 23 — Autocomplete / Combobox (accessible typeahead) → `day23-autocomplete.html`
