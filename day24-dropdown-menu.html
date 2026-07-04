@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 24 — Dropdown / Menu Button</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  /* ===== menu button ===== */
+  .mb-wrap { position:relative; display:inline-block; }
+  .mb-btn { display:inline-flex; align-items:center; gap:10px; padding:12px 18px; font-size:15px; font-weight:700;
+            color:#fff; background:#4f46e5; border:none; border-radius:12px; cursor:pointer;
+            box-shadow:0 10px 26px rgba(79,70,229,.32); outline:none; transition:background .15s, box-shadow .15s; }
+  .mb-btn:hover { background:#4338ca; }
+  .mb-btn:focus-visible { box-shadow:0 0 0 3px rgba(99,102,241,.45); }
+  .mb-btn .caret { font-size:11px; transition:transform .18s; }
+  .mb-wrap.open .mb-btn .caret { transform:rotate(180deg); }
+  .mb-menu { position:absolute; left:0; top:calc(100% + 8px); z-index:40; min-width:260px; background:#fff;
+             border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 20px 44px rgba(0,0,0,.16); padding:6px;
+             margin:0; list-style:none; }
+  .mb-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px;
+             border-radius:8px; font-size:14px; color:#0f172a; cursor:pointer; user-select:none; outline:none; }
+  .mb-item:hover { background:#f1f5f9; }
+  .mb-item:focus, .mb-item.active { background:#eef2ff; color:#3730a3; }
+  .mb-item[aria-disabled="true"] { color:#cbd5e1; cursor:not-allowed; }
+  .mb-item[aria-disabled="true"]:hover { background:transparent; }
+  .mb-item .lead { display:flex; align-items:center; gap:10px; }
+  .mb-item .ico { width:18px; text-align:center; color:#6366f1; font-weight:800; }
+  .mb-item .kbd { font-size:11px; color:#94a3b8; font-variant-numeric:tabular-nums; }
+  .mb-sep { height:1px; background:#e2e8f0; margin:6px 4px; }
+  .mb-label { padding:6px 12px 4px; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#94a3b8; }
+  .toast { position:fixed; left:50%; bottom:34px; transform:translateX(-50%) translateY(20px); z-index:60;
+           background:#0f172a; color:#fff; padding:12px 20px; border-radius:12px; font-size:14px; font-weight:600;
+           box-shadow:0 16px 40px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .mb-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .stat { font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 24</div>
+      <h1 class="text-xl font-bold">🍔 Dropdown / Menu Button — Roving Tabindex + Full Keyboard Nav</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Click the button — or press <kbd>Enter</kbd>, <kbd>Space</kbd> or <kbd>↓</kbd> to open the menu.</h2>
+        <p class="text-slate-500 mb-6">This is a real WAI-ARIA <strong>menu button</strong>: a trigger that carries <code>aria-haspopup</code> and <code>aria-expanded</code>, and a <code>role="menu"</code> of <code>role="menuitem"</code> rows. Everything works from the keyboard. Open with <kbd>Enter</kbd>/<kbd>Space</kbd>/<kbd>↓</kbd> (focus lands on the <em>first</em> item) or <kbd>↑</kbd> (focus lands on the <em>last</em>). Inside, only one item is tabbable at a time — <strong>roving tabindex</strong> — and <kbd>↑</kbd>/<kbd>↓</kbd> move with wrap-around, <kbd>Home</kbd>/<kbd>End</kbd> jump to the ends, and <strong>typeahead</strong> lets you type a letter to jump to a matching item. <kbd>Enter</kbd>/<kbd>Space</kbd> activate (you'll see a toast), <kbd>Esc</kbd> closes and returns focus to the button, and a click outside or a focus-out closes it too.</p>
+      </div>
+
+      <div class="flex justify-center mt-4 mb-6">
+        <div class="mb-wrap" id="mbWrap">
+          <button id="mbBtn" class="mb-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mbMenu">
+            Actions <span class="caret">▼</span>
+          </button>
+          <ul id="mbMenu" class="mb-menu" role="menu" aria-label="Actions" hidden></ul>
+        </div>
+      </div>
+
+      <div class="flex justify-center items-center gap-6 mt-2 text-sm font-bold text-slate-600">
+        <div>Open: <span id="openOut" class="stat text-indigo-600">no</span></div>
+        <div>Focused item: <span id="focusOut" class="stat text-indigo-600">none</span></div>
+        <div>Last action: <span id="actOut" class="stat text-indigo-600">—</span></div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">The button is <code>aria-haspopup="true"</code> + <code>aria-expanded</code> pointing at a <code>role="menu"</code> via <code>aria-controls</code>. Each row is a <code>role="menuitem"</code>. Unlike the combobox from Day 23 (which keeps focus on the input and moves a virtual cursor with <code>aria-activedescendant</code>), a menu moves <em>real DOM focus</em> onto each item — the <strong>roving-tabindex</strong> model. Only the current item has <code>tabindex="0"</code>; every other item is <code>tabindex="-1"</code>, so <kbd>Tab</kbd> leaves the menu rather than walking through it, and the arrow keys drive the highlight. This is the WAI-ARIA "menu button" pattern in ~120 lines of vanilla JS.</p>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="mb-sr" id="mbLive" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a menu button works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A trigger button, a rendered <code>role="menu"</code>, roving tabindex so only one item is tabbable, full arrow / Home / End / typeahead navigation, activate-and-close, Esc-and-outside-click dismissal that returns focus to the button, and the ARIA menu-button wiring. ~120 lines of vanilla JS — no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: a button, not a &lt;select&gt;</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A real <code>&lt;button&gt;</code> plus a <code>&lt;ul role="menu"&gt;</code> you own. The button carries <code>aria-haspopup="true"</code> (a popup follows), <code>aria-expanded</code> (is it open?) and <code>aria-controls</code> pointing at the menu. Use a menu button — not a listbox or a native <code>&lt;select&gt;</code> — when the items are <em>commands</em> (Rename, Duplicate, Delete), not values you're picking from a set.</p>
+        <div class="relative"><pre>&lt;div class="mb-wrap"&gt;
+  &lt;button id="mbBtn" aria-haspopup="true" aria-expanded="false"
+          aria-controls="mbMenu"&gt;Actions ▼&lt;/button&gt;
+  &lt;ul id="mbMenu" role="menu" hidden&gt;&lt;/ul&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Render menuitems with roving tabindex</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each row is a <code>&lt;li role="menuitem"&gt;</code>. The trick is <strong>roving tabindex</strong>: exactly one item has <code>tabindex="0"</code> and every other has <code>tabindex="-1"</code>. That's what makes <kbd>Tab</kbd> leave the menu (instead of stepping through every item) while the arrow keys still move focus internally. Skip disabled items when seeding the initial <code>0</code>.</p>
+        <div class="relative"><pre>menu.innerHTML = ITEMS.map((it, i) =&gt;
+  `&lt;li role="menuitem" data-index="${i}" tabindex="-1"
+       class="mb-item"&gt;${it.label}&lt;/li&gt;`).join("");
+// only the first (enabled) item is tabbable:
+items()[0].tabIndex = 0;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Open — and which item gets focus</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Opening flips <code>aria-expanded="true"</code>, unhides the menu, then moves <em>real focus</em> onto an item. The rule: a pointer click or <kbd>Enter</kbd>/<kbd>Space</kbd>/<kbd>↓</kbd> focuses the <strong>first</strong> item; <kbd>↑</kbd> focuses the <strong>last</strong>. Passing a <code>focusFirst</code> flag keeps that one decision in one place.</p>
+        <div class="relative"><pre>function open(focusFirst = true){
+  menu.hidden = false;
+  wrap.classList.add("open");
+  btn.setAttribute("aria-expanded", "true");
+  const list = items();
+  focusItem(focusFirst ? 0 : list.length - 1);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">focusItem() — the roving move</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Moving the highlight is one function. Set the previous item back to <code>tabindex="-1"</code>, give the new one <code>tabindex="0"</code>, then call <code>.focus()</code> on it. Because focus itself moves, screen readers announce the item automatically — no <code>aria-activedescendant</code> needed. Skip disabled items so focus never lands on a dead command.</p>
+        <div class="relative"><pre>function focusItem(i){
+  const list = items();
+  i = (i + list.length) % list.length;      // wrap
+  while (list[i].getAttribute("aria-disabled") === "true")
+    i = (i + 1) % list.length;              // skip disabled
+  list.forEach(el =&gt; el.tabIndex = -1);
+  list[i].tabIndex = 0;
+  list[i].focus();
+  cur = i;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Arrow / Home / End navigation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The keydown lives on the menu. <kbd>↓</kbd> is <code>cur+1</code>, <kbd>↑</kbd> is <code>cur-1</code> — <code>focusItem()</code> already wraps with modulo. <kbd>Home</kbd> jumps to the first item, <kbd>End</kbd> to the last. Call <code>preventDefault()</code> so arrows don't scroll the page.</p>
+        <div class="relative"><pre>menu.addEventListener("keydown", e =&gt; {
+  if (e.key === "ArrowDown"){ e.preventDefault(); focusItem(cur + 1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); focusItem(cur - 1); }
+  else if (e.key === "Home"){ e.preventDefault(); focusItem(0); }
+  else if (e.key === "End"){ e.preventDefault(); focusItem(items().length - 1); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Typeahead — type a letter to jump</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A single printable key jumps to the next item whose label starts with that letter. Keep a small buffer that resets after ~500ms so typing "de" quickly matches "Delete" while a slow second key starts a fresh search. Search from the item <em>after</em> the current one and wrap, so repeated presses of the same letter cycle through matches.</p>
+        <div class="relative"><pre>let buf = "", bufT;
+function typeahead(ch){
+  clearTimeout(bufT); bufT = setTimeout(() =&gt; buf = "", 500);
+  buf += ch.toLowerCase();
+  const list = items();
+  for (let k = 1; k &lt;= list.length; k++){
+    const j = (cur + k) % list.length;
+    if (list[j].dataset.label.startsWith(buf)){ focusItem(j); return; }
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Activate — Enter, Space, click</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><kbd>Enter</kbd> and <kbd>Space</kbd> activate the focused item; a click activates the clicked one. Activating a menuitem runs its command <em>and</em> closes the menu, then returns focus to the button so the next <kbd>Tab</kbd> continues from where the user was. One <code>activate(i)</code> function serves mouse and keyboard so behaviour is identical.</p>
+        <div class="relative"><pre>if (e.key === "Enter" || e.key === " "){ e.preventDefault(); activate(cur); }
+menu.addEventListener("click", e =&gt; {
+  const li = e.target.closest("[data-index]"); if (li) activate(+li.dataset.index);
+});
+function activate(i){
+  if (items()[i].getAttribute("aria-disabled") === "true") return;
+  run(ITEMS[+items()[i].dataset.index].label);   // do the thing
+  close(true);                                    // then close + return focus
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Dismiss — Esc, outside click, focus-out</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><kbd>Esc</kbd> closes and returns focus to the button. An outside <code>pointerdown</code> closes without moving focus. A <code>focusout</code> that lands outside the widget (Tab, or clicking another control) closes it too. <code>close(returnFocus)</code> hides the menu, flips <code>aria-expanded="false"</code>, and only re-focuses the button when the dismissal was keyboard-driven.</p>
+        <div class="relative"><pre>if (e.key === "Escape"){ e.preventDefault(); close(true); }
+document.addEventListener("pointerdown", e =&gt; {
+  if (!wrap.contains(e.target)) close(false);
+});
+wrap.addEventListener("focusout", e =&gt; {
+  if (!wrap.contains(e.relatedTarget)) close(false);
+});
+function close(returnFocus){
+  menu.hidden = true; wrap.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  if (returnFocus) btn.focus();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Submenus (bonus)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A menuitem that opens a submenu is a <code>role="menuitem"</code> with <code>aria-haspopup="true"</code> and its own nested <code>role="menu"</code>. <kbd>→</kbd> (or <kbd>Enter</kbd>) opens it and focuses its first item; <kbd>←</kbd> (or <kbd>Esc</kbd>) closes it and returns focus to the parent item. Each menu runs the same roving-tabindex + arrow logic — it's this widget, recursively nested.</p>
+        <div class="relative"><pre>&lt;li role="menuitem" aria-haspopup="true" aria-expanded="false"&gt;
+  Export…
+  &lt;ul role="menu" hidden&gt;
+    &lt;li role="menuitem" tabindex="-1"&gt;PDF&lt;/li&gt;
+    &lt;li role="menuitem" tabindex="-1"&gt;CSV&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/li&gt;
+// ArrowRight → open submenu, focus its first item
+// ArrowLeft / Esc → close submenu, focus parent item</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 24 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built an accessible menu button: a trigger with <code>aria-haspopup</code>/<code>aria-expanded</code>, a <code>role="menu"</code> of <code>role="menuitem"</code> rows, <strong>roving tabindex</strong> so only one item is tabbable, wrap-around arrow / Home / End navigation, typeahead, activate-and-close, and Esc / outside-click / focus-out dismissal that returns focus to the button. This is exactly what Radix Menu, Headless UI Menu and every app's "⋯" overflow menu do under the hood. <strong>👉 Tomorrow — Day 25: Segmented control / Tabs (roving-tabindex, ARIA tablist).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DROPDOWN / MENU BUTTON =====
+// Command items. `sep` = a separator row, `label`-only "GROUP" = a section label, `disabled` = greyed out.
+const ITEMS = [
+  { label:"New file",   ico:"+",  kbd:"Ctrl N" },
+  { label:"Open…",      ico:"⌁",  kbd:"Ctrl O" },
+  { label:"Rename",     ico:"✎",  kbd:"F2" },
+  { label:"Duplicate",  ico:"⧉",  kbd:"Ctrl D" },
+  { label:"Move to…",   ico:"→",  kbd:"" },
+  { label:"Share",      ico:"↗",  kbd:"", disabled:true },
+  { label:"Delete",     ico:"🗑",  kbd:"Del" }
+];
+
+const wrap    = document.getElementById("mbWrap");
+const btn     = document.getElementById("mbBtn");
+const menu    = document.getElementById("mbMenu");
+const toast   = document.getElementById("toast");
+const live    = document.getElementById("mbLive");
+const openOut  = document.getElementById("openOut");
+const focusOut = document.getElementById("focusOut");
+const actOut   = document.getElementById("actOut");
+
+let cur = 0;                 // index (within the menuitem list) of the focused item
+let buf = "", bufT;          // typeahead buffer + reset timer
+let toastT;
+
+function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// build the menu rows once
+menu.innerHTML = ITEMS.map((it, i) => {
+  const dis = it.disabled ? ` aria-disabled="true"` : "";
+  const kbd = it.kbd ? `<span class="kbd">${escapeHtml(it.kbd)}</span>` : "";
+  return `<li id="mi-${i}" role="menuitem" data-index="${i}" data-label="${escapeHtml(it.label.toLowerCase())}" tabindex="-1"${dis} class="mb-item">
+            <span class="lead"><span class="ico">${escapeHtml(it.ico)}</span>${escapeHtml(it.label)}</span>${kbd}
+          </li>`;
+}).join("");
+
+// live list of menuitem elements (recomputed so this stays generic)
+function items(){ return [...menu.querySelectorAll('[role="menuitem"]')]; }
+
+function isOpen(){ return !menu.hidden; }
+
+function open(focusFirst = true){
+  if (isOpen()) return;
+  menu.hidden = false;
+  wrap.classList.add("open");
+  btn.setAttribute("aria-expanded", "true");
+  openOut.textContent = "yes";
+  const list = items();
+  focusItem(focusFirst ? 0 : list.length - 1);
+}
+
+function close(returnFocus){
+  if (!isOpen()) return;
+  menu.hidden = true;
+  wrap.classList.remove("open");
+  btn.setAttribute("aria-expanded", "false");
+  openOut.textContent = "no";
+  focusOut.textContent = "none";
+  items().forEach(el => { el.tabIndex = -1; el.classList.remove("active"); });
+  buf = "";
+  if (returnFocus) btn.focus();
+}
+
+// the roving-tabindex move: one item tabbable + focused, all others tabindex=-1
+function focusItem(i){
+  const list = items();
+  if (!list.length) return;
+  const n = list.length;
+  i = ((i % n) + n) % n;                 // wrap into range
+  // skip disabled items, moving in the +1 direction
+  let guard = 0;
+  while (list[i].getAttribute("aria-disabled") === "true" && guard++ < n){
+    i = (i + 1) % n;
+  }
+  list.forEach(el => { el.tabIndex = -1; el.classList.remove("active"); });
+  list[i].tabIndex = 0;
+  list[i].classList.add("active");
+  list[i].focus();
+  cur = i;
+  focusOut.textContent = ITEMS[+list[i].dataset.index].label;
+}
+
+function typeahead(ch){
+  clearTimeout(bufT);
+  bufT = setTimeout(() => { buf = ""; }, 500);
+  buf += ch.toLowerCase();
+  const list = items();
+  // search from the item after the current one, wrapping, so repeats cycle
+  for (let k = 1; k <= list.length; k++){
+    const j = (cur + k) % list.length;
+    if (list[j].getAttribute("aria-disabled") === "true") continue;
+    if (list[j].dataset.label.startsWith(buf)){ focusItem(j); return; }
+  }
+  // if a multi-char buffer misses, retry as a fresh single char
+  if (buf.length > 1){ buf = ch.toLowerCase(); typeaheadRetry(ch); }
+}
+function typeaheadRetry(ch){
+  const list = items();
+  for (let k = 1; k <= list.length; k++){
+    const j = (cur + k) % list.length;
+    if (list[j].getAttribute("aria-disabled") === "true") continue;
+    if (list[j].dataset.label.startsWith(ch.toLowerCase())){ focusItem(j); return; }
+  }
+}
+
+function activate(i){
+  const list = items();
+  if (i < 0 || !list[i]) return;
+  if (list[i].getAttribute("aria-disabled") === "true") return;
+  const label = ITEMS[+list[i].dataset.index].label;
+  run(label);
+  close(true);
+}
+
+function run(label){
+  actOut.textContent = label;
+  live.textContent = label + " selected";
+  showToast(label + " — done");
+}
+
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add("show");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => toast.classList.remove("show"), 1800);
+}
+
+// --- trigger button ---
+btn.addEventListener("click", () => { isOpen() ? close(true) : open(true); });
+
+btn.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " "){
+    e.preventDefault(); open(true);           // focus first item
+  } else if (e.key === "ArrowUp"){
+    e.preventDefault(); open(false);          // focus last item
+  }
+});
+
+// --- menu keyboard ---
+menu.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown"){ e.preventDefault(); focusItem(cur + 1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); focusItem(cur - 1); }
+  else if (e.key === "Home"){ e.preventDefault(); focusItem(0); }
+  else if (e.key === "End"){ e.preventDefault(); focusItem(items().length - 1); }
+  else if (e.key === "Enter" || e.key === " "){ e.preventDefault(); activate(cur); }
+  else if (e.key === "Escape"){ e.preventDefault(); close(true); }
+  else if (e.key === "Tab"){ close(false); }   // Tab leaves the menu → dismiss
+  else if (e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey){
+    e.preventDefault(); typeahead(e.key);      // typeahead
+  }
+});
+
+// --- pointer on rows ---
+menu.addEventListener("click", (e) => {
+  const li = e.target.closest("[data-index]");
+  if (li) activate([...menu.querySelectorAll('[role="menuitem"]')].indexOf(li));
+});
+menu.addEventListener("mousemove", (e) => {
+  const li = e.target.closest("[data-index]");
+  if (!li || li.getAttribute("aria-disabled") === "true") return;
+  const idx = items().indexOf(li);
+  if (idx !== cur) focusItem(idx);
+});
+
+// --- dismiss: outside click + focus-out ---
+document.addEventListener("pointerdown", (e) => {
+  if (!wrap.contains(e.target)) close(false);
+});
+wrap.addEventListener("focusout", (e) => {
+  // relatedTarget is where focus is going; null/outside → dismiss
+  if (!wrap.contains(e.relatedTarget)) close(false);
+});
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Menu button vs listbox vs select", why:"These three widgets look similar but mean different things, and picking the wrong one confuses assistive tech. A native <select> or a role=\"listbox\" is for choosing a value from a set — the choice persists and 'sticks'. A menu button is for firing commands: Rename, Duplicate, Delete — you invoke an action and the menu closes, nothing stays selected. Because the semantics differ, so does the keyboard model: a listbox keeps focus on the control and tracks a selection; a menu moves real focus onto each item and has no persistent 'selected' state. Choose the menu button when your rows are verbs, not values.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;select&gt; / listbox → pick a VALUE (sticks)<br>menu button → fire a COMMAND (closes)<br>rows are verbs? → menu button</div>`, code:`<!-- values you keep → listbox / select -->
+<select><option>Small</option><option>Large</option></select>
+<!-- commands you fire → menu button -->
+<button aria-haspopup="true">Actions ▼</button>
+<ul role="menu">…Rename / Duplicate / Delete…</ul>` },
+ { title:"2. aria-haspopup + aria-expanded on the trigger", why:"The button is the whole widget's handshake with assistive tech. aria-haspopup=\"true\" (or \"menu\") tells a screen reader 'activating this opens a menu', so it announces 'Actions, menu, collapsed' rather than a plain button. aria-expanded flips between false and true to say whether the popup is currently open — this is the single source of truth for open state, so JS toggles it every time it opens or closes. aria-controls points at the menu's id, wiring the two elements together. Keep these three attributes honest and the widget is legible without ever being seen.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">button aria-haspopup="true"<br>aria-expanded="false" ⇄ "true"<br>aria-controls="mbMenu"<br>SR reads: "Actions, menu, collapsed"</div>`, code:`<button aria-haspopup="true" aria-expanded="false"
+        aria-controls="mbMenu">Actions ▼</button>
+<ul id="mbMenu" role="menu" hidden>…</ul>
+// on open:  btn.setAttribute("aria-expanded","true")
+// on close: btn.setAttribute("aria-expanded","false")` },
+ { title:"3. Opening — which item gets focus", why:"How you open the menu decides where focus lands, and this is a real spec rule, not a detail. Opening with a pointer click, Enter, Space, or ArrowDown focuses the FIRST item — the natural 'start from the top' expectation. Opening with ArrowUp focuses the LAST item, which lets a keyboard user reach the bottom of a long menu in one keystroke. Getting this right means a keyboard user never has to arrow all the way down just because they opened from the top. We funnel every path through open(focusFirst) so the decision lives in one place.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click / Enter / Space / ↓ → focus FIRST item<br>↑ → focus LAST item<br>open(focusFirst = true|false)</div>`, code:`btn.addEventListener("keydown", e => {
+  if (e.key==="ArrowDown"||e.key==="Enter"||e.key===" "){
+    e.preventDefault(); open(true);   // first item
+  } else if (e.key==="ArrowUp"){
+    e.preventDefault(); open(false);  // last item
+  }
+});` },
+ { title:"4. Roving tabindex — the core idea", why:"A menu holds many focusable items, but Tab should treat the whole menu as ONE tab stop — Tab moves past it, it doesn't walk you through every row. Roving tabindex achieves this: exactly one item carries tabindex=\"0\" (reachable by Tab and script focus) while every other item is tabindex=\"-1\" (focusable only by script). As the arrow keys move the highlight, we 'rove' the 0 from the old item to the new one and call .focus() on it. So Tab enters or leaves the menu as a unit, and the arrows drive movement inside — the composite-widget pattern used by menus, toolbars, radio groups and grids alike.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">item 0  tabindex="0"  ← focused, tabbable<br>item 1  tabindex="-1"<br>item 2  tabindex="-1"<br>arrows 'rove' the 0; Tab exits the menu</div>`, code:`function focusItem(i){
+  const list = items();
+  list.forEach(el => el.tabIndex = -1);  // clear all
+  list[i].tabIndex = 0;                  // this one is tabbable
+  list[i].focus();                       // and focused
+  cur = i;
+}` },
+ { title:"5. Why roving tabindex, not aria-activedescendant", why:"Day 23's combobox kept DOM focus on the input and moved a virtual cursor with aria-activedescendant. A menu does the opposite: it moves REAL focus onto each item. Why the difference? The combobox needs the user to keep typing into the input while a highlight moves through suggestions — focus must stay in the text field. A menu has no text entry; the items themselves are the interactive targets, and moving real focus is simpler, gives you native :focus styling, and lets each item be a real button-like element. Roving tabindex is how you move real focus around a composite widget without exposing every item to Tab.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">combobox → focus STAYS on input<br>+ aria-activedescendant (virtual cursor)<br>menu → focus MOVES onto each item<br>+ roving tabindex (real focus)</div>`, code:`// combobox (Day 23): focus never leaves the input
+input.setAttribute("aria-activedescendant", "opt-3");
+// menu (Day 24): focus actually moves onto the item
+list[i].tabIndex = 0; list[i].focus();
+// no aria-activedescendant needed — real focus is the cursor` },
+ { title:"6. Arrow / Home / End + wrap-around", why:"Once focus roves, navigation is just index math. ArrowDown is cur+1, ArrowUp is cur-1, and focusItem wraps with ((i % n) + n) % n so the last item loops to the first and vice-versa — the double-modulo handles negative indices cleanly. Home jumps to index 0, End to the last item, which matters in a long menu. We preventDefault() on all of these so the page doesn't scroll under the open menu. Disabled items are skipped as focus moves, so the highlight never rests on a command you can't run.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">↓ cur+1   ↑ cur-1  (wrap both ends)<br>Home → 0   End → n-1<br>((i % n) + n) % n handles negatives<br>disabled items skipped on the way</div>`, code:`if (e.key==="ArrowDown"){ e.preventDefault(); focusItem(cur+1); }
+else if (e.key==="ArrowUp"){ e.preventDefault(); focusItem(cur-1); }
+else if (e.key==="Home"){ e.preventDefault(); focusItem(0); }
+else if (e.key==="End"){ e.preventDefault(); focusItem(items().length-1); }` },
+ { title:"7. Typeahead — jump by typing", why:"On a keyboard, arrowing through a long menu is slow, so menus support typeahead: press a letter and focus jumps to the next item whose label starts with it. We keep a tiny buffer that resets after ~500ms of no typing, so hammering 'd' twice cycles through Duplicate then Delete, while typing 'de' quickly matches Delete directly. Crucially the search starts from the item AFTER the current one and wraps, so repeated presses of the same letter step through all matches instead of sticking on the first. This is the same behaviour native <select> gives you for free — we rebuild it because our menu is custom.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">type "d" → Duplicate<br>type "d" again → Delete (cycles)<br>type "de" fast → Delete<br>buffer resets after 500ms</div>`, code:`let buf = "", bufT;
+function typeahead(ch){
+  clearTimeout(bufT); bufT = setTimeout(()=>buf="",500);
+  buf += ch.toLowerCase();
+  const list = items();
+  for (let k=1; k<=list.length; k++){        // start AFTER current
+    const j = (cur+k) % list.length;
+    if (list[j].dataset.label.startsWith(buf)){ focusItem(j); return; }
+  }
+}` },
+ { title:"8. Activate — run the command, then close", why:"Activating a menuitem is where the widget does its job. Enter and Space activate the focused item; a click activates the clicked one — and one activate(i) function serves both so mouse and keyboard behave identically. Because these are commands, activating runs the action AND closes the menu; nothing stays 'selected'. We guard against activating a disabled item so a keyboard user can't fire a greyed-out command. After running, we close and return focus to the button — covered next — so the user's place in the tab order is preserved.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Enter / Space → activate(cur)<br>click row → activate(index)<br>run command → then close()<br>disabled item → do nothing</div>`, code:`if (e.key==="Enter"||e.key===" "){ e.preventDefault(); activate(cur); }
+menu.addEventListener("click", e => {
+  const li = e.target.closest("[data-index]");
+  if (li) activate(items().indexOf(li));
+});
+function activate(i){
+  if (items()[i].getAttribute("aria-disabled")==="true") return;
+  run(label); close(true);   // do it, then close + return focus
+}` },
+ { title:"9. Dismiss + return focus (the part everyone forgets)", why:"A menu must be easy to leave, and closing correctly is what separates a real menu from a fake one. Esc closes and returns focus to the BUTTON — so a keyboard user isn't dumped at the top of the page. An outside pointerdown closes without moving focus (the user is clicking elsewhere on purpose). A focusout whose relatedTarget is outside the widget — from Tab or clicking another control — closes it too. The close(returnFocus) flag decides whether to re-focus the button: yes for Esc and activation, no for pointer/blur dismissals. Returning focus to the trigger is the single most-missed detail in hand-rolled menus.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Esc → close + focus BUTTON<br>click outside → close (focus untouched)<br>focusout → close if leaving widget<br>close(returnFocus) picks the behaviour</div>`, code:`if (e.key==="Escape"){ e.preventDefault(); close(true); }   // return focus
+document.addEventListener("pointerdown", e => {
+  if (!wrap.contains(e.target)) close(false);               // don't grab focus
+});
+wrap.addEventListener("focusout", e => {
+  if (!wrap.contains(e.relatedTarget)) close(false);        // Tab/blur out
+});` },
+ { title:"10. Submenus & the full menu pattern", why:"The WAI-ARIA menu button pattern extends cleanly to nested menus. A menuitem that opens a submenu is itself role=\"menuitem\" with aria-haspopup=\"true\" and its own aria-expanded, wrapping a nested role=\"menu\". ArrowRight (or Enter) opens the submenu and focuses its first item; ArrowLeft (or Esc) closes it and returns focus to the parent item — mirroring how the top menu opens from and returns to the button. Each level runs the same roving-tabindex, arrow, typeahead and dismiss logic, so a submenu is literally this same widget nested inside itself. Get one level right and the whole tree follows.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">menuitem aria-haspopup="true" → submenu<br>→ / Enter → open submenu, focus first<br>← / Esc → close submenu, focus parent<br>same roving logic, recursively nested</div>`, code:`<li role="menuitem" aria-haspopup="true" aria-expanded="false">
+  Export…
+  <ul role="menu" hidden>
+    <li role="menuitem" tabindex="-1">PDF</li>
+    <li role="menuitem" tabindex="-1">CSV</li>
+  </ul>
+</li>
+// ArrowRight → open + focus first child
+// ArrowLeft / Esc → close + focus parent menuitem` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
