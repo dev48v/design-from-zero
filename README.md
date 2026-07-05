@@ -31,6 +31,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 22 — Smart Tooltip](https://dev48v.infy.uk/design/day22-tooltip.html) — `day22-tooltip.html`
 - [DesignFromZero · Day 23 — Autocomplete / Combobox](https://dev48v.infy.uk/design/day23-autocomplete.html) — `day23-autocomplete.html`
 - [DesignFromZero · Day 24 — Dropdown Menu](https://dev48v.infy.uk/design/day24-dropdown-menu.html) — `day24-dropdown-menu.html`
+- [DesignFromZero · Day 25 — Segmented Control](https://dev48v.infy.uk/design/day25-segmented-control.html) — `day25-segmented-control.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

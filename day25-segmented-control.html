@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 25 — Segmented Control</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  /* ===== segmented control ===== */
+  .seg { position:relative; display:inline-flex; padding:4px; background:#eef2ff; border:1px solid #e0e7ff;
+         border-radius:14px; gap:0; vertical-align:middle; }
+  .seg-equal { display:flex; width:100%; max-width:460px; }
+  .seg-equal .seg-opt { flex:1 1 0; }
+  /* the sliding pill sits behind the labels; JS sets its size + transform */
+  .seg-thumb { position:absolute; top:0; left:0; z-index:1; width:0; height:0; border-radius:10px;
+               background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.14), 0 0 0 1px rgba(79,70,229,.06);
+               transition: transform .28s cubic-bezier(.34,1.2,.44,1), width .28s cubic-bezier(.34,1.2,.44,1),
+                           height .28s cubic-bezier(.34,1.2,.44,1); pointer-events:none; }
+  .seg-opt { position:relative; z-index:2; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+             padding:9px 20px; font-size:14px; font-weight:600; line-height:1; white-space:nowrap;
+             color:#475569; background:none; border:none; border-radius:10px; cursor:pointer; outline:none;
+             user-select:none; transition:color .2s; }
+  .seg-opt:hover { color:#312e81; }
+  .seg-opt[aria-checked="true"] { color:#4f46e5; }
+  .seg-opt:focus-visible { box-shadow:0 0 0 3px rgba(99,102,241,.5); }
+  .seg-opt svg { display:block; }
+  .seg-card { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:22px; }
+  .stat { font-variant-numeric:tabular-nums; }
+  .seg-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (prefers-reduced-motion: reduce) {
+    .seg-thumb { transition:none; }
+    .fade-in { animation:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 25</div>
+      <h1 class="text-xl font-bold">🎚 Segmented Control — Sliding Thumb + Radiogroup Keyboard Nav</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Click a segment — or focus one and press <kbd>←</kbd> <kbd>→</kbd> <kbd>Home</kbd> <kbd>End</kbd>.</h2>
+        <p class="text-slate-500 mb-6">This is an iOS-style <strong>segmented control</strong>: two-to-five mutually-exclusive options laid out in a single pill, with a white <em>thumb</em> that <strong>slides</strong> under the selected label. The thumb is animated with a CSS <code>transform</code> — its position and width are <em>measured from each segment</em>, so it lands perfectly even when the segments are different widths. We give it <code>role="radiogroup"</code> (with <code>role="radio"</code> + <code>aria-checked</code> children), not a <code>tablist</code>, because these options set a <em>value</em> that persists — they don't switch between visible views. Only one segment is tabbable at a time (<strong>roving tabindex</strong>), <kbd>Tab</kbd> treats the whole group as one stop, and inside it the arrow keys <em>move focus and change the selection together</em> with wrap-around, while <kbd>Home</kbd>/<kbd>End</kbd> jump to the ends.</p>
+      </div>
+
+      <!-- Control 1: equal-width, drives the demo panel -->
+      <div class="seg-card mb-6">
+        <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-3">Equal-width control — drives the panel below</div>
+        <div id="mount1"></div>
+        <div class="mt-5 pt-5 border-t border-slate-100">
+          <div class="text-3xl mb-1" id="viewGlyph">☰</div>
+          <div class="font-bold text-lg text-slate-800" id="viewTitle">List</div>
+          <div class="text-sm text-slate-500" id="viewDesc">A single scrollable column — dense rows, one item per line.</div>
+        </div>
+      </div>
+
+      <div class="flex justify-center items-center gap-6 mb-8 text-sm font-bold text-slate-600">
+        <div>Selected: <span id="selOut" class="stat text-indigo-600">List</span></div>
+        <div>Index: <span id="idxOut" class="stat text-indigo-600">0</span></div>
+        <div>Changes: <span id="cntOut" class="stat text-indigo-600">0</span></div>
+      </div>
+
+      <!-- Control 2: icon + label, naturally unequal widths -->
+      <div class="seg-card mb-6">
+        <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-3">Icon + label — unequal segment widths</div>
+        <div id="mount2"></div>
+        <p class="text-sm text-slate-500 mt-3">Text alignment: <span id="alignOut" class="font-bold text-indigo-600">Left</span>. Because each label is a different length, the segments are different widths — the thumb still fits exactly, because its size is measured from the chosen segment rather than assumed to be <code>1 / count</code>.</p>
+      </div>
+
+      <!-- Control 3: a second, independent control -->
+      <div class="seg-card">
+        <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-3">A second, independent control</div>
+        <div id="mount3"></div>
+        <p class="text-sm text-slate-500 mt-3">Appearance: <span id="modeOut" class="font-bold text-indigo-600">Off</span>. Each control is its own <code>radiogroup</code> instance from the same ~70-line factory — drop in as many as you like.</p>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">The group is <code>role="radiogroup"</code>; each option is <code>role="radio"</code> with <code>aria-checked</code>. Only the checked option has <code>tabindex="0"</code> — every other is <code>tabindex="-1"</code> — so <kbd>Tab</kbd> enters and leaves the control as a unit and the arrows drive selection inside it. This is the same composite-widget model behind iOS's <code>UISegmentedControl</code>, SwiftUI's <code>Picker(.segmented)</code>, and the "grid / list" toggles in GitHub, Linear and Figma.</p>
+
+      <div class="seg-sr" id="segLive" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a segmented control works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A pill track, a set of <code>role="radio"</code> buttons, a white thumb whose size and position are <em>measured</em> from the chosen segment and animated with <code>transform</code>, roving tabindex so only one option is tabbable, arrow-key selection with wrap-around plus <kbd>Home</kbd>/<kbd>End</kbd>, click-to-select, a resize re-measure, a no-flash first paint, and a reduced-motion opt-out. ~70 lines of vanilla JS — no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: a radiogroup + a thumb</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The container is <code>role="radiogroup"</code> with an accessible label; each option is a <code>&lt;button role="radio"&gt;</code> carrying <code>aria-checked</code>. A single empty <code>&lt;div class="seg-thumb"&gt;</code> is the sliding pill — it lives inside the track so its offsets share the track's coordinate system. Use a radiogroup (not a tablist) because these options set a <em>value that sticks</em>, they don't reveal panels.</p>
+        <div class="relative"><pre>&lt;div class="seg" role="radiogroup" aria-label="View"&gt;
+  &lt;div class="seg-thumb"&gt;&lt;/div&gt;
+  &lt;button role="radio" aria-checked="true"  tabindex="0"&gt;List&lt;/button&gt;
+  &lt;button role="radio" aria-checked="false" tabindex="-1"&gt;Grid&lt;/button&gt;
+  &lt;button role="radio" aria-checked="false" tabindex="-1"&gt;Board&lt;/button&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">CSS: track, thumb, and layering</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The track is <code>position:relative</code> so the absolutely-positioned thumb is measured against it. Give the thumb <code>z-index:1</code> and the labels <code>z-index:2</code> so text sits <em>on top</em> of the pill. The checked label just changes colour; the moving pill is the whole visual. Animate only <code>transform</code> (and, if segments differ, <code>width</code>) so the browser can composite the slide.</p>
+        <div class="relative"><pre>.seg      { position:relative; display:inline-flex; padding:4px;
+            background:#eef2ff; border-radius:14px; }
+.seg-thumb{ position:absolute; top:0; left:0; z-index:1; border-radius:10px;
+            background:#fff; box-shadow:0 2px 8px rgba(15,23,42,.14);
+            transition:transform .28s cubic-bezier(.34,1.2,.44,1),
+                       width .28s cubic-bezier(.34,1.2,.44,1); }
+.seg-opt  { position:relative; z-index:2; border:none; background:none;
+            cursor:pointer; color:#475569; }
+.seg-opt[aria-checked="true"]{ color:#4f46e5; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Seed roving tabindex</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Exactly one option is tabbable: the checked one gets <code>tabindex="0"</code>, all others <code>-1</code>. That's what makes <kbd>Tab</kbd> land on the group once and then leave — the arrows handle movement inside. Grab the option list up front; a live <code>querySelectorAll</code> also works if the segments can change.</p>
+        <div class="relative"><pre>const opts = [...track.querySelectorAll('[role="radio"]')];
+let cur = opts.findIndex(o =&gt; o.getAttribute("aria-checked") === "true");
+if (cur &lt; 0) cur = 0;
+opts.forEach((o, i) =&gt; o.tabIndex = i === cur ? 0 : -1);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Measure &amp; move the thumb</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the heart of it. Read the chosen segment's <code>offsetLeft</code>, <code>offsetTop</code>, <code>offsetWidth</code> and <code>offsetHeight</code> — all relative to the track, since the thumb starts at <code>0,0</code> inside it — then set the thumb's <code>width</code>/<code>height</code> and <code>translate</code> to match. Because we <em>measure</em> rather than compute <code>i / count</code>, this is exactly what makes unequal-width segments work.</p>
+        <div class="relative"><pre>function moveThumb(){
+  const seg = opts[cur];
+  thumb.style.width  = seg.offsetWidth  + "px";
+  thumb.style.height = seg.offsetHeight + "px";
+  thumb.style.transform =
+    `translate(${seg.offsetLeft}px, ${seg.offsetTop}px)`;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">select(i) — the single state change</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One function does everything: wrap the index, flip <code>aria-checked</code>, rove the tabindex, move the thumb, optionally move focus, and fire an <code>onChange</code>. Mouse and keyboard both call it, so behaviour is identical. Wrapping with <code>((i % n) + n) % n</code> handles the negative index you get pressing <kbd>←</kbd> on the first item.</p>
+        <div class="relative"><pre>function select(i, focus){
+  const n = opts.length;
+  i = ((i % n) + n) % n;                 // wrap both ends
+  opts.forEach((o, j) =&gt; {
+    o.setAttribute("aria-checked", j === i ? "true" : "false");
+    o.tabIndex = j === i ? 0 : -1;       // roving tabindex
+  });
+  cur = i;
+  moveThumb();
+  if (focus) opts[i].focus();
+  onChange &amp;&amp; onChange(opts[i], i);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Keyboard: arrows select, Home/End jump</h3></div>
+        <p class="text-sm text-slate-600 mb-3">In a radiogroup the arrows <em>move focus and change selection at the same time</em> — there's no "focus without checking" step. Right/Down go <code>cur+1</code>, Left/Up go <code>cur-1</code> (both wrap), <kbd>Home</kbd> is index <code>0</code>, <kbd>End</kbd> the last. Call <code>preventDefault()</code> so the arrows don't scroll the page.</p>
+        <div class="relative"><pre>track.addEventListener("keydown", e =&gt; {
+  const k = e.key;
+  if (k === "ArrowRight" || k === "ArrowDown"){ e.preventDefault(); select(cur + 1, true); }
+  else if (k === "ArrowLeft" || k === "ArrowUp"){ e.preventDefault(); select(cur - 1, true); }
+  else if (k === "Home"){ e.preventDefault(); select(0, true); }
+  else if (k === "End"){ e.preventDefault(); select(opts.length - 1, true); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Click, resize, and a no-flash first paint</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A click selects the clicked option. On <code>resize</code> the segment widths change, so re-run <code>moveThumb()</code> (guard against a hidden container where offsets read <code>0</code>). For the very first paint, disable the transition, place the thumb, then restore it — otherwise the pill visibly slides in from the top-left corner on load.</p>
+        <div class="relative"><pre>track.addEventListener("click", e =&gt; {
+  const o = e.target.closest('[role="radio"]');
+  if (o) select(opts.indexOf(o), true);
+});
+addEventListener("resize", () =&gt; { if (track.offsetParent) moveThumb(); });
+// no-flash: position once with the animation off
+thumb.style.transition = "none";
+moveThumb();
+requestAnimationFrame(() =&gt; { thumb.style.transition = ""; });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Respect reduced motion — and know when to use it</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Some people get motion sick from sliding UI, so honour their OS setting: one media query kills the thumb transition while keeping the instant jump to the new position. Reach for a segmented control when you have <strong>2–5 short, mutually-exclusive options</strong> that apply instantly and don't need to be scrolled — a view switch, a units toggle, a filter. Beyond five options, or when the choices are commands or need scrolling, use a <code>select</code>, a menu, or tabs instead.</p>
+        <div class="relative"><pre>@media (prefers-reduced-motion: reduce){
+  .seg-thumb { transition: none; }   /* jump, don't slide */
+}
+/* Use it for: List / Grid / Board · Day / Week / Month · °C / °F
+   Not for: 8+ options, commands, or anything that scrolls */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 25 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built an accessible segmented control: a <code>role="radiogroup"</code> of <code>role="radio"</code> options, a white thumb that <strong>measures each segment</strong> and slides with a composited <code>transform</code> (so unequal widths just work), <strong>roving tabindex</strong> so the group is one tab stop, arrow-key selection with wrap-around plus <kbd>Home</kbd>/<kbd>End</kbd>, click-to-select, a resize re-measure, a no-flash first paint, and a reduced-motion opt-out. This is what iOS's <code>UISegmentedControl</code>, SwiftUI's segmented <code>Picker</code> and every "list / grid" toggle do under the hood. <strong>👉 Tomorrow — Day 26: Range slider (draggable thumb, keyboard steps, ARIA slider).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SEGMENTED CONTROL FACTORY =====
+// Builds one role="radiogroup" from a config, wires the sliding thumb + full keyboard nav.
+function Segmented({ mount, label, options, equal = false, onChange }){
+  const live = document.getElementById("segLive");
+
+  const track = document.createElement("div");
+  track.className = "seg" + (equal ? " seg-equal" : "");
+  track.setAttribute("role", "radiogroup");
+  track.setAttribute("aria-label", label);
+
+  const thumb = document.createElement("div");
+  thumb.className = "seg-thumb";
+  track.appendChild(thumb);
+
+  // one <button role="radio"> per option; option 0 starts checked + tabbable
+  const opts = options.map((opt, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "seg-opt";
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", i === 0 ? "true" : "false");
+    b.tabIndex = i === 0 ? 0 : -1;
+    b.dataset.value = opt.label;
+    b.innerHTML = (opt.icon ? `<span class="seg-ico">${opt.icon}</span>` : "") + `<span>${opt.label}</span>`;
+    track.appendChild(b);
+    return b;
+  });
+
+  mount.appendChild(track);
+  let cur = 0;
+
+  // measure the chosen segment and size/translate the thumb onto it (unequal widths safe)
+  function moveThumb(){
+    if (!track.offsetParent) return;          // hidden → offsets are 0, skip
+    const seg = opts[cur];
+    thumb.style.width  = seg.offsetWidth  + "px";
+    thumb.style.height = seg.offsetHeight + "px";
+    thumb.style.transform = `translate(${seg.offsetLeft}px, ${seg.offsetTop}px)`;
+  }
+
+  // the single state change: mouse + keyboard both call it
+  function select(i, focus){
+    const n = opts.length;
+    i = ((i % n) + n) % n;                     // wrap both ends
+    opts.forEach((o, j) => {
+      o.setAttribute("aria-checked", j === i ? "true" : "false");
+      o.tabIndex = j === i ? 0 : -1;           // roving tabindex
+    });
+    cur = i;
+    moveThumb();
+    if (focus) opts[i].focus();
+    live.textContent = label + ": " + options[i].label;
+    onChange && onChange(options[i], i);
+  }
+
+  // in a radiogroup, arrows move focus AND change selection together
+  track.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (k === "ArrowRight" || k === "ArrowDown"){ e.preventDefault(); select(cur + 1, true); }
+    else if (k === "ArrowLeft" || k === "ArrowUp"){ e.preventDefault(); select(cur - 1, true); }
+    else if (k === "Home"){ e.preventDefault(); select(0, true); }
+    else if (k === "End"){ e.preventDefault(); select(opts.length - 1, true); }
+  });
+
+  track.addEventListener("click", (e) => {
+    const o = e.target.closest('[role="radio"]');
+    if (o) select(opts.indexOf(o), true);
+  });
+
+  window.addEventListener("resize", () => moveThumb());
+
+  // no-flash first paint: position with the transition off, then restore it
+  thumb.style.transition = "none";
+  requestAnimationFrame(() => {
+    moveThumb();
+    requestAnimationFrame(() => { thumb.style.transition = ""; });
+  });
+
+  return { select, moveThumb };
+}
+
+// small inline glyphs for the alignment control (no emoji, crisp at any size)
+const alignIcon = (pts) => `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+  stroke-width="1.6" stroke-linecap="round">${pts.map(([y,x1,x2]) =>
+  `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>`).join("")}</svg>`;
+
+// ---- Control 1: equal-width, drives the demo panel ----
+const VIEWS = [
+  { label:"List",     glyph:"☰", desc:"A single scrollable column — dense rows, one item per line." },
+  { label:"Grid",     glyph:"▦", desc:"Uniform cards in a responsive grid — visual, thumbnail-first." },
+  { label:"Board",    glyph:"▤", desc:"Kanban columns — group by status and drag across lanes." },
+  { label:"Timeline", glyph:"▬", desc:"Items placed on a horizontal time axis — see when, not just what." }
+];
+const selOut = document.getElementById("selOut");
+const idxOut = document.getElementById("idxOut");
+const cntOut = document.getElementById("cntOut");
+const viewGlyph = document.getElementById("viewGlyph");
+const viewTitle = document.getElementById("viewTitle");
+const viewDesc  = document.getElementById("viewDesc");
+let changes = 0;   // counts real selections (onChange does not fire on init)
+
+Segmented({
+  mount: document.getElementById("mount1"),
+  label: "View",
+  equal: true,
+  options: VIEWS.map(v => ({ label: v.label })),
+  onChange: (opt, i) => {
+    const v = VIEWS[i];
+    selOut.textContent = v.label;
+    idxOut.textContent = i;
+    changes++; cntOut.textContent = changes;
+    viewGlyph.textContent = v.glyph;
+    viewTitle.textContent = v.label;
+    viewDesc.textContent  = v.desc;
+  }
+});
+
+// ---- Control 2: icon + label, naturally unequal widths ----
+const alignOut = document.getElementById("alignOut");
+Segmented({
+  mount: document.getElementById("mount2"),
+  label: "Text alignment",
+  options: [
+    { label:"Left",    icon: alignIcon([[4,2,14],[8,2,10],[12,2,13]]) },
+    { label:"Center",  icon: alignIcon([[4,2,14],[8,4,12],[12,3,13]]) },
+    { label:"Right",   icon: alignIcon([[4,2,14],[8,6,14],[12,3,14]]) },
+    { label:"Justify", icon: alignIcon([[4,2,14],[8,2,14],[12,2,14]]) }
+  ],
+  onChange: (opt) => { alignOut.textContent = opt.label; }
+});
+
+// ---- Control 3: a second, independent control ----
+const modeOut = document.getElementById("modeOut");
+Segmented({
+  mount: document.getElementById("mount3"),
+  label: "Appearance",
+  options: [{ label:"Off" }, { label:"On" }, { label:"Auto" }],
+  onChange: (opt) => { modeOut.textContent = opt.label; }
+});
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. What a segmented control is", why:"A segmented control is a row of two to five mutually-exclusive options packed into one pill, with a highlight that marks the current choice. Think of it as a set of radio buttons wearing a nicer coat: exactly one is active, choosing one deselects the rest, and the change usually applies instantly. Apple popularised it as UISegmentedControl, and it now shows up everywhere as list/grid toggles, day/week/month switches and °C/°F pickers. It reads as one compact object, which is why it feels tidier than a scatter of separate buttons. The whole design rests on that 'pick exactly one from a small, always-visible set' idea.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">[ List | Grid | Board ]  ← one pill, pick ONE<br>= radio buttons, compacted + animated<br>2–5 short options · applies instantly</div>`, code:`<!-- one object, one choice, always visible -->
+<div role="radiogroup" aria-label="View">
+  <button role="radio" aria-checked="true">List</button>
+  <button role="radio" aria-checked="false">Grid</button>
+  <button role="radio" aria-checked="false">Board</button>
+</div>` },
+ { title:"2. Segmented vs tabs vs radio vs toggle", why:"These four look related but mean different things, and picking the wrong one misleads users and assistive tech. Tabs switch between visible panels of content, so they use role=\"tablist\" and the selection controls what you see. Radio buttons set a value in a form; a segmented control is really styled radios, so it shares their semantics — it sets a value that persists, it does not reveal a panel. A toggle (switch) is the special two-state on/off case. Rule of thumb: content behind it → tabs; a stored value from a small set → segmented/radio; a single boolean → switch.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">tabs → switch VISIBLE panels (tablist)<br>segmented / radio → set a VALUE (radiogroup)<br>switch → one on/off boolean<br>pick by what the choice controls</div>`, code:`// switches panels?      → role="tablist" + role="tab"
+// sets a value (2–5)?    → role="radiogroup" + role="radio"  ← segmented
+// single on/off?         → role="switch"
+// It's radios in a coat, so we use radiogroup.` },
+ { title:"3. Why radiogroup, not tablist", why:"It is tempting to reuse the tablist pattern because the pill looks like tabs, but that would be a lie to screen readers. A tab promises 'activating me reveals an associated panel' via aria-controls, and it toggles aria-selected. Our segments don't reveal panels — they store a choice — so radio semantics are the honest match: role=\"radiogroup\" on the container, role=\"radio\" + aria-checked on each option. This tells a screen-reader user 'radio group, option 2 of 4, checked', which is exactly what's happening. Use tablist only if each segment genuinely swaps a panel of content; otherwise radiogroup is correct.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">tab: "reveals a panel" (aria-selected, aria-controls)<br>radio: "sets a value" (aria-checked)<br>segmented sets a value → radiogroup<br>SR reads: "radio group, 2 of 4, checked"</div>`, code:`<div role="radiogroup" aria-label="View">
+  <button role="radio" aria-checked="true">List</button>
+  ...
+</div>
+<!-- NOT role="tablist" — nothing here reveals a panel -->` },
+ { title:"4. The sliding-thumb technique", why:"The signature move is a single highlight pill — the thumb — that slides from the old choice to the new one instead of blinking on and off. We render one absolutely-positioned element inside the track and, on every selection, read the chosen segment's offsetLeft / offsetTop / offsetWidth / offsetHeight, then set the thumb to match. Because the thumb starts at 0,0 inside the same track, those offsets are already in its coordinate space — no getBoundingClientRect maths needed. Layer the labels above the thumb (higher z-index) so the text stays crisp as the pill glides underneath. Measuring live, rather than hard-coding positions, is what keeps the thumb correct after any layout change.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">thumb = one absolute div in the track<br>read seg.offsetLeft / offsetWidth ...<br>set thumb size + translate to match<br>labels sit ABOVE (z-index) → crisp text</div>`, code:`function moveThumb(){
+  const seg = opts[cur];
+  thumb.style.width  = seg.offsetWidth  + "px";
+  thumb.style.height = seg.offsetHeight + "px";
+  thumb.style.transform =
+    \`translate(\${seg.offsetLeft}px, \${seg.offsetTop}px)\`;
+}` },
+ { title:"5. Unequal widths — measure, don't assume", why:"A naive segmented control assumes every segment is 1 / count of the width and positions the thumb at index × slotWidth. That breaks the instant labels differ in length — 'Justify' is far wider than 'Day' — leaving the pill too short or misaligned. Measuring each segment's real offsetWidth and offsetLeft sidesteps the whole problem: the thumb simply copies whatever the layout produced, so equal-width (via flex:1) and natural-width layouts both just work. You get icon+label segments, longer words, even localised text for free. The lesson generalises: prefer measuring the DOM over recomputing what the browser already laid out.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">assume 1/count → breaks on "Day | Justify"<br>measure offsetLeft + offsetWidth → always fits<br>equal (flex:1) AND natural widths both work<br>copy the layout, don't recompute it</div>`, code:`// BAD — assumes equal slots:
+// thumb.style.left = (cur * 100 / n) + "%";
+// GOOD — copies the real geometry of THIS segment:
+thumb.style.width = seg.offsetWidth + "px";
+thumb.style.transform = \`translateX(\${seg.offsetLeft}px)\`;` },
+ { title:"6. Animate transform, not left", why:"How you animate the slide decides whether it's buttery or janky. Animating the left property (or margin) changes the element's box every frame, forcing the browser to re-run layout and repaint — expensive, and it stutters on slower devices. Animating transform: translate(...) instead moves the pill on the compositor, off the main thread, so it stays at 60fps even under load. That's why the thumb translates rather than shifting left. Width does still need a transition when segments differ in size, but it's one property on one element, so the cost is small and localised — an acceptable trade for pixel-perfect fit.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">animate left  → layout + paint every frame (janky)<br>animate transform → compositor only (smooth)<br>translate the thumb, don't move its box<br>width transition = 1 prop, 1 node → cheap</div>`, code:`.seg-thumb{
+  /* GOOD: composited, off the main thread */
+  transition: transform .28s cubic-bezier(.34,1.2,.44,1),
+              width .28s cubic-bezier(.34,1.2,.44,1);
+}
+/* AVOID: transition: left .28s;  ← forces layout each frame */` },
+ { title:"7. Roving tabindex — one tab stop", why:"A segmented control has several focusable buttons, but Tab should treat the whole thing as a single stop — press Tab once and you're on the group, press it again and you've left. Roving tabindex delivers that: exactly one option (the checked one) has tabindex=\"0\", every other has tabindex=\"-1\". So Tab reaches only the active option, and the arrow keys move focus within. On each selection we 'rove' the 0 onto the newly chosen option and set the rest to -1. It's the same composite-widget technique used by menus, toolbars and native radio groups.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">List  tabindex="0"  ← checked + tabbable<br>Grid  tabindex="-1"<br>Board tabindex="-1"<br>Tab treats the group as ONE stop</div>`, code:`opts.forEach((o, j) => {
+  o.setAttribute("aria-checked", j === cur ? "true" : "false");
+  o.tabIndex = j === cur ? 0 : -1;   // rove the 0 onto the choice
+});` },
+ { title:"8. Arrow keys select AND move", why:"Here is a subtle but important spec rule: in a radio group the arrow keys move focus and change the selection at the same time — there is no 'focus this option but leave the old one checked' state. So ArrowRight/ArrowDown select the next option, ArrowLeft/ArrowUp the previous, both wrapping around the ends, and Home/End jump to the first and last. This differs from a menu or listbox, where you can move a highlight without committing. We route every arrow through the same select() the mouse uses, and preventDefault() stops the page scrolling under the keys.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">→ / ↓  select NEXT (wraps)<br>← / ↑  select PREV (wraps)<br>Home → first · End → last<br>arrows move + check together (radio rule)</div>`, code:`track.addEventListener("keydown", e => {
+  const k = e.key;
+  if (k==="ArrowRight"||k==="ArrowDown"){ e.preventDefault(); select(cur+1,true); }
+  else if (k==="ArrowLeft"||k==="ArrowUp"){ e.preventDefault(); select(cur-1,true); }
+  else if (k==="Home"){ e.preventDefault(); select(0,true); }
+  else if (k==="End"){ e.preventDefault(); select(opts.length-1,true); }
+});` },
+ { title:"9. Resize, first paint & reduced motion", why:"Three details separate a real control from a demo. When the window resizes the segment widths change, so re-run moveThumb — but guard for a hidden container, where offsets read 0 and would collapse the pill. On first paint the thumb starts at 0,0, so we disable its transition, position it once, then restore the transition — otherwise it visibly slides in from the corner on load. And some users set 'reduce motion' at the OS level because sliding UI makes them queasy; a single prefers-reduced-motion media query drops the transition so the pill jumps instantly while every other behaviour stays intact.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">resize → moveThumb() (skip if hidden)<br>first paint → place with transition OFF<br>reduced-motion → jump, don't slide<br>same state, just no animation</div>`, code:`addEventListener("resize", () => { if (track.offsetParent) moveThumb(); });
+thumb.style.transition = "none"; moveThumb();
+requestAnimationFrame(() => thumb.style.transition = "");
+/* CSS */
+@media (prefers-reduced-motion: reduce){ .seg-thumb{ transition:none; } }` },
+ { title:"10. When to use it — and when not", why:"A segmented control shines for a small, fixed set of two to five short, mutually-exclusive options that apply immediately and are worth keeping on screen — view switches, unit toggles, quick filters. It stops working once there are too many options: past five, labels get cramped and the pill turns into a squeeze, so a dropdown select or a menu serves better. Also avoid it when the items are commands to fire (use a menu), when they reveal panels (use tabs), or when the list needs to scroll. Match the widget to the job and both sighted and assistive-tech users get a control that behaves exactly as its role promises.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">USE: 2–5 short options, instant apply, keep visible<br>NOT 6+ → select / menu<br>NOT commands → menu · NOT panels → tabs<br>NOT scrollable → listbox</div>`, code:`// GOOD segmented: List/Grid/Board · Day/Week/Month · °C/°F
+// TOO MANY  → <select> or a menu
+// COMMANDS  → menu button (Day 24)
+// PANELS    → tabs (role="tablist")` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
