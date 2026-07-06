@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 26 — Range Slider</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  /* ===== range slider ===== */
+  .rs { position:relative; display:flex; align-items:center; height:44px; padding:0 12px; touch-action:none; }
+  .rs-track { position:relative; flex:1; height:6px; background:#e0e7ff; border-radius:999px; cursor:pointer; }
+  .rs-fill { position:absolute; top:0; height:100%; background:#4f46e5; border-radius:999px; pointer-events:none; }
+  .rs-thumb { position:absolute; top:50%; left:0; width:20px; height:20px; margin-left:-10px;
+              transform:translateY(-50%); background:#fff; border:2px solid #4f46e5; border-radius:50%;
+              box-shadow:0 1px 4px rgba(15,23,42,.22); cursor:grab; outline:none; touch-action:none;
+              transition:box-shadow .15s, border-color .15s; z-index:2; }
+  .rs-thumb:hover { border-color:#4338ca; }
+  .rs-thumb:focus-visible { box-shadow:0 0 0 4px rgba(99,102,241,.4); }
+  .rs-thumb.dragging { cursor:grabbing; z-index:3; box-shadow:0 0 0 6px rgba(99,102,241,.18); }
+  .rs-bubble { position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+               background:#0f172a; color:#fff; font-size:11px; font-weight:700; padding:2px 8px;
+               border-radius:6px; white-space:nowrap; opacity:0; transition:opacity .15s; pointer-events:none;
+               font-variant-numeric:tabular-nums; }
+  .rs-thumb:hover .rs-bubble, .rs-thumb:focus-visible .rs-bubble, .rs-thumb.dragging .rs-bubble { opacity:1; }
+  .rs-card { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:22px; }
+  .stat { font-variant-numeric:tabular-nums; }
+  .prod { border:1px solid #e2e8f0; border-radius:12px; padding:12px; transition:opacity .2s, filter .2s; }
+  .rs-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (prefers-reduced-motion: reduce) {
+    .rs-thumb, .rs-bubble, .prod { transition:none; }
+    .fade-in { animation:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 26</div>
+      <h1 class="text-xl font-bold">🎚 Range Slider — Dual-Thumb Min/Max, No-Cross Clamp + ARIA Slider</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Drag either thumb — or focus one and press <kbd>←</kbd> <kbd>→</kbd> <kbd>Home</kbd> <kbd>End</kbd>.</h2>
+        <p class="text-slate-500 mb-6">This is a real <strong>dual-thumb range slider</strong>, built from scratch in vanilla JS — no <code>&lt;input type="range"&gt;</code>, no library. Two thumbs slide over a track; the indigo <em>fill</em> between them shows the chosen range; the thumbs <strong>cannot cross</strong> (the low value is clamped to stay ≤ the high value). Drag works with mouse, pen and <strong>touch</strong> through a single set of <em>pointer events</em>; clicking anywhere on the track jumps the <em>nearest</em> thumb there and lets you keep dragging. Each thumb is a proper <code>role="slider"</code> with live <code>aria-valuemin/max/now/text</code>, and takes the full keyboard: <kbd>←</kbd>/<kbd>→</kbd> step, <kbd>Shift</kbd>+arrow (or <kbd>PageUp</kbd>/<kbd>PageDown</kbd>) jump a big step, <kbd>Home</kbd>/<kbd>End</kbd> snap to the ends. Every value is <strong>snapped to the step</strong>, and positions are computed by mapping value ⇄ pixel.</p>
+      </div>
+
+      <!-- Demo 1: price filter (dual) drives a product grid -->
+      <div class="rs-card mb-6">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider">Price filter — dual thumb</div>
+          <div class="text-lg font-bold text-slate-800 stat"><span id="priceLo">$40</span> <span class="text-slate-300">–</span> <span id="priceHi">$300</span></div>
+        </div>
+        <div id="priceSlider"></div>
+        <div class="flex justify-between text-xs text-slate-400 px-3 mb-4"><span>$0</span><span>$400 · step $10</span></div>
+        <div class="grid sm:grid-cols-2 gap-3" id="prodGrid"></div>
+        <p class="text-sm text-slate-500 mt-4">Showing <span id="prodCount" class="font-bold text-indigo-600 stat">0</span> of 10 products in range. The thumbs won't pass each other — try dragging the left one all the way right.</p>
+      </div>
+
+      <div class="flex flex-wrap justify-center items-center gap-x-8 gap-y-2 mb-8 text-sm font-bold text-slate-600">
+        <div>Low: <span id="loOut" class="stat text-indigo-600">$40</span></div>
+        <div>High: <span id="hiOut" class="stat text-indigo-600">$300</span></div>
+        <div>Span: <span id="spanOut" class="stat text-indigo-600">$260</span></div>
+        <div>Last thumb moved: <span id="thumbOut" class="stat text-indigo-600">—</span></div>
+      </div>
+
+      <!-- Demo 2: single value -->
+      <div class="rs-card mb-6">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider">Single value — one thumb</div>
+          <div class="text-lg font-bold text-slate-800 stat" id="volOut">60%</div>
+        </div>
+        <div id="volSlider"></div>
+        <div class="flex justify-between text-xs text-slate-400 px-3"><span>0%</span><span>100% · step 5</span></div>
+        <p class="text-sm text-slate-500 mt-3">The exact same factory runs in single-thumb mode: the fill grows from the start of the track to the one thumb, and there's no cross-clamp to enforce.</p>
+      </div>
+
+      <!-- Demo 3: another dual with a non-zero min + step 1 -->
+      <div class="rs-card">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider">Year range — non-zero min, step 1</div>
+          <div class="text-lg font-bold text-slate-800 stat" id="yearOut">2015 – 2023</div>
+        </div>
+        <div id="yearSlider"></div>
+        <div class="flex justify-between text-xs text-slate-400 px-3"><span>2000</span><span>2025 · step 1</span></div>
+        <p class="text-sm text-slate-500 mt-3">Range doesn't have to start at zero — value ⇄ pixel mapping is <code>(v − min) / (max − min)</code>, so any numeric window works: prices, years, temperatures, ratings.</p>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">Each thumb is <code>role="slider"</code> with <code>aria-valuemin</code>, <code>aria-valuemax</code>, <code>aria-valuenow</code> and a formatted <code>aria-valuetext</code>. In the dual slider the two thumbs constrain each other: the low thumb's <code>aria-valuemax</code> is the current high value and the high thumb's <code>aria-valuemin</code> is the current low value — the exact WAI-ARIA multi-thumb pattern used by price filters on Amazon, Airbnb and Booking.com.</p>
+
+      <div class="rs-sr" id="rsLive" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a range slider works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A track, an indigo fill, one thumb per handle, a two-way <code>value ⇄ pixel</code> map, step snapping, a no-cross clamp so the low value never passes the high value, unified pointer drag that also covers touch, click-on-track to move the nearest thumb, a full keyboard per thumb, and live ARIA slider state. ~80 lines of vanilla JS — no framework, no dependencies, and no <code>&lt;input type="range"&gt;</code>.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: track, fill, and one thumb per handle</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The track holds an absolutely-positioned fill and one <code>role="slider"</code> thumb per handle. Each thumb is focusable (<code>tabindex="0"</code>), carries an <code>aria-label</code>, and declares its value range up front. For a single-value slider you keep just one thumb — everything else is identical.</p>
+        <div class="relative"><pre>&lt;div class="rs"&gt;
+  &lt;div class="rs-track"&gt;
+    &lt;div class="rs-fill"&gt;&lt;/div&gt;
+    &lt;div class="rs-thumb" role="slider" tabindex="0"
+         aria-label="Minimum price"
+         aria-valuemin="0" aria-valuemax="300" aria-valuenow="40"&gt;&lt;/div&gt;
+    &lt;div class="rs-thumb" role="slider" tabindex="0"
+         aria-label="Maximum price"
+         aria-valuemin="40" aria-valuemax="400" aria-valuenow="300"&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">CSS: position by percent, not pixels</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The track is <code>position:relative</code>; the fill and thumbs are positioned with a <em>percentage</em> <code>left</code>. Percentages make the slider resize-proof — no resize listener needed, because 40% of the track is always 40% wide. Centre each thumb over its value with <code>margin-left:-10px</code> (half its width). Set <code>touch-action:none</code> so a drag on touch doesn't scroll the page.</p>
+        <div class="relative"><pre>.rs-track{ position:relative; height:6px; background:#e0e7ff; border-radius:999px; }
+.rs-fill { position:absolute; top:0; height:100%; background:#4f46e5;
+           border-radius:999px; pointer-events:none; }
+.rs-thumb{ position:absolute; top:50%; width:20px; height:20px; margin-left:-10px;
+           transform:translateY(-50%); background:#fff; border:2px solid #4f46e5;
+           border-radius:50%; cursor:grab; touch-action:none; }
+.rs-thumb:focus-visible{ box-shadow:0 0 0 4px rgba(99,102,241,.4); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">value ⇄ pixel — the two-way map</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The whole slider is one coordinate transform. <code>pct(v)</code> turns a value into a percentage for rendering. <code>valueAt(clientX)</code> goes the other way: measure the track with <code>getBoundingClientRect()</code>, turn the pointer's x into a 0→1 ratio, and map it back into the value range. Clamp the ratio so pointers outside the track still land on a valid end.</p>
+        <div class="relative"><pre>const clamp = (v,a,b) =&gt; Math.min(b, Math.max(a, v));
+const pct   = v =&gt; ((v - min) / (max - min)) * 100;      // value → %
+
+function valueAt(clientX){                                // pixel → value
+  const r = track.getBoundingClientRect();
+  let ratio = clamp((clientX - r.left) / r.width, 0, 1);
+  return snap(min + ratio * (max - min));
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Snap to the step (and beat float error)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A slider with <code>step</code> only lands on multiples of that step from <code>min</code>. Round to the nearest step, then re-clamp into range. Floating-point steps like <code>0.5</code> produce ugly tails (<code>2.7500000001</code>), so round to the step's own decimal count with <code>toFixed</code> before returning.</p>
+        <div class="relative"><pre>const decimals = (String(step).split(".")[1] || "").length;
+function snap(v){
+  const s = Math.round((v - min) / step) * step + min;    // nearest step
+  return clamp(parseFloat(s.toFixed(decimals)), min, max); // kill float tail
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">setVal — the no-cross clamp + render</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One function moves a thumb. Before committing, enforce that the thumbs can't cross: the <em>low</em> thumb is clamped to <code>[min, currentHigh]</code> and the <em>high</em> thumb to <code>[currentLow, max]</code>. Then render — set the fill and thumb percentages and refresh every ARIA attribute, including each thumb's constrained <code>aria-valuemin/max</code> so screen readers know the live limits.</p>
+        <div class="relative"><pre>function setVal(i, v){
+  v = snap(v);
+  if (dual){
+    if (i === 0) v = clamp(v, min, vals[1]);   // low ≤ high
+    else         v = clamp(v, vals[0], max);   // high ≥ low
+  }
+  vals[i] = v;
+  render();                                    // %-position fill + thumbs
+  onChange && onChange(dual ? {lo:vals[0], hi:vals[1]} : {value:vals[0]}, i);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Drag with pointer events (mouse + touch + pen)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Pointer events give you one code path for mouse, touch and pen. On <code>pointerdown</code>, call <code>setPointerCapture</code> so this thumb keeps receiving moves even when the finger slips off it; then each <code>pointermove</code> maps x → value → <code>setVal</code>. Because we captured, the matching <code>pointerup</code> always fires on the same thumb, so cleanup is reliable.</p>
+        <div class="relative"><pre>thumb.addEventListener("pointerdown", e =&gt; {
+  e.preventDefault();
+  thumb.setPointerCapture(e.pointerId);   // keep events even off-thumb
+  thumb.classList.add("dragging");
+  dragging = i; thumb.focus();
+});
+thumb.addEventListener("pointermove", e =&gt; {
+  if (dragging === i) setVal(i, valueAt(e.clientX));
+});
+thumb.addEventListener("pointerup", () =&gt; {
+  dragging = -1; thumb.classList.remove("dragging");
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Click the track → move the nearest thumb</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A press on the track itself (not a thumb) should grab whichever thumb is closest to the click and then let you keep dragging it. Work out the value at the click, pick the thumb with the smallest distance, move it, and hand the pointer to that thumb with <code>setPointerCapture</code> so the same gesture becomes a drag.</p>
+        <div class="relative"><pre>track.addEventListener("pointerdown", e =&gt; {
+  if (e.target.closest(".rs-thumb")) return;   // thumb handles its own
+  const v = valueAt(e.clientX);
+  const i = (!dual || Math.abs(v - vals[0]) &lt;= Math.abs(v - vals[1])) ? 0 : 1;
+  setVal(i, v);
+  thumbs[i].setPointerCapture(e.pointerId);    // continue as a drag
+  dragging = i; thumbs[i].classList.add("dragging"); thumbs[i].focus();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard per thumb + when to reach for it</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each focused thumb takes the standard slider keys: arrows nudge by <code>step</code>, <kbd>Shift</kbd>+arrow / <kbd>PageUp</kbd>/<kbd>PageDown</kbd> jump a big step, <kbd>Home</kbd>/<kbd>End</kbd> snap to that thumb's own limits (so the no-cross rule holds for free). <code>preventDefault()</code> stops the page scrolling. Use a range slider for <strong>picking a value or window from a continuous numeric range</strong> where the rough position matters more than an exact figure — price, volume, dates. If people need a precise number, pair it with (or fall back to) a number input.</p>
+        <div class="relative"><pre>thumb.addEventListener("keydown", e =&gt; {
+  const big = e.shiftKey ? bigStep : step, v = vals[i]; let n = v, hit = true;
+  switch (e.key){
+    case "ArrowRight": case "ArrowUp":   n = v + (e.shiftKey ? bigStep : step); break;
+    case "ArrowLeft":  case "ArrowDown": n = v - (e.shiftKey ? bigStep : step); break;
+    case "PageUp":   n = v + bigStep; break;
+    case "PageDown": n = v - bigStep; break;
+    case "Home": n = (dual && i === 1) ? vals[0] : min; break;  // own lower limit
+    case "End":  n = (dual && i === 0) ? vals[1] : max; break;  // own upper limit
+    default: hit = false;
+  }
+  if (hit){ e.preventDefault(); setVal(i, n); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 26 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real dual-thumb range slider from scratch: a two-way <code>value ⇄ pixel</code> map, step snapping that survives float error, a <strong>no-cross clamp</strong> keeping low ≤ high, unified <strong>pointer drag</strong> that also covers touch, click-on-track to grab the nearest thumb, a full per-thumb keyboard, and live <code>role="slider"</code> ARIA with constrained min/max. This is exactly what the price filters on Amazon, Airbnb and Booking.com run under the hood. <strong>👉 Tomorrow — Day 27: Tabs.</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== RANGE SLIDER FACTORY =====
+// Builds a track + fill + one role="slider" thumb per handle, wires value<->pixel mapping,
+// step snapping, no-cross clamp, unified pointer drag (mouse/touch/pen), click-nearest, keyboard + ARIA.
+function RangeSlider(cfg){
+  const min  = cfg.min, max = cfg.max, step = cfg.step ?? 1;
+  const dual = cfg.dual !== false;
+  const bigStep = cfg.bigStep ?? step * 10;
+  const fmt  = cfg.format || (v => String(v));
+  const labels = cfg.labels || (dual ? ["Minimum", "Maximum"] : ["Value"]);
+  const live = document.getElementById("rsLive");
+
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const span  = (max - min) || 1;
+  const pct   = v => ((v - min) / span) * 100;           // value -> percent
+  const decimals = (String(step).split(".")[1] || "").length;
+  function snap(v){                                       // nearest step, float-safe, clamped
+    const s = Math.round((v - min) / step) * step + min;
+    return clamp(parseFloat(s.toFixed(decimals)), min, max);
+  }
+
+  // state: [lo, hi] for dual, [value] for single
+  let vals = dual ? [cfg.startLo ?? min, cfg.startHi ?? max] : [cfg.startValue ?? min];
+
+  // DOM
+  const root = document.createElement("div"); root.className = "rs";
+  const track = document.createElement("div"); track.className = "rs-track";
+  const fill = document.createElement("div"); fill.className = "rs-fill";
+  track.appendChild(fill);
+  const thumbs = vals.map((v, i) => {
+    const t = document.createElement("div");
+    t.className = "rs-thumb";
+    t.setAttribute("role", "slider");
+    t.setAttribute("aria-orientation", "horizontal");
+    t.setAttribute("aria-label", labels[i]);
+    t.tabIndex = 0;
+    const b = document.createElement("span"); b.className = "rs-bubble";
+    t.appendChild(b); t._bubble = b;
+    track.appendChild(t);
+    return t;
+  });
+  root.appendChild(track);
+  cfg.mount.appendChild(root);
+
+  // render: position by percent + refresh ARIA (constrained min/max is the multi-thumb pattern)
+  function render(){
+    if (dual){
+      fill.style.left  = pct(vals[0]) + "%";
+      fill.style.width = (pct(vals[1]) - pct(vals[0])) + "%";
+    } else {
+      fill.style.left  = "0%";
+      fill.style.width = pct(vals[0]) + "%";
+    }
+    thumbs.forEach((t, i) => {
+      t.style.left = pct(vals[i]) + "%";
+      const lo = dual ? (i === 0 ? min : vals[0]) : min;   // low thumb's max = current high
+      const hi = dual ? (i === 0 ? vals[1] : max) : max;   // high thumb's min = current low
+      t.setAttribute("aria-valuemin", lo);
+      t.setAttribute("aria-valuemax", hi);
+      t.setAttribute("aria-valuenow", vals[i]);
+      t.setAttribute("aria-valuetext", fmt(vals[i]));
+      t._bubble.textContent = fmt(vals[i]);
+    });
+  }
+
+  // the single state change: enforce no-cross, render, notify
+  function setVal(i, v){
+    v = snap(v);
+    if (dual){
+      if (i === 0) v = clamp(v, min, vals[1]);   // low  <= high
+      else         v = clamp(v, vals[0], max);   // high >= low
+    } else {
+      v = clamp(v, min, max);
+    }
+    if (v === vals[i]) return;
+    vals[i] = v;
+    render();
+    live.textContent = labels[i] + " " + fmt(v);
+    cfg.onChange && cfg.onChange(dual ? { lo: vals[0], hi: vals[1] } : { value: vals[0] }, i);
+  }
+
+  // pixel -> value (RTL-aware: flip the ratio if the track lays out right-to-left)
+  function valueAt(clientX){
+    const r = track.getBoundingClientRect();
+    let ratio = (clientX - r.left) / r.width;
+    if (getComputedStyle(track).direction === "rtl") ratio = 1 - ratio;
+    return snap(min + clamp(ratio, 0, 1) * span);
+  }
+
+  let dragging = -1;
+  function beginDrag(i, pointerId){
+    dragging = i;
+    thumbs[i].classList.add("dragging");
+    try { thumbs[i].setPointerCapture(pointerId); } catch (e) {}
+    thumbs[i].focus();
+  }
+
+  thumbs.forEach((t, i) => {
+    t.addEventListener("pointerdown", e => { e.preventDefault(); beginDrag(i, e.pointerId); });
+    t.addEventListener("pointermove", e => { if (dragging === i) setVal(i, valueAt(e.clientX)); });
+    const end = () => { if (dragging === i){ dragging = -1; t.classList.remove("dragging"); } };
+    t.addEventListener("pointerup", end);
+    t.addEventListener("pointercancel", end);
+
+    t.addEventListener("keydown", e => {
+      const v = vals[i]; let n = v, hit = true;
+      switch (e.key){
+        case "ArrowRight": case "ArrowUp":   n = v + (e.shiftKey ? bigStep : step); break;
+        case "ArrowLeft":  case "ArrowDown": n = v - (e.shiftKey ? bigStep : step); break;
+        case "PageUp":   n = v + bigStep; break;
+        case "PageDown": n = v - bigStep; break;
+        case "Home": n = (dual && i === 1) ? vals[0] : min; break;   // own lower limit
+        case "End":  n = (dual && i === 0) ? vals[1] : max; break;   // own upper limit
+        default: hit = false;
+      }
+      if (hit){ e.preventDefault(); setVal(i, n); }
+    });
+  });
+
+  // click anywhere on the track: grab the nearest thumb, then keep dragging it
+  track.addEventListener("pointerdown", e => {
+    if (e.target.closest(".rs-thumb")) return;             // a thumb handles its own press
+    const v = valueAt(e.clientX);
+    const i = (!dual || Math.abs(v - vals[0]) <= Math.abs(v - vals[1])) ? 0 : 1;
+    setVal(i, v);
+    beginDrag(i, e.pointerId);
+  });
+
+  render();
+  return { setVal, getValues: () => vals.slice() };
+}
+
+// ---- Demo 1: price filter (dual) driving a product grid ----
+const PRODUCTS = [
+  { name:"USB-C Cable",              price:12  },
+  { name:"Desk Lamp",                price:35  },
+  { name:"Wireless Mouse",           price:45  },
+  { name:"Laptop Stand",             price:60  },
+  { name:"Mechanical Keyboard",      price:120 },
+  { name:"4K Webcam",                price:150 },
+  { name:"Docking Station",          price:190 },
+  { name:"External SSD 2TB",         price:210 },
+  { name:"Noise-cancel Headphones",  price:280 },
+  { name:"27-inch Monitor",          price:340 }
+];
+const priceFmt = v => "$" + v;
+const prodGrid = document.getElementById("prodGrid");
+const prodCount = document.getElementById("prodCount");
+const priceLo = document.getElementById("priceLo"), priceHi = document.getElementById("priceHi");
+const loOut = document.getElementById("loOut"), hiOut = document.getElementById("hiOut");
+const spanOut = document.getElementById("spanOut"), thumbOut = document.getElementById("thumbOut");
+
+const prodEls = PRODUCTS.map(p => {
+  const d = document.createElement("div");
+  d.className = "prod flex items-center justify-between";
+  d.innerHTML = `<span class="text-sm font-semibold text-slate-700">${p.name}</span>` +
+                `<span class="text-sm font-bold text-indigo-600 stat">${priceFmt(p.price)}</span>`;
+  prodGrid.appendChild(d);
+  return { el: d, price: p.price };
+});
+
+function applyPrice({ lo, hi }, moved){
+  priceLo.textContent = priceFmt(lo); priceHi.textContent = priceFmt(hi);
+  loOut.textContent = priceFmt(lo); hiOut.textContent = priceFmt(hi);
+  spanOut.textContent = priceFmt(hi - lo);
+  if (moved != null) thumbOut.textContent = moved === 0 ? "Low ($" + lo + ")" : "High ($" + hi + ")";
+  let shown = 0;
+  prodEls.forEach(({ el, price }) => {
+    const inRange = price >= lo && price <= hi;
+    el.style.opacity = inRange ? "1" : "0.28";
+    el.style.filter  = inRange ? "none" : "grayscale(1)";
+    if (inRange) shown++;
+  });
+  prodCount.textContent = shown;
+}
+
+RangeSlider({
+  mount: document.getElementById("priceSlider"),
+  min: 0, max: 400, step: 10, startLo: 40, startHi: 300, dual: true,
+  labels: ["Minimum price", "Maximum price"],
+  format: priceFmt,
+  onChange: applyPrice
+});
+applyPrice({ lo: 40, hi: 300 });   // onChange doesn't fire on init, so paint once
+
+// ---- Demo 2: single value ----
+const volFmt = v => v + "%";
+const volOut = document.getElementById("volOut");
+RangeSlider({
+  mount: document.getElementById("volSlider"),
+  min: 0, max: 100, step: 5, startValue: 60, dual: false,
+  labels: ["Volume"], format: volFmt,
+  onChange: (s) => { volOut.textContent = volFmt(s.value); }
+});
+
+// ---- Demo 3: year range (non-zero min, step 1) ----
+const yearOut = document.getElementById("yearOut");
+RangeSlider({
+  mount: document.getElementById("yearSlider"),
+  min: 2000, max: 2025, step: 1, startLo: 2015, startHi: 2023, dual: true,
+  labels: ["From year", "To year"], format: v => String(v),
+  onChange: (s) => { yearOut.textContent = s.lo + " – " + s.hi; }
+});
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. What a range slider is", why:"A slider lets someone pick a number from a continuous range by dragging a thumb, rather than typing it. The single-thumb version sets one value — volume, brightness, zoom. The dual-thumb version sets a window with a low and a high thumb, which is how price filters, date ranges and 'between X and Y' controls work. The point of a slider is speed and feel: you get a rough value fast and can see roughly where you are on the scale, which a bare number box can't give you. It shines when the approximate position matters more than an exact figure; when precision is essential, pair it with a number input.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">single:  [====O--------]  one value<br>dual:    [--O======O--]  low..high window<br>drag a thumb → pick a number on a scale<br>rough &amp; fast beats typing exact digits</div>`, code:`// single thumb → one value  (volume, zoom)
+// two thumbs   → a range     (price 40..300)
+// value lives on a numeric scale [min, max] with a step` },
+ { title:"2. value ⇄ pixel mapping", why:"Everything rests on one linear transform between the value scale and the pixel width of the track. Going out, pct(v) = (v - min) / (max - min) turns a value into a 0-100% position for rendering. Coming in, valueAt(x) measures the track with getBoundingClientRect(), converts the pointer's x into a 0-to-1 ratio, and maps that ratio back into [min, max]. Because rendering uses percentages, the slider is automatically resize-proof — 40% is 40% at any width, so there's no resize handler to maintain. The only time you touch real pixels is the moment of a pointer event, and you re-measure the rect right then.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">value → %   pct = (v-min)/(max-min)*100<br>x → value  ratio = (x-left)/width<br>          v = min + ratio*(max-min)<br>render in % → resize-proof, no listener</div>`, code:`const pct = v => ((v - min) / (max - min)) * 100;   // value -> %
+function valueAt(clientX){                          // pixel -> value
+  const r = track.getBoundingClientRect();
+  const ratio = clamp((clientX - r.left) / r.width, 0, 1);
+  return snap(min + ratio * (max - min));
+}` },
+ { title:"3. Step snapping", why:"A step turns a continuous track into discrete stops: with step 10 the value can only be a multiple of 10 away from min. Snapping is Math.round((v - min) / step) * step + min — round to the nearest number of steps, then convert back. Always re-clamp into [min, max] afterwards, since the rounded value can drift one step past an end. The trap is floating point: a step of 0.5 or 0.1 leaves values like 2.7500000001, so round to the step's own decimal count with toFixed before returning. Snapping runs on every input — drag, click and keyboard — so no matter how the value arrives it always lands on a legal stop.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">raw 137 , step 10 → round → 140<br>steps = round((v-min)/step)<br>v = min + steps*step , then clamp<br>toFixed(decimals) kills float tails</div>`, code:`const decimals = (String(step).split(".")[1] || "").length;
+function snap(v){
+  const s = Math.round((v - min) / step) * step + min;
+  return clamp(parseFloat(s.toFixed(decimals)), min, max);
+}` },
+ { title:"4. Two thumbs + the no-cross clamp", why:"A dual slider stores two values, [lo, hi], and its defining rule is that the thumbs must never cross: the low value has to stay less than or equal to the high value. You enforce it at the single moment a value changes. When moving the low thumb, clamp it to [min, currentHigh]; when moving the high thumb, clamp it to [currentLow, max]. That one line means every path — drag, track-click, keyboard — respects the constraint without extra checks, and pushing one thumb into the other simply stops it at the boundary rather than swapping them. (Some designs let the thumbs swap roles on cross; clamping is simpler and more predictable.)", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">state = [lo, hi]<br>move lo → clamp(v, min, hi)   // lo ≤ hi<br>move hi → clamp(v, lo, max)   // hi ≥ lo<br>thumbs bump &amp; stop, never cross</div>`, code:`function setVal(i, v){
+  v = snap(v);
+  if (i === 0) v = clamp(v, min, vals[1]);   // low  <= high
+  else         v = clamp(v, vals[0], max);   // high >= low
+  vals[i] = v; render();
+}` },
+ { title:"5. Pointer events (mouse + touch + pen)", why:"Pointer events unify mouse, touch and pen into a single stream, so one set of handlers covers every device — no separate mousedown/touchstart branches. The key move is setPointerCapture on pointerdown: it routes all later pointermove and pointerup events to the captured thumb even when the finger or cursor slides off it, which is exactly what happens mid-drag. That guarantees the drag keeps tracking and that pointerup always fires on the right element for cleanup. Add touch-action:none in CSS so the browser doesn't steal the gesture to scroll the page, and call preventDefault() on pointerdown so a drag doesn't also start a text selection.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">pointerdown → setPointerCapture(id)<br>pointermove → x → value → setVal<br>pointerup   → release + cleanup<br>touch-action:none → no scroll-steal</div>`, code:`thumb.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  thumb.setPointerCapture(e.pointerId);   // moves stay on this thumb
+  dragging = i; thumb.classList.add("dragging");
+});
+thumb.addEventListener("pointermove", e => {
+  if (dragging === i) setVal(i, valueAt(e.clientX));
+});` },
+ { title:"6. Click the track → nearest thumb", why:"Users don't only drag the handles — they tap or click a spot on the track and expect the slider to jump there. For a single slider the one thumb just moves to the clicked value. For a dual slider you must pick which thumb: compute the value at the click and move whichever thumb is closest by absolute distance. The nice touch is to then hand the pointer to that thumb with setPointerCapture, so the very same press flows straight into a drag — tap-then-slide feels like one gesture. Guard the handler so presses that land on a thumb are ignored here and handled by the thumb's own listener.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click x → value v<br>nearest = |v-lo| ≤ |v-hi| ? lo : hi<br>move that thumb, then capture pointer<br>→ tap becomes a continuous drag</div>`, code:`track.addEventListener("pointerdown", e => {
+  if (e.target.closest(".rs-thumb")) return;   // thumb handles its own
+  const v = valueAt(e.clientX);
+  const i = Math.abs(v - vals[0]) <= Math.abs(v - vals[1]) ? 0 : 1;
+  setVal(i, v);
+  thumbs[i].setPointerCapture(e.pointerId);     // continue as a drag
+});` },
+ { title:"7. Keyboard on each thumb", why:"A slider isn't accessible until it works from the keyboard, and each thumb is its own focus stop. The WAI-ARIA slider pattern is: Left/Down decrease and Right/Up increase by the step; Shift+arrow, or PageUp/PageDown, move by a larger step for coarse jumps; Home and End go to the minimum and maximum. In a dual slider, point Home/End at the thumb's own limits — Home on the high thumb stops at the current low, End on the low thumb stops at the current high — so the no-cross rule is honoured for free. Always preventDefault() on the handled keys, otherwise the arrows and Page keys scroll the page instead of moving the thumb.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">← ↓ −step   → ↑ +step<br>Shift+arrow / PageUp·PageDown = big step<br>Home → own min   End → own max<br>preventDefault() so the page won't scroll</div>`, code:`switch (e.key){
+  case "ArrowRight": case "ArrowUp":   n = v + (e.shiftKey ? bigStep : step); break;
+  case "ArrowLeft":  case "ArrowDown": n = v - (e.shiftKey ? bigStep : step); break;
+  case "PageUp":  n = v + bigStep; break;
+  case "PageDown":n = v - bigStep; break;
+  case "Home": n = (dual && i === 1) ? vals[0] : min; break;
+  case "End":  n = (dual && i === 0) ? vals[1] : max; break;
+}` },
+ { title:"8. ARIA: role=slider, constrained now/min/max", why:"Each thumb is role=\"slider\" and must publish its state so a screen reader can announce it. aria-valuenow is the raw number; aria-valuetext is the human version ('$40', '60%', '2015') and should be given whenever the value isn't a bare integer. The subtle part for a dual slider is that the two thumbs constrain each other, and the ARIA spec wants that reflected live: the low thumb's aria-valuemax is the current high value and the high thumb's aria-valuemin is the current low value. Update all of these inside render() so they never drift from what's on screen. An aria-label per thumb ('Minimum price') tells the user which handle they're on.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">each thumb: role="slider"<br>valuenow=raw · valuetext="$40" (human)<br>low.valuemax = current high<br>high.valuemin = current low  (live limits)</div>`, code:`// inside render(), per thumb i:
+const lo = (i === 0 ? min : vals[0]);   // high thumb's floor = current low
+const hi = (i === 0 ? vals[1] : max);   // low thumb's ceiling = current high
+t.setAttribute("aria-valuemin", lo);
+t.setAttribute("aria-valuemax", hi);
+t.setAttribute("aria-valuenow", vals[i]);
+t.setAttribute("aria-valuetext", fmt(vals[i]));   // "$40", "60%", "2015"` },
+ { title:"9. Rendering, fill & overlapping thumbs", why:"Rendering is pure percentage. The fill's left is pct(lo) and its width is pct(hi) - pct(lo), so the indigo bar always spans exactly between the thumbs; for a single slider the fill starts at 0 and its width is pct(value). Each thumb sits at left:pct(v)% and is centred over that point with a negative margin of half its width. Two edge cases bite here. First, when the thumbs sit on the same spot one can bury the other, so raise the z-index of the thumb being dragged (and give the last-used thumb priority) so both stay reachable. Second, when both thumbs pile up at max, make sure the top one isn't the one that blocks all further leftward drags — capturing the pointer on the correct nearest thumb solves it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">fill.left = pct(lo)% ; width = pct(hi)-pct(lo)<br>thumb.left = pct(v)% ; margin-left:-half<br>overlap → raise z-index of active thumb<br>both at max → nearest-thumb pick frees it</div>`, code:`if (dual){
+  fill.style.left  = pct(vals[0]) + "%";
+  fill.style.width = (pct(vals[1]) - pct(vals[0])) + "%";
+} else {
+  fill.style.left = "0%"; fill.style.width = pct(vals[0]) + "%";
+}
+thumbs.forEach((t,i) => t.style.left = pct(vals[i]) + "%");
+/* .rs-thumb.dragging{ z-index:3; }  raise the active thumb */` },
+ { title:"10. RTL & edge cases", why:"A few realities separate a demo from a shippable control. Right-to-left: in an RTL layout the visual start is on the right, so the pixel-to-value ratio must be flipped (ratio = 1 - ratio) — check getComputedStyle(track).direction. Steps that don't divide the range evenly mean the last reachable value may fall short of max, so decide whether max is itself a valid stop. Guard min === max (a zero-width range) so you never divide by zero — fall back to a span of 1. Keep clamping after every snap so rounding can't push a value out of range. And expose a disabled state (dim it, drop tabindex, ignore pointers) for forms. Handle these and the slider behaves correctly for every user, input device and locale.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">RTL → ratio = 1 - ratio (dir check)<br>step ∤ range → max may be unreachable<br>min===max → span = 1 (no /0)<br>disabled → dim + drop tabindex + ignore</div>`, code:`function valueAt(clientX){
+  const r = track.getBoundingClientRect();
+  let ratio = (clientX - r.left) / r.width;
+  if (getComputedStyle(track).direction === "rtl") ratio = 1 - ratio;
+  return snap(min + clamp(ratio, 0, 1) * ((max - min) || 1));
+}` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
