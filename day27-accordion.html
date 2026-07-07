@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 27 — Accordion</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  /* ===== accordion ===== */
+  .acc { border:1px solid #e2e8f0; border-radius:16px; background:#fff; overflow:hidden; }
+  .acc-item + .acc-item { border-top:1px solid #e2e8f0; }
+  .acc-header { margin:0; }
+  .acc-trigger { width:100%; display:flex; align-items:center; justify-content:space-between; gap:14px;
+                 padding:16px 18px; background:#fff; border:none; cursor:pointer; text-align:left;
+                 font-size:15px; font-weight:600; color:#0f172a; transition:background .15s, color .15s; }
+  .acc-trigger:hover { background:#f8fafc; }
+  .acc-trigger:focus-visible { outline:none; box-shadow: inset 0 0 0 2px #6366f1; }
+  .acc-trigger[aria-expanded="true"] { color:#4f46e5; }
+  .acc-icon { flex:none; width:18px; height:18px; color:#94a3b8; transition: transform .25s ease, color .15s; }
+  .acc-trigger[aria-expanded="true"] .acc-icon { transform: rotate(180deg); color:#4f46e5; }
+  /* the height-animation trick: a 1-row grid that goes 0fr -> 1fr; the inner wrapper clips the overflow */
+  .acc-panel { display:grid; grid-template-rows:0fr; transition: grid-template-rows .3s ease; }
+  .acc-panel[data-open="true"] { grid-template-rows:1fr; }
+  .acc-panel-inner { overflow:hidden; }
+  .acc-panel-content { padding: 2px 18px 18px; color:#475569; font-size:14px; line-height:1.65; }
+  .acc-panel-content a { color:#4f46e5; font-weight:600; text-decoration:underline; }
+  .acc-panel-content ul { list-style:disc; padding-left:20px; margin-top:6px; }
+  .mode-btn { padding:6px 16px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;
+              border:none; background:transparent; color:#64748b; transition:background .15s, color .15s; }
+  .mode-btn.on { background:#4f46e5; color:#fff; }
+  .acc-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  @media (prefers-reduced-motion: reduce) {
+    .acc-panel, .acc-icon, .acc-trigger, .mode-btn { transition:none; }
+    .fade-in { animation:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 27</div>
+      <h1 class="text-xl font-bold">🪗 Accordion — Accessible Disclosure, Single vs Multi-Open, Animated Height + WAI-ARIA</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-3xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Click a header, or focus one and press <kbd>Enter</kbd> · <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd>.</h2>
+        <p class="text-slate-500 mb-6">This is a real <strong>accordion</strong> — a stack of expandable sections built from scratch in vanilla JS. Each header is a genuine <code>&lt;button&gt;</code> (not a clickable <code>&lt;div&gt;</code>), so it is focusable, in the tab order, and toggles for free on <kbd>Enter</kbd> / <kbd>Space</kbd>. Every button carries <code>aria-expanded</code> and <code>aria-controls</code> pointing at its panel; every panel is a <code>role="region"</code> labelled by its button. The open/close is a genuine <strong>height animation</strong> using the CSS <code>grid-template-rows: 0fr → 1fr</code> trick, so it slides even though the content height is unknown. Flip the toggle below to switch between <strong>single-open</strong> (opening one closes the rest) and <strong>allow-multiple</strong>. Focus a header and the <kbd>↑</kbd>/<kbd>↓</kbd> arrows move between headers, <kbd>Home</kbd>/<kbd>End</kbd> jump to first/last. It also respects <code>prefers-reduced-motion</code>.</p>
+      </div>
+
+      <!-- Demo 1: FAQ accordion with a single-open / multi-open toggle -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 mb-6">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider">Billing FAQ</div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Behaviour</span>
+            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Open behaviour">
+              <button id="modeSingle" class="mode-btn on">Single-open</button>
+              <button id="modeMulti"  class="mode-btn">Allow multiple</button>
+            </div>
+          </div>
+        </div>
+        <div id="faqAcc"></div>
+        <p class="text-sm text-slate-500 mt-4">Open panels: <span id="openOut" class="font-bold text-indigo-600">none</span>. In single-open mode, expanding one section collapses whichever was open; in allow-multiple, they are independent.</p>
+      </div>
+
+      <!-- Demo 2: a second, independent instance — rich content, allow-multiple, one open by default -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-5">
+        <div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-4">Product details — allow-multiple, first open by default</div>
+        <div id="prodAcc"></div>
+        <p class="text-sm text-slate-500 mt-4">A second accordion on the same page runs off the same factory with its own IDs. Panels hold arbitrary content — paragraphs, lists, links — and the <code>grid-template-rows</code> animation measures the height automatically, no <code>scrollHeight</code> math required.</p>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">Each header is a <code>&lt;button aria-expanded aria-controls&gt;</code> inside a heading; each panel is a <code>role="region"</code> with <code>aria-labelledby</code> pointing back at its button. This is the exact WAI-ARIA <em>Accordion</em> pattern used by FAQ pages, filter sidebars and settings screens across Stripe, GitHub and Notion.</p>
+
+      <div class="acc-sr" id="accLive" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How an accordion works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A heading + real <code>&lt;button&gt;</code> per section, a region panel wired with <code>aria-expanded</code>/<code>aria-controls</code>/<code>aria-labelledby</code>, the <code>grid-template-rows: 0fr↔1fr</code> height animation, a single-open vs allow-multiple state model, full keyboard navigation between headers, and a <code>prefers-reduced-motion</code> opt-out. ~70 lines of vanilla JS — no framework, no <code>&lt;details&gt;</code>, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: heading &gt; button, then a region panel</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each item is a heading wrapping a real <code>&lt;button&gt;</code>, followed by the panel it controls. The button is focusable and toggles on <kbd>Enter</kbd>/<kbd>Space</kbd> for free — that is why it must be a button, not a <code>&lt;div&gt;</code>. <code>aria-controls</code> points at the panel's <code>id</code>; the panel is a <code>role="region"</code> labelled back by the button's <code>id</code>.</p>
+        <div class="relative"><pre>&lt;div class="acc-item"&gt;
+  &lt;h3 class="acc-header"&gt;
+    &lt;button class="acc-trigger" id="t0" aria-expanded="false" aria-controls="p0"&gt;
+      Billing &lt;svg class="acc-icon"&gt;…chevron…&lt;/svg&gt;
+    &lt;/button&gt;
+  &lt;/h3&gt;
+  &lt;div class="acc-panel" id="p0" role="region" aria-labelledby="t0" data-open="false"&gt;
+    &lt;div class="acc-panel-inner"&gt;&lt;div class="acc-panel-content"&gt;…&lt;/div&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">CSS: the 0fr → 1fr grid height trick</h3></div>
+        <p class="text-sm text-slate-600 mb-3">You cannot transition <code>height:auto</code>, so the panel is a one-row CSS grid whose track animates from <code>0fr</code> (collapsed) to <code>1fr</code> (its natural height). An inner wrapper with <code>overflow:hidden</code> clips the content while the row shrinks. Toggling one attribute drives the whole animation — no measuring, no inline styles.</p>
+        <div class="relative"><pre>.acc-panel        { display:grid; grid-template-rows:0fr;
+                    transition: grid-template-rows .3s ease; }
+.acc-panel[data-open="true"] { grid-template-rows:1fr; }
+.acc-panel-inner  { overflow:hidden; }   /* clip while the row collapses */
+
+@media (prefers-reduced-motion: reduce){
+  .acc-panel { transition:none; }        /* snap instead of slide */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Build the items and wire the ARIA</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Generate each item, cross-link the ids, and stash the buttons and panels in arrays so the rest of the code can index them. <code>aria-expanded</code> starts <code>false</code>; a <code>data-open</code> flag on the panel mirrors it and drives the CSS.</p>
+        <div class="relative"><pre>items.forEach((item, i) =&gt; {
+  btn.id = uid + "-t" + i;
+  btn.setAttribute("aria-controls", uid + "-p" + i);
+  btn.setAttribute("aria-expanded", "false");
+
+  panel.id = uid + "-p" + i;
+  panel.setAttribute("role", "region");
+  panel.setAttribute("aria-labelledby", uid + "-t" + i);
+  panel.setAttribute("data-open", "false");
+
+  btn.addEventListener("click", () =&gt; toggle(i));
+  btn.addEventListener("keydown", e =&gt; onKey(e, i));
+  triggers.push(btn); panels.push(panel);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">setOpen — one function keeps ARIA and CSS in sync</h3></div>
+        <p class="text-sm text-slate-600 mb-3">There is a single source of truth: <code>setOpen(i, open)</code> writes <code>aria-expanded</code> on the button (for screen readers) and <code>data-open</code> on the panel (for the animation) together, so the accessible state and the visual state can never drift apart.</p>
+        <div class="relative"><pre>function isOpen(i){ return panels[i].getAttribute("data-open") === "true"; }
+
+function setOpen(i, open){
+  triggers[i].setAttribute("aria-expanded", String(open));  // announced
+  panels[i].setAttribute("data-open", String(open));        // animates
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">toggle — single-open vs allow-multiple</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Toggling flips the clicked item. The only difference between the two modes lives here: in <code>single</code> mode, before opening item <em>i</em> you close every other item; in <code>multi</code> mode each panel is independent. Clicking an open header always closes it, so an all-collapsed state is allowed.</p>
+        <div class="relative"><pre>function toggle(i){
+  const willOpen = !isOpen(i);
+  if (mode === "single" &amp;&amp; willOpen){
+    for (let j = 0; j &lt; n; j++) if (j !== i) setOpen(j, false);  // close siblings
+  }
+  setOpen(i, willOpen);
+  live.textContent = items[i].title + (willOpen ? " expanded" : " collapsed");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Keyboard: move focus between headers</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because the header is a button, <kbd>Enter</kbd>/<kbd>Space</kbd> already fire <code>click</code> → <code>toggle</code>, so you add nothing for activation. The accordion pattern adds <em>navigation</em>: <kbd>↑</kbd>/<kbd>↓</kbd> move focus to the previous/next header (wrapping), <kbd>Home</kbd>/<kbd>End</kbd> jump to the first/last. <code>preventDefault()</code> stops the arrows from scrolling the page.</p>
+        <div class="relative"><pre>function onKey(e, i){
+  let t = null;
+  switch (e.key){
+    case "ArrowDown": t = (i + 1) % n;       break;
+    case "ArrowUp":   t = (i - 1 + n) % n;   break;
+    case "Home":      t = 0;                 break;
+    case "End":       t = n - 1;             break;
+    default: return;                 // Enter/Space handled by the &lt;button&gt;
+  }
+  e.preventDefault();
+  triggers[t].focus();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Switch modes without losing state</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Flipping to <code>single</code> at runtime may leave several panels open, which now violates the rule — so collapse all but the first open one. Flipping to <code>multi</code> needs no cleanup. Wire the mode buttons to this and update their pressed styling.</p>
+        <div class="relative"><pre>function setMode(m){
+  mode = m;
+  if (mode === "single"){
+    let kept = false;
+    for (let i = 0; i &lt; n; i++)
+      if (isOpen(i)){ if (kept) setOpen(i, false); else kept = true; }
+  }
+}
+modeSingle.onclick = () =&gt; { acc.setMode("single"); paintModeButtons("single"); };
+modeMulti .onclick = () =&gt; { acc.setMode("multi");  paintModeButtons("multi");  };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">When to reach for an accordion (and when tabs)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Use an accordion to <strong>declutter a long page</strong> of independent, mostly-scannable sections — FAQs, filters, settings groups — where users dip into one or two at a time and stay in a single vertical flow. Reach for <strong>tabs</strong> instead when the sections are peers and users switch between full <em>views</em> of the same size, showing exactly one at a time. Accordions can show none, one, or many panels; a tablist always shows exactly one panel — that is tomorrow's build.</p>
+        <div class="relative"><pre>// accordion: stacked disclosures, 0..N open, vertical scan
+// tabs:      one tablist, exactly 1 panel visible, peer views
+//
+// share the disclosure idea; differ in layout + how many show at once.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 27 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real accordion from scratch: a heading + <code>&lt;button&gt;</code> per section, <code>aria-expanded</code>/<code>aria-controls</code> on the trigger and <code>role="region"</code>/<code>aria-labelledby</code> on the panel, a genuine height animation via the <code>grid-template-rows: 0fr↔1fr</code> trick, a single-open vs allow-multiple state model, full keyboard navigation between headers, and a reduced-motion opt-out. This is the WAI-ARIA Accordion pattern behind FAQ pages, filter sidebars and settings screens everywhere. <strong>👉 Tomorrow — Day 28: Tabs (tablist / tabpanel).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== ACCORDION FACTORY =====
+// Builds heading>button + region panel per item, wires aria-expanded/controls/labelledby,
+// drives the grid-template-rows height animation via a data-open flag, supports single-open
+// vs allow-multiple, and a full keyboard (Enter/Space toggle via the native button;
+// ArrowUp/Down + Home/End move focus between headers).
+const CHEVRON = '<svg class="acc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+
+function Accordion(cfg){
+  const mount = cfg.mount, items = cfg.items, uid = cfg.id;
+  let mode = cfg.mode || "single";              // "single" | "multi"
+  const live = document.getElementById("accLive");
+  const n = items.length;
+  const triggers = [], panels = [];
+
+  const root = document.createElement("div");
+  root.className = "acc";
+
+  items.forEach((item, i) => {
+    const wrap = document.createElement("div"); wrap.className = "acc-item";
+    const h = document.createElement("h3"); h.className = "acc-header";
+
+    const btn = document.createElement("button");
+    btn.className = "acc-trigger";
+    btn.type = "button";
+    btn.id = uid + "-t" + i;
+    btn.setAttribute("aria-controls", uid + "-p" + i);
+    btn.setAttribute("aria-expanded", "false");
+    btn.innerHTML = '<span>' + item.title + '</span>' + CHEVRON;
+
+    const panel = document.createElement("div");
+    panel.className = "acc-panel";
+    panel.id = uid + "-p" + i;
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-labelledby", uid + "-t" + i);
+    panel.setAttribute("data-open", "false");
+    panel.innerHTML = '<div class="acc-panel-inner"><div class="acc-panel-content">' + item.body + '</div></div>';
+
+    h.appendChild(btn);
+    wrap.appendChild(h); wrap.appendChild(panel);
+    root.appendChild(wrap);
+    triggers.push(btn); panels.push(panel);
+
+    btn.addEventListener("click", () => toggle(i));
+    btn.addEventListener("keydown", e => onKey(e, i));
+  });
+
+  mount.appendChild(root);
+
+  function isOpen(i){ return panels[i].getAttribute("data-open") === "true"; }
+
+  // single source of truth: aria-expanded (announced) + data-open (animates) move together
+  function setOpen(i, open){
+    triggers[i].setAttribute("aria-expanded", String(open));
+    panels[i].setAttribute("data-open", String(open));
+  }
+
+  function openIndexes(){
+    const a = []; for (let i = 0; i < n; i++) if (isOpen(i)) a.push(i); return a;
+  }
+
+  function toggle(i){
+    const willOpen = !isOpen(i);
+    if (mode === "single" && willOpen){
+      for (let j = 0; j < n; j++) if (j !== i) setOpen(j, false);   // close siblings
+    }
+    setOpen(i, willOpen);
+    if (live) live.textContent = items[i].title + (willOpen ? " expanded" : " collapsed");
+    cfg.onChange && cfg.onChange(openIndexes());
+  }
+
+  // navigation only — Enter/Space already toggle via the native <button>
+  function onKey(e, i){
+    let t = null;
+    switch (e.key){
+      case "ArrowDown": t = (i + 1) % n;     break;
+      case "ArrowUp":   t = (i - 1 + n) % n; break;
+      case "Home":      t = 0;               break;
+      case "End":       t = n - 1;           break;
+      default: return;
+    }
+    e.preventDefault();
+    triggers[t].focus();
+  }
+
+  function setMode(m){
+    mode = m;
+    if (mode === "single"){                    // enforce the rule on switch
+      let kept = false;
+      for (let i = 0; i < n; i++)
+        if (isOpen(i)){ if (kept) setOpen(i, false); else kept = true; }
+    }
+    cfg.onChange && cfg.onChange(openIndexes());
+  }
+
+  (cfg.open || []).forEach(i => setOpen(i, true));   // default-open items
+  return { setMode, toggle, openIndexes };
+}
+
+// ---- Demo 1: FAQ with a single/multi toggle ----
+const FAQ = [
+  { title:"How does billing work?",       body:'Plans are billed <strong>monthly</strong> on the date you subscribe, and every invoice is emailed to your account owner. You can add teammates at any time and the next invoice is prorated automatically.' },
+  { title:"Can I change my plan later?",  body:'Yes — upgrade or downgrade whenever you like from <strong>Settings → Plan</strong>. Upgrades apply instantly; downgrades take effect at the start of your next cycle so you keep what you paid for.' },
+  { title:"Do you offer refunds?",        body:'We offer a full refund within <strong>14 days</strong> of your first payment, no questions asked. After that, cancellations stop the next charge but the current period stays active.' },
+  { title:"Is my data secure?",           body:'All traffic is encrypted in transit and at rest, backups run nightly, and we are SOC 2 Type II audited. See the <a href="#">security overview</a> for the full list of controls.' },
+  { title:"How do I cancel?",             body:'Open <strong>Settings → Plan → Cancel</strong>. Your workspace stays usable until the end of the paid period, and you can export everything first:<ul><li>CSV of all records</li><li>JSON API dump</li><li>PDF invoices</li></ul>' }
+];
+const openOut = document.getElementById("openOut");
+function paintOpen(idx){
+  openOut.textContent = idx.length ? idx.map(i => FAQ[i].title.replace(/\?$/,"")).join(", ") : "none";
+}
+const faq = Accordion({
+  mount: document.getElementById("faqAcc"),
+  id: "faq", items: FAQ, mode: "single", open: [0],
+  onChange: paintOpen
+});
+paintOpen(faq.openIndexes());
+
+// mode toggle
+const modeSingle = document.getElementById("modeSingle");
+const modeMulti  = document.getElementById("modeMulti");
+function paintModeButtons(m){
+  modeSingle.classList.toggle("on", m === "single");
+  modeMulti .classList.toggle("on", m === "multi");
+}
+modeSingle.onclick = () => { faq.setMode("single"); paintModeButtons("single"); };
+modeMulti.onclick  = () => { faq.setMode("multi");  paintModeButtons("multi");  };
+
+// ---- Demo 2: independent instance, allow-multiple, first open ----
+Accordion({
+  mount: document.getElementById("prodAcc"),
+  id: "prod", mode: "multi", open: [0],
+  items: [
+    { title:"What's included",     body:'The base kit ships with the core component, a full test suite, and copy-paste snippets for React, Vue and plain HTML. Everything is MIT-licensed.' },
+    { title:"Shipping & returns",   body:'Being a download there is nothing to ship — you get an instant link. Not happy? Reply to the receipt within 30 days for a refund.' },
+    { title:"Reviews",             body:'Rated <strong>4.8 / 5</strong> across 240 buyers. The most common note: "dropped in without a single accessibility fix afterwards."' }
+  ]
+});
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Disclosure & the accordion pattern", why:"A disclosure is the simplest interactive pattern there is: a button that shows or hides one chunk of content. An accordion is just a set of disclosures stacked together, sharing a container. Its job is to tame a long page — take a wall of FAQ answers, filter groups or settings and collapse them so the user scans the headers first and expands only what they want. The point is progressive disclosure: reduce what's on screen without hiding it from the people who need it. Reach for it when the sections are independent and mostly scannable and users dip into one or two at a time. It is not a navigation control — if switching sections means switching whole views, that's tabs.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">▸ Billing        (collapsed)<br>▾ Plans          (open)  &lt;- one disclosure<br>&nbsp;&nbsp;&nbsp;content shows here<br>▸ Refunds        (collapsed)<br>accordion = a stack of disclosures</div>`, code:`// disclosure = 1 button that toggles 1 panel
+// accordion  = N disclosures sharing a container
+// use it to collapse a long, scannable page` },
+ { title:"2. The header must be a real <button>", why:"The single most common accordion bug is a clickable <div> as the header. A <div> is not focusable, isn't in the tab order, doesn't fire on Enter or Space, and announces nothing to assistive tech. A real <button> gives you all of that for free: keyboard focus, Enter/Space activation firing a click event, and a 'button' role. Wrap each button in a heading (<h3>) so the accordion also forms a document outline a screen-reader user can jump through by heading. Rule of thumb: if it's clickable and does something, it's a button — style the button, don't rebuild it from a div with click handlers and tabindex.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;h3&gt;&lt;button&gt;Billing&lt;/button&gt;&lt;/h3&gt;  ✅<br>&nbsp;&nbsp;focusable · Enter/Space · role=button<br><br>&lt;div onclick&gt;Billing&lt;/div&gt;            ❌<br>&nbsp;&nbsp;no focus · no keys · no role</div>`, code:`<h3 class="acc-header">
+  <button class="acc-trigger" ...>Billing</button>
+</h3>
+<!-- button = focus + Enter/Space + role for free -->
+<!-- heading = an outline SR users can jump through -->` },
+ { title:"3. aria-expanded + aria-controls", why:"Two attributes turn the button into an accessible toggle. aria-expanded is a live boolean — 'true' when its panel is open, 'false' when closed — and a screen reader reads it out ('Billing, collapsed, button') so a blind user knows the current state before deciding to activate. aria-controls holds the id of the panel the button opens, wiring the relationship in the accessibility tree. You flip aria-expanded on every toggle; it must always match what's visually on screen, which is why one setOpen() function writes both the ARIA state and the visual state together. This is the load-bearing accessibility contract of the whole pattern.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;button aria-expanded="false"   ← state<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-controls="p0"&gt;    ← which panel<br><br>read as: "Billing, collapsed, button"</div>`, code:`btn.setAttribute("aria-controls", "p0");   // which panel
+btn.setAttribute("aria-expanded", "false"); // open? (flips on toggle)
+function setOpen(i, open){
+  triggers[i].setAttribute("aria-expanded", String(open));
+}` },
+ { title:"4. The panel: role=region + aria-labelledby", why:"The panel that opens is given role=\"region\" so it becomes a navigable landmark, and aria-labelledby points back at its header button's id — so the region is announced with the header's own text ('Billing, region') instead of being an anonymous block. That labelling is what makes the expanded content findable and named. A caveat: regions are best for a small-to-moderate number of panels; if an accordion has dozens of items, all those landmarks add noise, and the spec makes the region role optional for exactly that reason. For a handful of FAQ-style sections it's the right call and costs one attribute.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;div role="region"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-labelledby="t0"&gt;  ← named by header<br><br>announced: "Billing, region"<br>(optional when there are many panels)</div>`, code:`panel.setAttribute("role", "region");
+panel.setAttribute("aria-labelledby", "t0"); // = the button's id
+// the region borrows the header's text as its name` },
+ { title:"5. The height-animation problem & the 0fr/1fr trick", why:"You can't transition height:auto — the browser has no numeric target to interpolate to, so the panel would just pop open. The classic fixes each have a cost: animating max-height needs a magic number bigger than any content (and eases oddly); wrapping and animating transform:scaleY squashes the text. The modern fix is a CSS-grid trick: make the panel a one-row grid and transition its track from grid-template-rows:0fr (zero height) to 1fr (the content's natural height). fr units are animatable in grid, so the row grows smoothly to whatever the content actually is — no measuring, no magic numbers. An inner wrapper with overflow:hidden clips the text while the row is short.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">height:auto  → can't transition (no target)<br>max-height   → needs a magic number, eases odd<br><br>grid-template-rows: 0fr → 1fr  ✅<br>animatable, measures itself, overflow:hidden clips</div>`, code:`.acc-panel { display:grid; grid-template-rows:0fr;
+             transition: grid-template-rows .3s ease; }
+.acc-panel[data-open="true"] { grid-template-rows:1fr; }
+.acc-panel-inner { overflow:hidden; }   /* clip while collapsing */` },
+ { title:"6. The measured max-height fallback", why:"The grid trick is clean but relies on newer engines animating fr units (Safari picked it up in 16.4). Where you need to support older browsers, the reliable fallback is to measure and set an explicit max-height in pixels. Read the content's scrollHeight, set that as max-height to open, and set it back to 0 to close — now there's a concrete number to transition between. The gotchas: you must re-measure if the content changes (fonts loading, responsive reflow), and after the opening transition ends you often set max-height back to 'none' so a taller-than-expected panel isn't clipped. It's more code and more edge cases, which is exactly why the grid trick has become the default.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">open : max-height = panel.scrollHeight + "px"<br>close: max-height = "0"<br>after open: max-height = "none" (avoid clip)<br>re-measure on resize / font load</div>`, code:`// fallback for engines that won't animate 0fr->1fr
+function open(p){  p.style.maxHeight = p.scrollHeight + "px"; }
+function close(p){ p.style.maxHeight = "0"; }
+p.addEventListener("transitionend", () => {
+  if (isOpen) p.style.maxHeight = "none";   // let it grow freely
+});` },
+ { title:"7. Single-open vs allow-multiple", why:"Accordions come in two flavours and the difference is one branch of logic. In allow-multiple, every panel is independent: toggling one never touches the others, so any number can be open at once. In single-open, opening one panel first closes whichever sibling was open, so at most one is expanded — tidier, and forces focus onto one thing, but it costs the user a click when they want to compare two sections. Both should let every panel close (an all-collapsed state is valid). Keep the decision in one place: in toggle(), if the mode is single and you're about to open item i, loop the others closed first. Switching mode at runtime just means enforcing the rule once on the new mode.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">single : open i  → close all j≠i  (max 1 open)<br>multi  : open i  → touch nothing (0..N open)<br><br>both allow all-closed. one branch decides.</div>`, code:`function toggle(i){
+  const willOpen = !isOpen(i);
+  if (mode === "single" && willOpen)
+    for (let j = 0; j < n; j++) if (j !== i) setOpen(j, false);
+  setOpen(i, willOpen);
+}` },
+ { title:"8. Keyboard navigation between headers", why:"Activation is already handled — because the header is a button, Enter and Space fire a click and toggle the panel with no extra code. What the accordion pattern adds is navigation between the headers: with focus on a header, ArrowDown moves to the next header and ArrowUp to the previous (wrapping around the ends), while Home and End jump to the first and last. This lets a keyboard user skim the headers without tabbing through the open panels' contents in between. Call preventDefault() on those keys so the arrows move focus instead of scrolling the page. Unlike a tablist, the headers stay in the normal tab order — Tab still steps through them and into open panels.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Enter / Space → toggle (native button, free)<br>↓ next header   ↑ prev header  (wrap)<br>Home → first    End → last<br>preventDefault() so arrows don't scroll</div>`, code:`function onKey(e, i){
+  let t;
+  switch (e.key){
+    case "ArrowDown": t = (i + 1) % n;     break;
+    case "ArrowUp":   t = (i - 1 + n) % n; break;
+    case "Home":      t = 0;               break;
+    case "End":       t = n - 1;           break;
+    default: return;                 // Enter/Space handled by button
+  }
+  e.preventDefault(); triggers[t].focus();
+}` },
+ { title:"9. prefers-reduced-motion", why:"Sliding panels are motion, and some people get dizzy or distracted by it — vestibular disorders, ADHD, or just a personal preference set at the OS level. The prefers-reduced-motion media query surfaces that choice to CSS. Honour it by dropping the transition so the panel snaps open and closed instantly: the accordion still works exactly the same, it just doesn't animate. Because the whole animation lives in one CSS transition on .acc-panel, respecting the preference is a two-line media query — no JavaScript branching. This is table stakes for any animated component and free to add once your animation is CSS-driven.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">@media (prefers-reduced-motion: reduce){<br>&nbsp;&nbsp;.acc-panel { transition:none; }  ← snap<br>}<br>same behaviour, no slide. respect the OS setting.</div>`, code:`@media (prefers-reduced-motion: reduce){
+  .acc-panel, .acc-icon { transition:none; }  /* snap, don't slide */
+}
+/* animation is pure CSS, so this is all it takes */` },
+ { title:"10. Accordion vs tabs", why:"Accordions and tabs share the disclosure idea but solve different layouts. An accordion stacks its sections vertically and can show none, one, or many at once; users stay in a single scroll flow and expand what they need. A tablist lays out its sections as a horizontal strip of tabs and shows exactly one panel at a time — the panels are peer views of the same weight and users switch between them. Choose accordion for scannable, independent chunks like FAQs and filters, and tabs when the content divides into a few equal 'pages'. The ARIA differs too: tab headers use role=tab in a role=tablist with arrow-key roving focus and are removed from the Tab order, whereas accordion headers are plain buttons that stay tabbable. That tablist pattern is exactly Day 28.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">accordion: vertical stack · 0..N open · buttons<br>tabs:      horizontal strip · exactly 1 · role=tab<br><br>scannable chunks → accordion<br>equal peer views  → tabs (Day 28)</div>`, code:`// accordion  buttons, aria-expanded, 0..N panels open
+// tablist    role=tab in role=tablist, roving focus, 1 panel
+//
+// same disclosure DNA, different layout + count shown` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
