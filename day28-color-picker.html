@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 28 — Color Picker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== color picker ===== */
+  .checker {
+    background-image:
+      linear-gradient(45deg, #cbd5e1 25%, transparent 25%),
+      linear-gradient(-45deg, #cbd5e1 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #cbd5e1 75%),
+      linear-gradient(-45deg, transparent 75%, #cbd5e1 75%);
+    background-size: 14px 14px;
+    background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+    background-color:#fff;
+  }
+  .cp-sv {
+    position:relative; width:100%; max-width:280px; aspect-ratio:1/1; border-radius:14px;
+    cursor:crosshair; touch-action:none; user-select:none;
+    background-color: hsl(0,100%,50%);
+    background-image:
+      linear-gradient(to top,   #000, transparent),   /* value  -> black at bottom */
+      linear-gradient(to right, #fff, transparent);   /* satur. -> white at left   */
+    box-shadow: inset 0 0 0 1px rgba(15,23,42,.12);
+  }
+  .cp-sv:focus-visible { outline:none; box-shadow: inset 0 0 0 1px rgba(15,23,42,.12), 0 0 0 3px #6366f1; }
+  .cp-sv-thumb {
+    position:absolute; width:20px; height:20px; border-radius:50%; border:3px solid #fff;
+    box-shadow:0 0 0 1px rgba(15,23,42,.5), 0 1px 4px rgba(0,0,0,.4);
+    transform:translate(-50%,-50%); pointer-events:none;
+  }
+  .cp-slider {
+    position:relative; width:26px; height:280px; border-radius:13px; cursor:pointer;
+    touch-action:none; user-select:none; box-shadow: inset 0 0 0 1px rgba(15,23,42,.12);
+  }
+  .cp-slider:focus-visible { outline:none; box-shadow: inset 0 0 0 1px rgba(15,23,42,.12), 0 0 0 3px #6366f1; }
+  .cp-hue {
+    background: linear-gradient(to bottom,
+      #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  }
+  .cp-alpha-fill { position:absolute; inset:0; border-radius:inherit; }
+  .cp-slider-thumb {
+    position:absolute; left:50%; width:32px; height:10px; border-radius:5px; border:2px solid #fff;
+    box-shadow:0 0 0 1px rgba(15,23,42,.5), 0 1px 3px rgba(0,0,0,.35); background:#fff;
+    transform:translate(-50%,-50%); pointer-events:none;
+  }
+  .cp-out { display:flex; align-items:center; gap:8px; }
+  .cp-out label { width:52px; font-size:11px; font-weight:800; letter-spacing:.04em; color:#94a3b8; text-transform:uppercase; }
+  .cp-out input {
+    flex:1; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; font-weight:600;
+    color:#0f172a; padding:8px 10px; border:1px solid #e2e8f0; border-radius:9px; background:#f8fafc;
+  }
+  .cp-out input:focus { outline:none; border-color:#6366f1; background:#fff; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+  .cp-copy { flex:none; font-size:11px; font-weight:700; color:#64748b; background:#f1f5f9;
+             border:1px solid #e2e8f0; border-radius:8px; padding:7px 10px; cursor:pointer; }
+  .cp-copy:hover { background:#e2e8f0; color:#0f172a; }
+  .swatch { width:26px; height:26px; border-radius:8px; cursor:pointer; box-shadow: inset 0 0 0 1px rgba(15,23,42,.15); }
+  .swatch:hover { transform:scale(1.12); }
+  .badge { font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px; letter-spacing:.03em; }
+  .badge.ok  { background:#dcfce7; color:#15803d; }
+  .badge.bad { background:#fee2e2; color:#b91c1c; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .swatch:hover { transform:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 28</div>
+      <h1 class="text-xl font-bold">🎨 Color Picker — HSV Saturation-Value Square + Hue/Alpha Sliders, Live HEX/RGB/HSL & Two-Way Binding</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Drag inside the square, slide the hue &amp; alpha rails, or type a value.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">This is a real <strong>color picker</strong> built from scratch in vanilla JS — <strong>no</strong> <code>&lt;input type="color"&gt;</code>. Dragging the big <strong>saturation / value square</strong> sets how vivid and how bright the color is; the vertical <strong>hue rail</strong> spins the base color through 0–360°; the <strong>alpha rail</strong> controls opacity over a checkerboard. Every format below stays in sync — <strong>HEX, RGB, RGBA, HSL</strong> — and the binding is <strong>two-way</strong>: type <code>#10b981</code> into the HEX box and the square, rails and preview all jump to it. All the conversions (HSV↔RGB↔HEX↔HSL) are hand-written. It even reports the <strong>WCAG contrast ratio</strong> against white and black, and offers the native <strong>EyeDropper</strong> where the browser supports it.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+        <div class="flex flex-col md:flex-row gap-8">
+          <!-- picker -->
+          <div class="flex gap-4 justify-center">
+            <div class="cp-sv" id="sv" tabindex="0" role="slider" aria-label="Saturation and value" aria-valuetext="">
+              <div class="cp-sv-thumb" id="svThumb"></div>
+            </div>
+            <div class="cp-slider cp-hue" id="hue" tabindex="0" role="slider" aria-label="Hue" aria-valuemin="0" aria-valuemax="360">
+              <div class="cp-slider-thumb" id="hueThumb"></div>
+            </div>
+            <div class="cp-slider checker" id="alpha" tabindex="0" role="slider" aria-label="Alpha" aria-valuemin="0" aria-valuemax="100">
+              <div class="cp-alpha-fill" id="alphaFill"></div>
+              <div class="cp-slider-thumb" id="alphaThumb"></div>
+            </div>
+          </div>
+
+          <!-- readout -->
+          <div class="flex-1 min-w-[260px] space-y-4">
+            <div class="flex items-center gap-4">
+              <div class="checker rounded-xl overflow-hidden" style="width:64px;height:64px;box-shadow:inset 0 0 0 1px rgba(15,23,42,.15);">
+                <div id="previewFill" style="width:100%;height:100%;"></div>
+              </div>
+              <div>
+                <div class="text-2xl font-bold tracking-tight" id="hexBig">#6366F1</div>
+                <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider">live preview</div>
+              </div>
+              <button id="eyedrop" class="ml-auto text-sm font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 hover:bg-indigo-100">🔍 Eyedrop</button>
+            </div>
+
+            <div class="space-y-2">
+              <div class="cp-out"><label>Hex</label><input id="hexIn"  spellcheck="false"><button class="cp-copy" data-c="hexIn">Copy</button></div>
+              <div class="cp-out"><label>RGB</label><input id="rgbIn"  spellcheck="false"><button class="cp-copy" data-c="rgbIn">Copy</button></div>
+              <div class="cp-out"><label>RGBA</label><input id="rgbaIn" spellcheck="false"><button class="cp-copy" data-c="rgbaIn">Copy</button></div>
+              <div class="cp-out"><label>HSL</label><input id="hslIn"  spellcheck="false"><button class="cp-copy" data-c="hslIn">Copy</button></div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 items-center pt-1">
+              <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1">Presets</span>
+              <span id="presets" class="flex flex-wrap gap-2"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- contrast -->
+        <div class="grid grid-cols-2 gap-3 mt-6">
+          <div id="whiteCard" class="rounded-xl border border-slate-200 p-3 flex items-center justify-between" style="background:#fff;">
+            <div><div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Contrast vs white</div><div class="ratio text-lg font-bold text-slate-800">–</div></div>
+            <span class="badge">–</span>
+          </div>
+          <div id="blackCard" class="rounded-xl border border-slate-200 p-3 flex items-center justify-between" style="background:#0f172a;">
+            <div><div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Contrast vs black</div><div class="ratio text-lg font-bold text-slate-100">–</div></div>
+            <span class="badge">–</span>
+          </div>
+        </div>
+        <p id="edNote" class="text-xs text-slate-400 mt-3"></p>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">The SV square + hue rail is exactly the layout Photoshop, Figma and every dev-tools color popup use — because HSV maps cleanly onto <em>pick a color, then pick how vivid and how bright</em>. Under the hood it is pure math: HSV → RGB → HEX, and back again for the two-way inputs.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a color picker works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A saturation/value square drawn with two stacked CSS gradients, a hue rail and a checkerboard alpha rail, hand-written HSV↔RGB↔HEX↔HSL conversions, a pointer-drag helper that maps cursor position to <code>sat</code>/<code>val</code>, one <code>render()</code> that is the single source of truth, two-way text inputs that parse a value back into the picker, plus a WCAG contrast readout and the native EyeDropper. ~120 lines of vanilla JS — no framework, no <code>&lt;input type="color"&gt;</code>, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Markup: the SV square + two rails</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Three elements: the saturation/value square, the hue rail, and the alpha rail (over a checkerboard). Each holds a thumb the code positions absolutely. No native inputs anywhere.</p>
+        <div class="relative"><pre>&lt;div class="cp-sv"    id="sv"&gt;&lt;div class="cp-sv-thumb" id="svThumb"&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;div class="cp-hue"   id="hue"&gt;&lt;div class="cp-slider-thumb" id="hueThumb"&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;div class="cp-alpha checker" id="alpha"&gt;
+  &lt;div class="cp-alpha-fill" id="alphaFill"&gt;&lt;/div&gt;
+  &lt;div class="cp-slider-thumb" id="alphaThumb"&gt;&lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The SV square is two stacked gradients</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The base <code>background-color</code> is the <em>pure hue</em> (<code>hsl(h,100%,50%)</code>), set from JS. On top: a white→transparent gradient left-to-right is saturation, and a transparent→black gradient top-to-bottom is value. Top-left = white, top-right = full hue, bottom = black. The thumb sits at <code>(sat·W, (1−val)·H)</code>.</p>
+        <div class="relative"><pre>.cp-sv {
+  background-color: hsl(0,100%,50%);          /* JS updates the hue */
+  background-image:
+    linear-gradient(to top,   #000, transparent),   /* value  ↓ black */
+    linear-gradient(to right, #fff, transparent);   /* satur. ← white */
+}
+/* thumb: left = sat*100%, top = (1-val)*100% */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Hue rainbow + checkerboard alpha rail</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The hue rail is a single 7-stop rainbow so top and bottom are both red (0° = 360°). The alpha rail is a checkerboard (so transparency is visible) with a color→transparent gradient painted over it from JS.</p>
+        <div class="relative"><pre>.cp-hue { background: linear-gradient(to bottom,
+  #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%); }
+
+.checker { background-image:                    /* 4 gradients = squares */
+  linear-gradient(45deg,#cbd5e1 25%,transparent 25%), ... ;
+  background-size:14px 14px; }
+/* alphaFill (JS): linear-gradient(to bottom, rgb(r,g,b), transparent) */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The conversions: HSV → RGB → HEX</h3></div>
+        <p class="text-sm text-slate-600 mb-3">HSV is what the UI stores; RGB is what CSS wants; HEX is what people paste. Write them by hand — it is a few lines each and the round-trip is exact.</p>
+        <div class="relative"><pre>function hsvToRgb(h,s,v){
+  const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+  let [r,g,b]=[[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]][Math.floor(h/60)%6];
+  return { r:Math.round((r+m)*255), g:Math.round((g+m)*255), b:Math.round((b+m)*255) };
+}
+const hex2 = n =&gt; n.toString(16).padStart(2,"0");
+const rgbToHex = (r,g,b) =&gt; "#"+hex2(r)+hex2(g)+hex2(b);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Pointer drag → sat / val</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One tiny helper turns any element into a draggable pad: on <code>pointerdown</code> it captures the pointer and reports the normalized 0–1 position on every move. <code>setPointerCapture</code> keeps the drag alive even when the cursor leaves the box.</p>
+        <div class="relative"><pre>function drag(el, on){
+  el.addEventListener("pointerdown", e =&gt; {
+    el.setPointerCapture(e.pointerId);
+    const move = ev =&gt; { const r = el.getBoundingClientRect();
+      on(clamp((ev.clientX-r.left)/r.width,0,1),
+         clamp((ev.clientY-r.top)/r.height,0,1)); };
+    move(e); el.onpointermove = move;
+    el.onpointerup = () =&gt; el.onpointermove = null;
+  });
+}
+drag(sv,  (x,y) =&gt; { sat=x; val=1-y; render(); });  // square
+drag(hue, (x,y) =&gt; { hue=y*360;      render(); });  // rail (y only)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">render() — one source of truth</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>hue/sat/val/alpha</code> is the only state. <code>render()</code> derives everything from it — the square's hue, every thumb position, the alpha gradient, the preview and all four text fields — so nothing can drift. Skip the field the user is currently typing in so you never yank their cursor.</p>
+        <div class="relative"><pre>function render(){
+  const rgb = hsvToRgb(hue,sat,val), hex = rgbToHex(rgb.r,rgb.g,rgb.b);
+  sv.style.backgroundColor = "hsl("+Math.round(hue)+",100%,50%)";
+  svThumb.style.left = sat*100+"%";  svThumb.style.top = (1-val)*100+"%";
+  hueThumb.style.top = hue/360*100+"%"; alphaThumb.style.top = (1-alpha)*100+"%";
+  set(hexIn, hex); set(rgbIn, "rgb("+rgb.r+", "+rgb.g+", "+rgb.b+")"); /* ...hsl */
+}
+const set = (el,v) =&gt; { if (document.activeElement !== el) el.value = v; };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Two-way binding: parse a value back in</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The inputs are not read-only. On every keystroke, parse the text; if it is a valid color, convert it back to HSV, overwrite the state and <code>render()</code>. Now typing <code>#10b981</code> moves the square, both rails and the preview.</p>
+        <div class="relative"><pre>hexIn.addEventListener("input", () =&gt; {
+  const rgb = hexToRgb(hexIn.value.trim());
+  if (!rgb) return;                       // ignore half-typed junk
+  const c = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  if (c.s !== 0) hue = c.h;                // keep hue on greys
+  sat = c.s; val = c.v; render();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Contrast ratio + native EyeDropper</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Compute WCAG relative luminance and the contrast ratio against white/black so a picked color can be checked for legibility (AA needs ≥ 4.5:1). And if the browser exposes <code>window.EyeDropper</code>, one click samples any pixel on screen.</p>
+        <div class="relative"><pre>const lum = c =&gt; { const f = x =&gt; { x/=255;
+  return x&lt;=.03928 ? x/12.92 : ((x+.055)/1.055)**2.4; };
+  return .2126*f(c.r)+.7152*f(c.g)+.0722*f(c.b); };
+function contrast(a,b){ const [hi,lo]=[lum(a),lum(b)].sort((p,q)=&gt;q-p);
+  return (hi+.05)/(lo+.05); }              // 1 (none) .. 21 (black/white)
+
+if (window.EyeDropper)                     // Chromium only, feature-detect
+  new EyeDropper().open().then(r =&gt; setHex(r.sRGBHex));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 28 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real color picker from scratch: a saturation/value square from two stacked CSS gradients, a hue rainbow rail and a checkerboard alpha rail, hand-written HSV↔RGB↔HEX↔HSL conversions, a pointer-drag helper mapping cursor to <code>sat</code>/<code>val</code>, one <code>render()</code> as the single source of truth, two-way text inputs that parse a color back into the picker, a WCAG contrast readout and the native EyeDropper — no <code>&lt;input type="color"&gt;</code> in sight. This is the HSV picker behind Photoshop, Figma and every dev-tools swatch. <strong>👉 Tomorrow — Day 29: Context Menu (right-click menu).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== COLOR MATH (hand-written, exact round-trips) =====
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+function hsvToRgb(h, s, v){                       // h 0-360, s/v 0-1
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  const seg = [[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]][Math.floor(h / 60) % 6];
+  return { r: Math.round((seg[0]+m)*255), g: Math.round((seg[1]+m)*255), b: Math.round((seg[2]+m)*255) };
+}
+function rgbToHsv(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  let h = 0;
+  if (d !== 0){
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return { h, s: max === 0 ? 0 : d / max, v: max };
+}
+function rgbToHsl(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min, l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (d !== 0){
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+function hslToRgb(h, s, l){                        // h 0-360, s/l 0-1
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  const seg = [[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]][Math.floor(h / 60) % 6];
+  return { r: Math.round((seg[0]+m)*255), g: Math.round((seg[1]+m)*255), b: Math.round((seg[2]+m)*255) };
+}
+const hex2 = n => n.toString(16).padStart(2, "0");
+const rgbToHex = (r, g, b) => "#" + hex2(r) + hex2(g) + hex2(b);
+function hexToRgb(hex){
+  hex = String(hex).replace(/^#/, "");
+  if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+  return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) };
+}
+const lum = c => { const f = x => { x/=255; return x <= 0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4); };
+  return 0.2126*f(c.r) + 0.7152*f(c.g) + 0.0722*f(c.b); };
+function contrast(a, b){ const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p); return (hi + 0.05) / (lo + 0.05); }
+
+// ===== STATE =====
+let hue = 0, sat = 1, val = 1, alpha = 1;
+
+const sv = document.getElementById("sv"), svThumb = document.getElementById("svThumb");
+const hueEl = document.getElementById("hue"), hueThumb = document.getElementById("hueThumb");
+const alphaEl = document.getElementById("alpha"), alphaFill = document.getElementById("alphaFill"), alphaThumb = document.getElementById("alphaThumb");
+const previewFill = document.getElementById("previewFill"), hexBig = document.getElementById("hexBig");
+const hexIn = document.getElementById("hexIn"), rgbIn = document.getElementById("rgbIn"), rgbaIn = document.getElementById("rgbaIn"), hslIn = document.getElementById("hslIn");
+const whiteCard = document.getElementById("whiteCard"), blackCard = document.getElementById("blackCard");
+
+const setField = (el, v) => { if (document.activeElement !== el) el.value = v; };
+
+function paintContrast(card, ratio){
+  const r = ratio;
+  card.querySelector(".ratio").textContent = r.toFixed(2) + ":1";
+  const badge = card.querySelector(".badge");
+  badge.textContent = r >= 7 ? "AAA" : r >= 4.5 ? "AA" : "Fail";
+  badge.className = "badge " + (r >= 4.5 ? "ok" : "bad");
+}
+
+function render(){
+  const rgb = hsvToRgb(hue, sat, val);
+  const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  const a = Math.round(alpha * 100) / 100;
+
+  sv.style.backgroundColor = "hsl(" + Math.round(hue) + ", 100%, 50%)";
+  svThumb.style.left = (sat * 100) + "%";
+  svThumb.style.top  = ((1 - val) * 100) + "%";
+  svThumb.style.backgroundColor = hex;
+  hueThumb.style.top   = ((hue / 360) * 100) + "%";
+  alphaThumb.style.top = ((1 - alpha) * 100) + "%";
+  alphaFill.style.background = "linear-gradient(to bottom, rgb(" + rgb.r + "," + rgb.g + "," + rgb.b + "), rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0))";
+  previewFill.style.background = "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", " + a + ")";
+  hexBig.textContent = hex.toUpperCase();
+
+  setField(hexIn,  hex);
+  setField(rgbIn,  "rgb(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ")");
+  setField(rgbaIn, "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", " + a + ")");
+  setField(hslIn,  "hsl(" + hsl.h + ", " + hsl.s + "%, " + hsl.l + "%)");
+
+  sv.setAttribute("aria-valuetext", "saturation " + Math.round(sat*100) + "%, value " + Math.round(val*100) + "%");
+  hueEl.setAttribute("aria-valuenow", Math.round(hue));
+  alphaEl.setAttribute("aria-valuenow", Math.round(alpha*100));
+
+  paintContrast(whiteCard, contrast(rgb, { r:255, g:255, b:255 }));
+  paintContrast(blackCard, contrast(rgb, { r:0, g:0, b:0 }));
+}
+
+// set state from an RGB object (used by inputs, presets, eyedropper)
+function applyRgb(rgb){
+  const c = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  if (c.s !== 0) hue = c.h;      // keep hue when the colour is a pure grey
+  sat = c.s; val = c.v;
+}
+
+// ===== DRAG =====
+function drag(el, onMove){
+  el.addEventListener("pointerdown", e => {
+    el.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const r = el.getBoundingClientRect();
+      onMove(clamp((ev.clientX - r.left) / r.width, 0, 1), clamp((ev.clientY - r.top) / r.height, 0, 1));
+    };
+    move(e);
+    el.onpointermove = move;
+    el.onpointerup = () => { el.onpointermove = null; el.onpointerup = null; };
+  });
+}
+drag(sv,      (x, y) => { sat = x; val = 1 - y; render(); });
+drag(hueEl,   (x, y) => { hue = y * 360;        render(); });
+drag(alphaEl, (x, y) => { alpha = 1 - y;        render(); });
+
+// ===== KEYBOARD (accessibility) =====
+sv.addEventListener("keydown", e => {
+  const st = e.shiftKey ? 0.1 : 0.02; let done = true;
+  if (e.key === "ArrowRight") sat = clamp(sat + st, 0, 1);
+  else if (e.key === "ArrowLeft") sat = clamp(sat - st, 0, 1);
+  else if (e.key === "ArrowUp") val = clamp(val + st, 0, 1);
+  else if (e.key === "ArrowDown") val = clamp(val - st, 0, 1);
+  else done = false;
+  if (done){ e.preventDefault(); render(); }
+});
+hueEl.addEventListener("keydown", e => {
+  const st = e.shiftKey ? 10 : 2; let done = true;
+  if (e.key === "ArrowUp" || e.key === "ArrowLeft") hue = (hue - st + 360) % 360;
+  else if (e.key === "ArrowDown" || e.key === "ArrowRight") hue = (hue + st) % 360;
+  else done = false;
+  if (done){ e.preventDefault(); render(); }
+});
+alphaEl.addEventListener("keydown", e => {
+  const st = e.shiftKey ? 0.1 : 0.02; let done = true;
+  if (e.key === "ArrowUp" || e.key === "ArrowRight") alpha = clamp(alpha + st, 0, 1);
+  else if (e.key === "ArrowDown" || e.key === "ArrowLeft") alpha = clamp(alpha - st, 0, 1);
+  else done = false;
+  if (done){ e.preventDefault(); render(); }
+});
+
+// ===== TWO-WAY TEXT INPUTS =====
+hexIn.addEventListener("input", () => { const rgb = hexToRgb(hexIn.value.trim()); if (!rgb) return; applyRgb(rgb); render(); });
+rgbIn.addEventListener("input", () => {
+  const m = rgbIn.value.match(/(\d+)\D+(\d+)\D+(\d+)/); if (!m) return;
+  applyRgb({ r: clamp(+m[1],0,255), g: clamp(+m[2],0,255), b: clamp(+m[3],0,255) }); render();
+});
+rgbaIn.addEventListener("input", () => {
+  const m = rgbaIn.value.match(/(\d+)\D+(\d+)\D+(\d+)\D+([\d.]+)/); if (!m) return;
+  applyRgb({ r: clamp(+m[1],0,255), g: clamp(+m[2],0,255), b: clamp(+m[3],0,255) });
+  alpha = clamp(parseFloat(m[4]), 0, 1); render();
+});
+hslIn.addEventListener("input", () => {
+  const m = hslIn.value.match(/(\d+)\D+(\d+)\D+(\d+)/); if (!m) return;
+  applyRgb(hslToRgb(clamp(+m[1],0,360), clamp(+m[2],0,100)/100, clamp(+m[3],0,100)/100)); render();
+});
+
+// ===== COPY BUTTONS =====
+document.querySelectorAll(".cp-copy").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const inp = document.getElementById(btn.dataset.c);
+    navigator.clipboard.writeText(inp.value);
+    const o = btn.textContent; btn.textContent = "✓"; setTimeout(() => btn.textContent = o, 1200);
+  });
+});
+
+// ===== PRESETS =====
+const PRESETS = ["#6366f1","#ef4444","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#ec4899","#14b8a6","#0f172a","#ffffff"];
+const presetsEl = document.getElementById("presets");
+PRESETS.forEach(hex => {
+  const sw = document.createElement("button");
+  sw.className = "swatch"; sw.style.background = hex; sw.title = hex;
+  sw.onclick = () => { const rgb = hexToRgb(hex); applyRgb(rgb); alpha = 1; render(); };
+  presetsEl.appendChild(sw);
+});
+
+// ===== EYEDROPPER (native API, feature-detected) =====
+const eyedrop = document.getElementById("eyedrop"), edNote = document.getElementById("edNote");
+if (!window.EyeDropper){
+  eyedrop.disabled = true; eyedrop.style.opacity = ".45"; eyedrop.style.cursor = "not-allowed";
+  edNote.textContent = "🔍 The native EyeDropper API isn't available in this browser — it currently ships in Chrome & Edge only.";
+} else {
+  eyedrop.addEventListener("click", async () => {
+    try { const res = await new EyeDropper().open(); const rgb = hexToRgb(res.sRGBHex); if (rgb){ applyRgb(rgb); alpha = 1; render(); } }
+    catch (_) { /* user pressed Esc */ }
+  });
+}
+
+// ===== INIT =====
+applyRgb(hexToRgb("#6366f1")); render();
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. RGB vs HSL vs HSV — three ways to name a color", why:"A screen makes color by mixing red, green and blue light, so RGB (three 0–255 channels) is how the machine stores it — but it is hostile to humans: to make 'a slightly less vivid blue' you have to nudge three numbers at once with no intuition for which. HSL and HSV are cylindrical remaps of the same RGB space into axes people actually think in. HSL is Hue (which color, 0–360°), Saturation (how colorful), Lightness (0 black … 100 white, 50 = the vivid color). HSV (a.k.a. HSB) is Hue, Saturation, Value/Brightness (0 black … 100 = full brightness). Same colors, friendlier controls — a picker converts between all three constantly.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">RGB  r,g,b 0–255      what the screen stores<br>HSL  h 0–360, s%, l%   50% l = vivid, 100% = white<br>HSV  h 0–360, s%, v%   100% v = full brightness<br><br>same color · different axes</div>`, code:`// pure red, three notations for one color:
+// rgb(255, 0, 0)
+// hsl(0, 100%, 50%)
+// hsv(0, 100%, 100%)   // v=100 (not 50) is 'full on'` },
+ { title:"2. Why pickers use HSV (the SV square + hue rail)", why:"HSV is the model that maps onto a 2-D pad plus a 1-D rail, which is why every serious picker uses it. Fix the hue (the rail), and the remaining two axes — saturation left-to-right, value top-to-bottom — fill a square perfectly: top-left is white, top-right is the pure hue, the whole bottom edge is black. That matches how people reason: 'I want a blue' (spin the hue), 'a muted, darkish one' (drag down-left in the square). HSL's square is less intuitive because its top edge is white and bottom edge is black with the vivid color stuck in the middle, so you can't reach a pure vivid color at a corner. Value's 'corner = pure hue' is what makes the HSV square feel right.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">hue rail picks WHICH color (0–360°)<br>┌──────────────┐<br>│white → hue    │ ← saturation<br>│              ↓│ ← value<br>│black … black  │<br>└──────────────┘<br>corner = pure vivid hue</div>`, code:`// square axes at a fixed hue:
+//   x  = saturation  (0 white  → 1 full hue)
+//   y  = value       (top 1 bright → bottom 0 black)
+// thumb: left = sat*W,  top = (1 - val)*H` },
+ { title:"3. HSV → RGB: the actual math", why:"To paint anything you must turn HSV back into RGB. The standard formula: chroma c = v·s is the colorfulness; the hue 0–360 splits into six 60° sectors, and x = c·(1 − |(h/60) mod 2 − 1|) is the value of the second-strongest channel rising and falling across each sector. Pick which of (r,g,b) get c, x and 0 by sector, then add the match-lightness m = v − c to all three to lift them off black, and scale by 255. Six lines. Sanity check it against a color you know: h=0, s=1, v=1 → c=1, x=0, m=0 → (1,0,0) → rgb(255,0,0). Correct.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">c = v·s              (chroma)<br>x = c·(1 - |(h/60)%2 - 1|)<br>m = v - c<br>sector = ⌊h/60⌋ → which channel gets c / x / 0<br>rgb = (chan + m) · 255</div>`, code:`function hsvToRgb(h,s,v){
+  const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+  const seg=[[c,x,0],[x,c,0],[0,c,x],
+             [0,x,c],[x,0,c],[c,0,x]][Math.floor(h/60)%6];
+  return { r:Math.round((seg[0]+m)*255),
+           g:Math.round((seg[1]+m)*255),
+           b:Math.round((seg[2]+m)*255) };
+}` },
+ { title:"4. RGB → HEX (and back)", why:"HEX is just RGB in base-16: #RRGGBB, two hex digits per channel. To build it, convert each 0–255 channel to hex and left-pad to two digits (so 5 becomes '05', not '5', which would corrupt the string). To parse it, strip the #, expand a 3-digit shorthand (#f00 → #ff0000) by doubling each digit, validate it is exactly six hex chars — and if not, bail out rather than crash, because the user is mid-type. That guard is what lets the HEX box accept live typing without exploding on '#ff'.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">255 → "ff"   0 → "00"   (padStart(2,"0"))<br>#ff0000<br>&nbsp;&nbsp;└┬┘└┬┘└┬┘<br>&nbsp;&nbsp; R  G  B<br>#f00 → #ff0000 (shorthand doubles each digit)</div>`, code:`const hex2 = n => n.toString(16).padStart(2,"0");
+const rgbToHex = (r,g,b) => "#"+hex2(r)+hex2(g)+hex2(b);
+
+function hexToRgb(hex){
+  hex = hex.replace(/^#/,"");
+  if (hex.length===3) hex = hex.split("").map(c=>c+c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;   // mid-type guard
+  return { r:parseInt(hex.slice(0,2),16),
+           g:parseInt(hex.slice(2,4),16),
+           b:parseInt(hex.slice(4,6),16) };
+}` },
+ { title:"5. HSL and why the output differs from HSV", why:"CSS speaks hsl() natively, so a picker usually offers HSL output too — but note the numbers differ from HSV even for the same color. Hue is identical, but HSL's Lightness peaks at 50% for a fully vivid color (100% is always white), whereas HSV's Value hits 100% there. So pure red is hsl(0,100%,50%) but hsv(0,100%,100%). The conversion from RGB: lightness is (max+min)/2, and saturation is scaled by how close lightness is to the extremes — s = (max−min)/(1−|2l−1|). Getting this right is what makes the HSL box agree with the rest of the picker.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">vivid red:<br>&nbsp;&nbsp;HSV  v = 100%   (full brightness)<br>&nbsp;&nbsp;HSL  l = 50%    (100% would be white)<br><br>l = (max+min)/2<br>s = (max-min)/(1-|2l-1|)</div>`, code:`function rgbToHsl(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  const d=max-min, l=(max+min)/2;
+  let h=0, s=0;
+  if (d){ s=d/(1-Math.abs(2*l-1));
+    h = max===r ? ((g-b)/d)%6 : max===g ? (b-r)/d+2 : (r-g)/d+4;
+    h*=60; if (h<0) h+=360; }
+  return { h:Math.round(h), s:Math.round(s*100), l:Math.round(l*100) };
+}` },
+ { title:"6. Alpha, opacity & the checkerboard", why:"Alpha is a fourth channel, 0 (fully transparent) to 1 (fully opaque), surfaced as the fourth value in rgba() or an 8-digit hex. The problem: how do you show 'half-transparent red' on screen? You render it over a grey-and-white checkerboard — a convention every image and design tool shares — so the transparency is literally visible as the pattern showing through. The alpha rail itself is that same checkerboard with a gradient from the full color at one end to fully transparent at the other painted on top, so dragging it previews exactly what a given opacity looks like.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">alpha 0 ──────────────► 1<br>transparent        opaque<br><br>shown over ▚▚▚ checkerboard<br>rgba(239,68,68, 0.5)</div>`, code:`// alpha rail = checkerboard + a colour->transparent gradient
+alphaFill.style.background =
+  "linear-gradient(to bottom,"
+   + "rgb("+r+","+g+","+b+"),"      // top: opaque colour
+   + "rgba("+r+","+g+","+b+",0))";  // bottom: transparent
+// preview swatch also sits on .checker so alpha is visible` },
+ { title:"7. Pointer drag → saturation & value", why:"The core interaction is turning a cursor position inside the square into two numbers. On pointerdown, capture the pointer (setPointerCapture) so the drag keeps tracking even when the cursor leaves the box or moves fast. On each move, take clientX/clientY, subtract the element's bounding rect, divide by width/height to normalize to 0–1, and clamp. x becomes saturation directly; y becomes value inverted (top = 1, bottom = 0). The rails reuse the exact same helper but read only the axis they care about — the hue rail uses y for 0–360°, the alpha rail uses y for 1–0. One function, three controls.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">(clientX - rect.left) / rect.width  → sat<br>(clientY - rect.top)  / rect.height → 1 - val<br>clamp everything to 0..1<br><br>setPointerCapture → drag survives leaving the box</div>`, code:`function drag(el, on){
+  el.addEventListener("pointerdown", e => {
+    el.setPointerCapture(e.pointerId);
+    const move = ev => { const r = el.getBoundingClientRect();
+      on(clamp((ev.clientX-r.left)/r.width,0,1),
+         clamp((ev.clientY-r.top)/r.height,0,1)); };
+    move(e); el.onpointermove = move;
+    el.onpointerup = () => el.onpointermove = null;
+  });
+}
+drag(sv, (x,y) => { sat=x; val=1-y; render(); });` },
+ { title:"8. Two-way binding: parse a typed value back in", why:"A picker that only outputs text is half a tool. Real ones let you paste a color and jump to it. Make each output box an editable input; on every keystroke, parse the text and — only if it is valid — convert it back to HSV, overwrite the state, and re-render, which snaps the square and rails into place. Two gotchas. First, ignore un-parseable input instead of throwing, because '#1' is a valid intermediate keystroke. Second, in render() do NOT overwrite the value of the field the user is currently focused in, or you fight their cursor. Check document.activeElement before writing each input.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">type "#10b981"<br>&nbsp;&nbsp;→ hexToRgb → rgbToHsv → set hue/sat/val<br>&nbsp;&nbsp;→ render() moves square + rails<br><br>skip writing the focused input (don't fight cursor)</div>`, code:`hexIn.addEventListener("input", () => {
+  const rgb = hexToRgb(hexIn.value.trim());
+  if (!rgb) return;                 // half-typed → ignore
+  const c = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  if (c.s !== 0) hue = c.h; sat = c.s; val = c.v;
+  render();
+});
+const set = (el,v) => { if (document.activeElement !== el) el.value = v; };` },
+ { title:"9. Accessibility: contrast, and don't rely on hue alone", why:"Color choices carry accessibility weight. First, ~8% of men have some color-vision deficiency, so a picked color must never be the only way information is conveyed — pair it with text, icons or patterns ('don't rely on hue alone'). Second, if the color is used for text or UI, it must have enough contrast against its background: WCAG defines a ratio from relative luminance, requiring ≥ 4.5:1 for normal text (AA) and ≥ 7:1 (AAA). Compute it live so the picker can warn. Third, the controls themselves must be operable: give the square and rails focus outlines and arrow-key support, and label them, because a mouse-only picker excludes keyboard users.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">contrast = (Llight+0.05)/(Ldark+0.05)   → 1 … 21<br>AA text ≥ 4.5:1   ·   AAA ≥ 7:1<br><br>+ never encode meaning by hue alone<br>+ arrow keys + focus rings on square/rails</div>`, code:`const lum = c => { const f = x => { x/=255;
+  return x<=.03928 ? x/12.92 : ((x+.055)/1.055)**2.4; };
+  return .2126*f(c.r)+.7152*f(c.g)+.0722*f(c.b); };
+
+function contrast(a,b){
+  const [hi,lo] = [lum(a),lum(b)].sort((p,q)=>q-p);
+  return (hi+.05)/(lo+.05);           // AA if >= 4.5
+}` },
+ { title:"10. The native EyeDropper API", why:"Modern Chromium browsers ship a built-in EyeDropper that lets a web app sample any pixel on the whole screen — outside the page included. You construct one and call .open(), which returns a promise resolving to { sRGBHex } once the user clicks, or rejecting if they press Esc. It is powerful and privacy-gated: it only fires from a user gesture and only returns the one pixel the user deliberately clicks. Feature-detect with 'window.EyeDropper' and degrade gracefully — Firefox and Safari don't have it yet, so hide or disable the button there rather than calling an undefined constructor. It's the one place a from-scratch picker leans on a platform primitive, because sampling arbitrary screen pixels isn't otherwise possible from JS.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">if (window.EyeDropper) {           // Chrome / Edge only<br>&nbsp;&nbsp;new EyeDropper().open()<br>&nbsp;&nbsp;&nbsp;&nbsp;.then(r => setHex(r.sRGBHex))  // clicked<br>&nbsp;&nbsp;&nbsp;&nbsp;.catch(()=>{})                 // Esc<br>}  // else: disable the button</div>`, code:`const btn = document.getElementById("eyedrop");
+if (!window.EyeDropper){ btn.disabled = true; }   // feature-detect
+else btn.addEventListener("click", async () => {
+  try { const res = await new EyeDropper().open();
+        applyRgb(hexToRgb(res.sRGBHex)); render(); }
+  catch (_) { /* user cancelled with Esc */ }
+});` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
