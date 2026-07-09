@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 29 — Context Menu</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== demo surface (a little file explorer) ===== */
+  .surface {
+    position:relative; border-radius:16px; background:#fff;
+    box-shadow: inset 0 0 0 1px rgba(15,23,42,.08);
+    min-height:360px; overflow:auto; user-select:none;
+  }
+  .file-grid {
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(104px,1fr)); gap:6px; padding:18px;
+  }
+  .file-card {
+    display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px 10px;
+    border-radius:14px; border:1px solid transparent; cursor:default;
+  }
+  .file-card:hover { background:#f8fafc; }
+  .file-card.sel { background:#eef2ff; border-color:#c7d2fe; }
+  .file-card .fc-ic { font-size:34px; line-height:1; }
+  .file-card .fc-nm { font-size:12px; color:#334155; font-weight:600; text-align:center; word-break:break-word; }
+  /* ===== the custom context menu ===== */
+  .ctx-menu {
+    position:fixed; min-width:222px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+    padding:6px; z-index:60; font-size:14px; user-select:none; outline:none;
+    box-shadow: 0 14px 34px rgba(15,23,42,.20), 0 3px 10px rgba(15,23,42,.08);
+    animation: ctxIn .12s ease-out;
+  }
+  @keyframes ctxIn { from { opacity:0; transform:scale(.97); } to { opacity:1; transform:none; } }
+  .ctx-item {
+    display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:8px;
+    cursor:pointer; color:#0f172a; white-space:nowrap;
+  }
+  .ctx-item .ctx-ic  { width:18px; text-align:center; font-size:15px; }
+  .ctx-item .ctx-lbl { flex:1; }
+  .ctx-item .ctx-sc  { color:#94a3b8; font-size:12px; font-weight:600; letter-spacing:.02em; }
+  .ctx-item .ctx-arrow { color:#94a3b8; font-size:12px; }
+  .ctx-item.active { background:#eef2ff; color:#4338ca; }
+  .ctx-item.active .ctx-sc, .ctx-item.active .ctx-arrow { color:#6366f1; }
+  .ctx-item.danger { color:#dc2626; }
+  .ctx-item.danger.active { background:#fef2f2; color:#b91c1c; }
+  .ctx-item.disabled { color:#cbd5e1; cursor:not-allowed; }
+  .ctx-item.disabled.active { background:#f8fafc; color:#cbd5e1; }
+  .ctx-sep { height:1px; background:#e2e8f0; margin:5px 8px; }
+  .badge { font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px; letter-spacing:.03em; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .ctx-menu { animation:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 29</div>
+      <h1 class="text-xl font-bold">🖱️ Context Menu — Custom Right-Click Menu with Edge-Flip Positioning, Nested Submenus, Full Keyboard Nav &amp; ARIA Roles</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Right-click any file — or the empty space — to open the menu.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">This is a real <strong>context menu</strong> built from scratch in vanilla JS. It <strong>blocks the browser's native menu</strong> (<code>preventDefault</code> on <code>contextmenu</code>) and opens its own at the cursor. It has <strong>icons + shortcuts</strong>, <strong>separators</strong>, a <strong>disabled</strong> item, a nested <strong>submenu</strong> (hover <em>Share</em>) and a <strong>destructive</strong> item. It is <strong>edge-aware</strong> — right-click near the right or bottom edge and it flips so it never spills off-screen. Full keyboard: <kbd>↑</kbd><kbd>↓</kbd> move, <kbd>→</kbd>/<kbd>←</kbd> open/close the submenu, <kbd>Enter</kbd> activate, <kbd>Esc</kbd> close. It also dismisses on outside-click, scroll and window blur.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files &middot; right-click to act</div>
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span class="badge" style="background:#eef2ff;color:#4338ca;">tip</span>
+            try near the <strong>right / bottom edge</strong>
+          </div>
+        </div>
+
+        <div class="surface" id="surface" tabindex="0" aria-label="File area, right-click for actions">
+          <div class="file-grid" id="fileGrid"></div>
+        </div>
+
+        <div class="mt-4 flex items-center gap-3">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Last action</div>
+          <div id="status" class="text-sm font-semibold text-slate-700">— nothing yet, right-click above —</div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">This is the same right-click menu you use in Finder, VS Code, Figma and every file manager. Under the hood it is a positioned element, a tiny bit of clamp/flip geometry, a roving-tabindex keyboard model and a handful of dismiss listeners — no library.</p>
+    </div>
+  </div>
+
+  <!-- menus are appended here so they escape the card's overflow -->
+  <div id="menuLayer"></div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a context menu works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A menu described as a plain data array, rendered to a positioned element, dropped at the cursor with a little clamp/flip geometry so it never leaves the viewport, a roving-tabindex keyboard model with a submenu that opens on <kbd>→</kbd> and hover, and a few dismiss listeners (outside-click, <kbd>Esc</kbd>, scroll, blur) — plus the one line that makes it all possible: <code>preventDefault</code> on the <code>contextmenu</code> event. ~130 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Block the native menu, open yours</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Listen for <code>contextmenu</code> on the surface and call <code>preventDefault()</code> — that suppresses the browser's own right-click menu. The event carries <code>clientX/clientY</code>: the exact cursor point to open at.</p>
+        <div class="relative"><pre>surface.addEventListener("contextmenu", e =&gt; {
+  e.preventDefault();                       // kill the native menu
+  const card = e.target.closest(".file-card");
+  select(card);                             // remember what was clicked
+  openRoot(e.clientX, e.clientY);           // open ours at the cursor
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Describe the menu as data</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Don't hand-write markup for every item. Describe the menu as an array of plain objects — icon, label, shortcut, and flags for <code>sep</code> / <code>disabled</code> / <code>danger</code> / <code>submenu</code> — and render it. Now the structure is data you can reorder, gate or generate.</p>
+        <div class="relative"><pre>const MENU = [
+  { icon:"✂️", label:"Cut",   shortcut:"Ctrl+X" },
+  { icon:"📋", label:"Copy",  shortcut:"Ctrl+C" },
+  { icon:"📎", label:"Paste", shortcut:"Ctrl+V", disabled:true },
+  { sep:true },
+  { icon:"📤", label:"Share", submenu:[ /* … */ ] },
+  { sep:true },
+  { icon:"🗑️", label:"Delete", shortcut:"Del", danger:true },
+];</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Render each item with its ARIA role</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Build a <code>role="menu"</code> container. Separators become <code>role="separator"</code>; every other row is <code>role="menuitem"</code> with <code>tabindex="-1"</code> (roving). Items with a submenu get <code>aria-haspopup</code> + <code>aria-expanded</code>; disabled ones get <code>aria-disabled</code>.</p>
+        <div class="relative"><pre>function buildMenu(items){
+  const el = document.createElement("div");
+  el.className = "ctx-menu"; el.setAttribute("role","menu"); el.tabIndex = -1;
+  for (const it of items){
+    if (it.sep){ el.insertAdjacentHTML("beforeend",
+      '&lt;div class="ctx-sep" role="separator"&gt;&lt;/div&gt;'); continue; }
+    const b = document.createElement("div");
+    b.setAttribute("role","menuitem"); b.tabIndex = -1;
+    b.className = "ctx-item" + (it.danger?" danger":"") + (it.disabled?" disabled":"");
+    if (it.disabled) b.setAttribute("aria-disabled","true");
+    if (it.submenu){ b.setAttribute("aria-haspopup","true");
+                     b.setAttribute("aria-expanded","false"); }
+    b._item = it; b.innerHTML = row(it); el.appendChild(b);
+  }
+  return el;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Place at the cursor — then flip &amp; clamp</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The whole trick. Measure the menu <em>after</em> it is in the DOM (append hidden, read <code>getBoundingClientRect</code>). If opening at the cursor would overflow the right edge, flip it to open leftward; likewise flip up for the bottom edge. Then clamp so it can never sit off-screen. Because the menu is <code>position:fixed</code>, <code>clientX/clientY</code> map straight to <code>left/top</code>.</p>
+        <div class="relative"><pre>function placeMenu(x, y, mw, mh, vw, vh, margin){
+  margin = margin || 8;
+  let px = x;
+  if (x + mw + margin &gt; vw) px = x - mw;        // flip left off the right edge
+  if (px &lt; margin) px = vw - mw - margin;        // still overflowing? pin right
+  if (px &lt; margin) px = margin;                  // menu wider than screen: pin left
+  let py = y;
+  if (y + mh + margin &gt; vh) py = y - mh;         // flip up off the bottom edge
+  if (py &lt; margin) py = vh - mh - margin;
+  if (py &lt; margin) py = margin;
+  return { x: px, y: py };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Roving tabindex + keyboard nav</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Only one item is "active" at a time. <code>setActive</code> moves a highlight and calls <code>.focus()</code> on that row (wrapping at the ends). One <code>keydown</code> handler on the deepest open menu drives everything: arrows move, <kbd>Home</kbd>/<kbd>End</kbd> jump, <kbd>Enter</kbd> activates, <kbd>Esc</kbd> closes one level.</p>
+        <div class="relative"><pre>function setActive(rec, i){
+  const items = rec.items; if (!items.length) return;
+  i = (i + items.length) % items.length;                 // wrap
+  items.forEach(el =&gt; el.classList.remove("active"));
+  rec.active = i; items[i].classList.add("active"); items[i].focus();
+}
+function onKey(e){
+  const rec = stack[stack.length - 1]; if (!rec) return;  // deepest menu
+  const k = e.key, cur = rec.items[rec.active];
+  if (k === "ArrowDown"){ e.preventDefault(); setActive(rec, rec.active + 1); }
+  else if (k === "ArrowUp"){ e.preventDefault(); setActive(rec, rec.active - 1); }
+  else if (k === "Home"){ e.preventDefault(); setActive(rec, 0); }
+  else if (k === "End"){ e.preventDefault(); setActive(rec, rec.items.length - 1); }
+  else if (k === "Enter" || k === " "){ e.preventDefault(); activate(rec, cur); }
+  else if (k === "Escape"){ e.preventDefault(); closeTop(); }
+  else if (k === "Tab"){ e.preventDefault(); setActive(rec, rec.active + (e.shiftKey?-1:1)); }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Submenus: a stack of menus</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep open menus in a <code>stack</code>. Opening a submenu builds another menu next to the parent item (flipping left if it would overflow) and pushes it — so it becomes the keyboard target. <kbd>→</kbd> / hover open it; <kbd>←</kbd> pops it and returns focus to the parent row.</p>
+        <div class="relative"><pre>function openSub(rec, itemEl){
+  const it = itemEl._item; if (!it.submenu) return;
+  itemEl.setAttribute("aria-expanded","true");
+  const el = buildMenu(it.submenu); layer.appendChild(el);
+  const m = el.getBoundingClientRect(), r = itemEl.getBoundingClientRect();
+  let x = r.right - 2;                                  // prefer the right side
+  if (x + m.width + 8 &gt; innerWidth) x = r.left - m.width + 2;   // else flip left
+  el.style.left = Math.max(8, x) + "px"; el.style.top = r.top + "px";
+  const sub = { el, items:[...el.querySelectorAll(".ctx-item")], active:-1, parent:itemEl };
+  stack.push(sub); wire(sub); return sub;
+}
+// ArrowRight → openSub(rec, cur) then setActive(sub, 0)
+// ArrowLeft  → closeTop() (only when rec.parent exists)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Dismiss: outside-click, Esc, scroll, blur</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A menu must be easy to make go away. Close everything on a pointer-down that lands outside any menu, on window <code>scroll</code> (the anchor moved), and on window <code>blur</code> (you alt-tabbed). <kbd>Esc</kbd> closes one level at a time. Use capture-phase listeners so they fire before anything else.</p>
+        <div class="relative"><pre>document.addEventListener("pointerdown", e =&gt; {
+  if (stack.length &amp;&amp; !e.target.closest(".ctx-menu")) closeAll();
+}, true);
+addEventListener("scroll", () =&gt; stack.length &amp;&amp; closeAll(), true);
+addEventListener("blur",   () =&gt; stack.length &amp;&amp; closeAll());
+addEventListener("resize", () =&gt; stack.length &amp;&amp; closeAll());
+function closeAll(){ stack.forEach(r =&gt; r.el.remove()); stack = []; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Activate — and long-press for touch</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Activating an item runs its action and closes the menu — unless it is disabled (ignore) or has a submenu (open it instead). Touch devices have no right-click, so map a ~500ms <strong>long-press</strong> to the same <code>openRoot</code> and cancel it if the finger moves.</p>
+        <div class="relative"><pre>function activate(rec, el){
+  const it = el &amp;&amp; el._item; if (!it || it.disabled) return;
+  if (it.submenu) return openSub(rec, el);   // open, don't run
+  run(it); closeAll();
+}
+let t; surface.addEventListener("touchstart", e =&gt; {
+  const p = e.touches[0];
+  t = setTimeout(() =&gt; openRoot(p.clientX, p.clientY), 500);   // long-press
+}, { passive:true });
+surface.addEventListener("touchmove", () =&gt; clearTimeout(t), { passive:true });
+surface.addEventListener("touchend",  () =&gt; clearTimeout(t));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 29 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real context menu from scratch: it blocks the native menu with one <code>preventDefault</code>, renders from a data array with icons, shortcuts, separators, a disabled and a destructive item, drops at the cursor and <strong>flips + clamps</strong> so it never leaves the viewport, opens a nested submenu on hover and <kbd>→</kbd>, drives a full roving-tabindex keyboard model, carries the right ARIA roles, and dismisses on outside-click, scroll, blur and <kbd>Esc</kbd> — plus a long-press for touch. This is the right-click menu behind Finder, VS Code and Figma. <strong>👉 Tomorrow — Day 30: Data Table (sortable, resizable columns).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DEMO DATA =====
+const FILES = [
+  { icon:"📄", name:"Q3-report.pdf" },
+  { icon:"🖼️", name:"logo-final.png" },
+  { icon:"📊", name:"budget.xlsx" },
+  { icon:"📁", name:"Screenshots" },
+  { icon:"🎬", name:"demo.mp4" },
+  { icon:"📝", name:"notes.md" },
+  { icon:"🗜️", name:"archive.zip" },
+  { icon:"⚙️", name:"config.json" }
+];
+
+const MENU = [
+  { icon:"✂️", label:"Cut",              shortcut:"Ctrl+X" },
+  { icon:"📋", label:"Copy",             shortcut:"Ctrl+C" },
+  { icon:"📎", label:"Paste",            shortcut:"Ctrl+V", disabled:true },
+  { sep:true },
+  { icon:"✏️", label:"Rename",           shortcut:"F2" },
+  { icon:"⭐", label:"Add to Favorites" },
+  { icon:"📤", label:"Share", submenu:[
+      { icon:"✉️", label:"Email a copy" },
+      { icon:"💬", label:"Send in chat" },
+      { icon:"🔗", label:"Get shareable link" },
+      { icon:"🐦", label:"Post to X" }
+  ] },
+  { sep:true },
+  { icon:"🗑️", label:"Delete", shortcut:"Del", danger:true }
+];
+
+// ===== SURFACE / FILES =====
+const surface = document.getElementById("surface");
+const fileGrid = document.getElementById("fileGrid");
+const layer = document.getElementById("menuLayer");
+const statusEl = document.getElementById("status");
+let targetName = "empty area";
+
+FILES.forEach(f => {
+  const c = document.createElement("div");
+  c.className = "file-card"; c.dataset.name = f.name;
+  c.innerHTML = '<div class="fc-ic">' + f.icon + '</div><div class="fc-nm">' + f.name + '</div>';
+  fileGrid.appendChild(c);
+});
+
+function select(card){
+  document.querySelectorAll(".file-card").forEach(c => c.classList.remove("sel"));
+  if (card){ card.classList.add("sel"); targetName = card.dataset.name; }
+  else targetName = "empty area";
+}
+function run(it){
+  statusEl.textContent = it.label + "  →  " + targetName;
+  statusEl.style.color = it.danger ? "#dc2626" : "#4338ca";
+}
+
+// ===== MENU ENGINE =====
+let stack = [];                        // stack of open menus (deepest = last)
+
+function row(it){
+  return '<span class="ctx-ic">' + (it.icon || "") + '</span>' +
+         '<span class="ctx-lbl">' + it.label + '</span>' +
+         (it.submenu ? '<span class="ctx-arrow">▸</span>'
+                     : '<span class="ctx-sc">' + (it.shortcut || "") + '</span>');
+}
+function buildMenu(items){
+  const el = document.createElement("div");
+  el.className = "ctx-menu"; el.setAttribute("role", "menu"); el.tabIndex = -1;
+  items.forEach(it => {
+    if (it.sep){
+      const s = document.createElement("div");
+      s.className = "ctx-sep"; s.setAttribute("role", "separator");
+      el.appendChild(s); return;
+    }
+    const b = document.createElement("div");
+    b.setAttribute("role", "menuitem"); b.tabIndex = -1;
+    b.className = "ctx-item" + (it.danger ? " danger" : "") + (it.disabled ? " disabled" : "");
+    if (it.disabled) b.setAttribute("aria-disabled", "true");
+    if (it.submenu){ b.setAttribute("aria-haspopup", "true"); b.setAttribute("aria-expanded", "false"); }
+    b._item = it; b.innerHTML = row(it);
+    el.appendChild(b);
+  });
+  return el;
+}
+const itemsOf = el => Array.prototype.slice.call(el.querySelectorAll(".ctx-item"));
+
+//__PLACE_START__
+function placeMenu(x, y, mw, mh, vw, vh, margin){
+  margin = margin || 8;
+  let px = x;
+  if (x + mw + margin > vw) px = x - mw;              // flip left off the right edge
+  px = Math.min(px, vw - mw - margin);               // clamp to the right margin
+  px = Math.max(px, margin);                         // clamp to the left margin
+  let py = y;
+  if (y + mh + margin > vh) py = y - mh;             // flip up off the bottom edge
+  py = Math.min(py, vh - mh - margin);
+  py = Math.max(py, margin);
+  return { x: px, y: py };
+}
+//__PLACE_END__
+
+function setActive(rec, i){
+  const items = rec.items; if (!items.length) return;
+  i = (i + items.length) % items.length;
+  items.forEach(el => el.classList.remove("active"));
+  rec.active = i; items[i].classList.add("active"); items[i].focus();
+}
+function deeperOf(rec){ return stack[stack.indexOf(rec) + 1]; }
+
+function openRoot(x, y){
+  closeAll();
+  const el = buildMenu(MENU);
+  el.style.visibility = "hidden"; el.style.left = "0px"; el.style.top = "0px";
+  layer.appendChild(el);
+  const r = el.getBoundingClientRect();
+  const p = placeMenu(x, y, r.width, r.height, window.innerWidth, window.innerHeight);
+  el.style.left = p.x + "px"; el.style.top = p.y + "px"; el.style.visibility = "";
+  const rec = { el, items: itemsOf(el), active: -1, parent: null };
+  stack.push(rec); wire(rec); el.focus();
+}
+function openSub(rec, itemEl){
+  const it = itemEl._item; if (!it.submenu) return null;
+  const existing = deeperOf(rec);
+  if (existing && existing.parent === itemEl) return existing;   // already open
+  closeDeeper(rec);
+  itemEl.setAttribute("aria-expanded", "true");
+  const el = buildMenu(it.submenu);
+  el.style.visibility = "hidden"; el.style.left = "0px"; el.style.top = "0px";
+  layer.appendChild(el);
+  const m = el.getBoundingClientRect(), r = itemEl.getBoundingClientRect();
+  let x = r.right - 2;
+  if (x + m.width + 8 > window.innerWidth) x = r.left - m.width + 2;   // flip left
+  if (x < 8) x = 8;
+  let y = r.top - 6;
+  if (y + m.height + 8 > window.innerHeight) y = window.innerHeight - m.height - 8;
+  if (y < 8) y = 8;
+  el.style.left = x + "px"; el.style.top = y + "px"; el.style.visibility = "";
+  const sub = { el, items: itemsOf(el), active: -1, parent: itemEl };
+  stack.push(sub); wire(sub); return sub;
+}
+function closeDeeper(rec){
+  const idx = stack.indexOf(rec);
+  while (stack.length - 1 > idx){
+    const top = stack.pop();
+    if (top.parent) top.parent.setAttribute("aria-expanded", "false");
+    top.el.remove();
+  }
+}
+function closeTop(){
+  if (stack.length <= 1) return closeAll();
+  const top = stack.pop();
+  if (top.parent) top.parent.setAttribute("aria-expanded", "false");
+  top.el.remove();
+  const parentRec = stack[stack.length - 1];
+  if (top.parent){ const i = parentRec.items.indexOf(top.parent); if (i >= 0) setActive(parentRec, i); }
+  else parentRec.el.focus();
+}
+function closeAll(){ stack.forEach(r => r.el.remove()); stack = []; }
+
+function activate(rec, itemEl){
+  const it = itemEl && itemEl._item; if (!it || it.disabled) return;
+  if (it.submenu){ const sub = openSub(rec, itemEl); if (sub) setActive(sub, 0); return; }
+  run(it); closeAll();
+}
+function wire(rec){
+  rec.items.forEach((el, i) => {
+    el.addEventListener("mouseenter", () => {
+      setActive(rec, i);
+      const deeper = deeperOf(rec);
+      if (deeper && deeper.parent === el) return;   // already showing this submenu
+      closeDeeper(rec);
+      if (el._item.submenu) openSub(rec, el);
+    });
+    el.addEventListener("click", e => { e.stopPropagation(); activate(rec, el); });
+  });
+}
+
+// ===== KEYBOARD (roving tabindex, on the deepest menu) =====
+function onKey(e){
+  const rec = stack[stack.length - 1]; if (!rec) return;
+  const k = e.key, cur = rec.items[rec.active];
+  if (k === "ArrowDown"){ e.preventDefault(); setActive(rec, rec.active + 1); }
+  else if (k === "ArrowUp"){ e.preventDefault(); setActive(rec, rec.active - 1); }
+  else if (k === "Home"){ e.preventDefault(); setActive(rec, 0); }
+  else if (k === "End"){ e.preventDefault(); setActive(rec, rec.items.length - 1); }
+  else if (k === "ArrowRight"){
+    if (cur && cur._item.submenu){ e.preventDefault(); const sub = openSub(rec, cur); if (sub) setActive(sub, 0); }
+  }
+  else if (k === "ArrowLeft"){ if (rec.parent){ e.preventDefault(); closeTop(); } }
+  else if (k === "Enter" || k === " "){ e.preventDefault(); activate(rec, cur); }
+  else if (k === "Escape"){ e.preventDefault(); closeTop(); }
+  else if (k === "Tab"){ e.preventDefault(); setActive(rec, rec.active + (e.shiftKey ? -1 : 1)); }
+}
+document.addEventListener("keydown", onKey);
+
+// ===== DISMISS TRIGGERS =====
+document.addEventListener("pointerdown", e => {
+  if (stack.length && !e.target.closest(".ctx-menu")) closeAll();
+}, true);
+window.addEventListener("scroll", () => { if (stack.length) closeAll(); }, true);
+window.addEventListener("resize", () => { if (stack.length) closeAll(); });
+window.addEventListener("blur",   () => { if (stack.length) closeAll(); });
+
+// ===== OPEN ON RIGHT-CLICK (native menu blocked) =====
+surface.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  select(e.target.closest(".file-card"));
+  openRoot(e.clientX, e.clientY);
+});
+
+// ===== MOBILE LONG-PRESS =====
+let lpTimer = null;
+surface.addEventListener("touchstart", e => {
+  const p = e.touches[0]; const x = p.clientX, y = p.clientY;
+  lpTimer = setTimeout(() => {
+    const el = document.elementFromPoint(x, y);
+    select(el && el.closest(".file-card"));
+    openRoot(x, y);
+  }, 500);
+}, { passive: true });
+surface.addEventListener("touchmove", () => clearTimeout(lpTimer), { passive: true });
+surface.addEventListener("touchend",  () => clearTimeout(lpTimer));
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. The contextmenu event — and blocking the native menu", why:"Right-clicking anywhere fires a contextmenu event, and by default the browser answers it with its own menu (Back, Reload, Inspect…). To show your own instead, you listen for that event and call preventDefault() — that one line suppresses the browser's menu. The event object also carries the cursor position as clientX/clientY (relative to the viewport), which is exactly where the menu should appear. Be a good citizen: only block it over your own surface. Outside your app the user still gets the native menu, so you never take away 'copy image' or spell-check where people expect them.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">right-click ─► 'contextmenu' event<br>&nbsp;&nbsp;e.preventDefault()   // no native menu<br>&nbsp;&nbsp;open your menu at (e.clientX, e.clientY)<br><br>scope it to your surface, not the whole page</div>`, code:`surface.addEventListener("contextmenu", e => {
+  e.preventDefault();               // suppress the browser's own menu
+  openRoot(e.clientX, e.clientY);   // clientX/Y = the cursor point
+});` },
+ { title:"2. Positioning at the cursor with position:fixed", why:"The menu is a floating layer, so give it position:fixed and set left/top from the cursor. fixed is positioned relative to the viewport, so clientX/clientY map to left/top with no scroll math — unlike absolute, which is relative to the nearest positioned ancestor and would drift when the page scrolls. Append the menu to a top-level layer (near <body>), not inside the card you right-clicked, so a parent with overflow:hidden or a low stacking context can't clip or bury it. Give it a high z-index so it sits above everything.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">.ctx-menu { position: fixed; z-index: 60; }<br>el.style.left = x + "px";<br>el.style.top&nbsp;&nbsp;= y + "px";<br><br>append to a body-level layer → nothing clips it</div>`, code:`.ctx-menu { position: fixed; z-index: 60; }
+
+layer.appendChild(el);          // body-level, not inside the card
+el.style.left = x + "px";
+el.style.top  = y + "px";` },
+ { title:"3. Edge-flip & clamp so it never spills off-screen", why:"Naively placing the menu at the cursor breaks near an edge: right-click 20px from the right and half the menu is off-screen. Fix it in two moves. First measure the menu — you must append it first (hidden) because a detached element has no size — then read getBoundingClientRect(). Flip: if cursor.x + menuWidth overflows the viewport, open leftward (x - menuWidth) instead; same for the bottom edge (open upward). Clamp: after flipping, pin it inside a small margin so even a menu taller than the space left can't escape. This is the exact logic behind every native right-click menu.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">if (x + w > vw)  x = x - w;   // flip left<br>if (y + h > vh)  y = y - h;   // flip up<br>x = clamp(x, m, vw - w - m);  // then pin<br>y = clamp(y, m, vh - h - m);<br><br>measure AFTER appending (hidden) — 0 size otherwise</div>`, code:`function placeMenu(x, y, mw, mh, vw, vh, m = 8){
+  let px = x;
+  if (x + mw + m > vw) px = x - mw;      // flip off right edge
+  px = Math.max(m, Math.min(px, vw - mw - m));   // clamp
+  let py = y;
+  if (y + mh + m > vh) py = y - mh;      // flip off bottom edge
+  py = Math.max(m, Math.min(py, vh - mh - m));
+  return { x: px, y: py };
+}` },
+ { title:"4. Menu as data → DOM (icons, shortcuts, separators, disabled, destructive)", why:"Describe the menu once as an array of plain objects — icon, label, shortcut, and flags like sep, disabled, danger, submenu — and render from it. That keeps structure separate from presentation, so you can reorder, gate by permission or generate items at runtime. Each type reads instantly to users: an icon anchors the eye, a right-aligned shortcut teaches the keyboard, a thin separator groups related actions, a greyed disabled row shows an action that exists but isn't available right now, and a red destructive row (usually last, after a separator) makes 'Delete' impossible to hit by reflex.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">✂️ Cut&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ctrl+X<br>📋 Copy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ctrl+C<br>📎 Paste&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(disabled)<br>──────────────<br>📤 Share&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;▸<br>──────────────<br>🗑️ Delete&nbsp;&nbsp;&nbsp;(danger)</div>`, code:`const MENU = [
+  { icon:"✂️", label:"Cut",  shortcut:"Ctrl+X" },
+  { icon:"📋", label:"Copy", shortcut:"Ctrl+C" },
+  { icon:"📎", label:"Paste", disabled:true },
+  { sep:true },
+  { icon:"📤", label:"Share", submenu:[ /* … */ ] },
+  { sep:true },
+  { icon:"🗑️", label:"Delete", danger:true },
+];` },
+ { title:"5. Roving tabindex + focus management", why:"A menu is one Tab stop, not a dozen. That is the roving-tabindex pattern: every item has tabindex=-1 (not in the natural Tab order) and the code moves DOM focus to exactly one 'active' item at a time with .focus(). When the menu opens you move focus into it; the highlight and the focused element are always the same row, so screen-reader users and sighted users are on the same item. Because focus is trapped in the menu, Tab doesn't leak out to the page behind it — you handle Tab yourself (here it just moves to the next item and wraps).", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">every item: tabindex = -1<br>one active item gets .focus()<br>↓ moves focus + highlight together<br><br>focus stays inside → Tab can't escape</div>`, code:`function setActive(rec, i){
+  const items = rec.items;
+  i = (i + items.length) % items.length;      // wrap around
+  items.forEach(el => el.classList.remove("active"));
+  rec.active = i;
+  items[i].classList.add("active");
+  items[i].focus();                            // move real DOM focus
+}` },
+ { title:"6. Keyboard navigation: arrows, Enter, Home/End", why:"A menu you can only use with a mouse is broken for keyboard and screen-reader users — and slow for power users. One keydown handler, aimed at the deepest open menu, covers it: Up/Down move the active item and wrap at the ends; Home/End jump to first/last; Enter (or Space) activates the current item; Escape closes. Call preventDefault on every key you handle so arrows don't also scroll the page. Because setActive wraps, pressing Down on the last item lands back on the first — the small touch that makes a menu feel finished.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">↑ / ↓&nbsp;&nbsp;&nbsp;move (wraps)<br>Home / End&nbsp;&nbsp;first / last<br>Enter / Space&nbsp;&nbsp;activate<br>Esc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;close<br><br>preventDefault() so arrows don't scroll</div>`, code:`function onKey(e){
+  const rec = stack[stack.length - 1]; if (!rec) return;
+  if (e.key === "ArrowDown"){ e.preventDefault(); setActive(rec, rec.active + 1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); setActive(rec, rec.active - 1); }
+  else if (e.key === "Home"){ e.preventDefault(); setActive(rec, 0); }
+  else if (e.key === "End"){ e.preventDefault(); setActive(rec, rec.items.length - 1); }
+  else if (e.key === "Enter"){ e.preventDefault(); activate(rec, rec.items[rec.active]); }
+  else if (e.key === "Escape"){ e.preventDefault(); closeTop(); }
+}` },
+ { title:"7. Submenus: a stack of menus, opened on hover and →", why:"Nesting is why you build a custom menu at all — the native one can't do a rich 'Share ▸' fly-out. Model open menus as a stack: the root is the bottom, each submenu pushes on top, and the top of the stack is always the keyboard target. Open a submenu next to its parent item (and flip it left if it would overflow the right edge, just like the root). Open it on hover, on Enter, or on ArrowRight; ArrowLeft (or hovering a sibling) pops it and returns focus to the parent row. Guard against reopening the same submenu on every mouse-move so it doesn't flicker.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">stack: [ root, share-submenu ]  ← keyboard target<br><br>Share ▸ │ ✉️ Email<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│ 💬 Chat<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│ 🔗 Link<br><br>→ opens · ← closes · flips left near the edge</div>`, code:`function openSub(rec, itemEl){
+  const el = buildMenu(itemEl._item.submenu);
+  layer.appendChild(el);
+  const m = el.getBoundingClientRect(), r = itemEl.getBoundingClientRect();
+  let x = r.right - 2;                                  // prefer right side
+  if (x + m.width + 8 > innerWidth) x = r.left - m.width + 2;   // else flip left
+  el.style.left = x + "px"; el.style.top = r.top + "px";
+  stack.push({ el, items: itemsOf(el), active: -1, parent: itemEl });
+}` },
+ { title:"8. Dismissing: outside-click, Esc, scroll and blur", why:"A menu that won't close is a trap. Cover four exits. Outside-click: a document pointerdown whose target isn't inside any .ctx-menu closes everything — use the capture phase so it runs before other handlers. Escape: close one level at a time (a submenu first, then the root), which matches what people expect. Scroll: the menu was anchored to a point that just moved, so close it rather than let it float in the wrong place. Blur: if the window loses focus (you alt-tabbed), close it too. Resize is the same story as scroll.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">pointerdown outside .ctx-menu → closeAll()<br>Esc&nbsp;&nbsp;&nbsp;&nbsp;→ close one level<br>scroll → closeAll()  (anchor moved)<br>blur&nbsp;&nbsp;&nbsp;→ closeAll()  (window left)<br><br>capture phase = fire first</div>`, code:`document.addEventListener("pointerdown", e => {
+  if (stack.length && !e.target.closest(".ctx-menu")) closeAll();
+}, true);                                    // capture phase
+addEventListener("scroll", () => stack.length && closeAll(), true);
+addEventListener("blur",   () => stack.length && closeAll());
+// Esc is handled in onKey → closeTop() (one level at a time)` },
+ { title:"9. ARIA roles: menu, menuitem, separator, haspopup", why:"Styling divs to look like a menu tells a screen reader nothing. The roles make it real. The container is role=menu; each action is role=menuitem; dividers are role=separator. An item that opens a submenu advertises it with aria-haspopup=true and reflects its state with aria-expanded (flip it to true when the fly-out opens). A greyed-out item gets aria-disabled=true so it is announced as unavailable rather than silently doing nothing. Paired with the roving-tabindex focus model, this is what lets someone drive the whole menu by ear.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;div role="menu"&gt;<br>&nbsp;&nbsp;&lt;div role="menuitem"&gt;Copy&lt;/div&gt;<br>&nbsp;&nbsp;&lt;div role="separator"&gt;&lt;/div&gt;<br>&nbsp;&nbsp;&lt;div role="menuitem" aria-haspopup<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-expanded="false"&gt;Share ▸&lt;/div&gt;<br>&lt;/div&gt;</div>`, code:`el.setAttribute("role", "menu");
+item.setAttribute("role", "menuitem");
+sep.setAttribute("role", "separator");
+if (it.submenu){
+  item.setAttribute("aria-haspopup", "true");
+  item.setAttribute("aria-expanded", "false");  // → "true" when open
+}
+if (it.disabled) item.setAttribute("aria-disabled", "true");` },
+ { title:"10. Why custom vs native — and mobile long-press", why:"The browser's own right-click menu is free and familiar, so only replace it when you need what it can't give: your own actions, icons, keyboard shortcuts shown inline, nested submenus, and consistent styling across every OS. The cost is that you now own accessibility, positioning and dismissal — everything on this page. And remember touch: phones and tablets have no right-click, so the equivalent gesture is a long-press (~500ms). Start a timer on touchstart, cancel it if the finger moves or lifts early, and fire the same openRoot on timeout. Do both and one menu serves mouse, keyboard and touch.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">native: free, familiar, limited<br>custom: icons · shortcuts · submenus · your style<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(you own a11y + positioning)<br><br>touch has no right-click → long-press ≈ 500ms</div>`, code:`let t;
+surface.addEventListener("touchstart", e => {
+  const p = e.touches[0];
+  t = setTimeout(() => openRoot(p.clientX, p.clientY), 500);  // long-press
+}, { passive: true });
+surface.addEventListener("touchmove", () => clearTimeout(t), { passive: true });
+surface.addEventListener("touchend",  () => clearTimeout(t));` }
+];
+const stepsEl = document.getElementById("steps");
+const prevB = document.getElementById("prev"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevB.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
