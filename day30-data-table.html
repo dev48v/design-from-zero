@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 30 — Data Table</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== data-table demo surface ===== */
+  .dt-wrap {
+    position:relative; max-height:460px; overflow:auto;
+    border:1px solid #e2e8f0; border-radius:14px; background:#fff;
+  }
+  table.dt { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; font-size:13px; }
+  .dt thead th {
+    position:sticky; top:0; z-index:2; background:#f8fafc; text-align:left;
+    padding:11px 14px; font-weight:700; color:#334155; font-size:12px;
+    letter-spacing:.02em; border-bottom:1px solid #e2e8f0; cursor:pointer;
+    user-select:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .dt thead th:hover { background:#eef2ff; color:#4338ca; }
+  .dt thead th.sorted { color:#4338ca; background:#eef2ff; }
+  .dt thead th .th-lbl { pointer-events:none; }
+  .dt thead th .th-arrow { margin-left:6px; font-size:10px; color:#6366f1; pointer-events:none; }
+  .dt thead th.ta-right { text-align:right; }
+  .dt tbody td {
+    padding:10px 14px; border-bottom:1px solid #f1f5f9; color:#334155;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .dt tbody tr:hover td { background:#f8fafc; }
+  .dt tbody td.ta-right { text-align:right; font-variant-numeric:tabular-nums; }
+  .dt tbody td.name { font-weight:600; color:#0f172a; }
+  .dt tbody td.empty { text-align:center; color:#94a3b8; padding:34px 14px; font-weight:600; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;
+          background:#eef2ff; color:#4338ca; }
+  /* the drag handle sitting on each column's right border */
+  .col-resize {
+    position:absolute; top:0; right:0; width:9px; height:100%;
+    cursor:col-resize; touch-action:none; z-index:3;
+  }
+  .col-resize::after {
+    content:""; position:absolute; top:22%; bottom:22%; right:3px; width:2px;
+    background:transparent; border-radius:2px;
+  }
+  .col-resize:hover::after, .col-resize.dragging::after { background:#6366f1; }
+  .badge { font-size:10px; font-weight:800; padding:2px 7px; border-radius:999px; letter-spacing:.03em; }
+  .ctrl { border:1px solid #e2e8f0; border-radius:9px; padding:8px 12px; font-size:13px; color:#334155; background:#fff; }
+  .ctrl:focus { outline:none; border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+  .pg-btn { border:1px solid #e2e8f0; background:#fff; border-radius:9px; padding:7px 13px; font-size:13px;
+            font-weight:600; color:#334155; cursor:pointer; }
+  .pg-btn:hover:not(:disabled) { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
+  .pg-btn:disabled { opacity:.4; cursor:not-allowed; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 30</div>
+      <h1 class="text-xl font-bold">🗂️ Data Table — Type-Aware Sortable Columns, Drag-to-Resize Widths, Live Filter, Pagination &amp; a Sticky Header</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Sort, resize, search and page through a real table.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A working <strong>data table</strong> over 44 employees, built from scratch in vanilla JS — no grid library. <strong>Click a header</strong> to sort (it cycles ascending → descending → off, and it is <strong>type-aware</strong>: salary sorts as numbers, the join date sorts chronologically, names alphabetically). <strong>Drag the right edge</strong> of any header to <strong>resize</strong> that column. Type in the <strong>search box</strong> and the rows filter live. Change the <strong>page size</strong> and step through with the pager. The header <strong>stays stuck</strong> to the top as the body scrolls, and every state change flows through one pipeline so sort, filter and page stay in sync.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-3">
+            <input id="search" class="ctrl" type="search" placeholder="🔍  Search name, role, department…" style="width:280px;" aria-label="Search employees" />
+            <span id="count" class="text-xs font-semibold text-slate-400 uppercase tracking-wider"></span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span class="badge" style="background:#eef2ff;color:#4338ca;">tip</span>
+            drag a header's <strong>right edge</strong> to resize
+          </div>
+        </div>
+
+        <div class="dt-wrap" id="dtWrap">
+          <table class="dt" id="tbl" aria-label="Employees">
+            <colgroup id="cols"></colgroup>
+            <thead><tr id="headRow"></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-sm text-slate-500">
+            <span>Rows per page</span>
+            <select id="pageSize" class="ctrl" style="padding:6px 10px;" aria-label="Rows per page">
+              <option value="8">8</option>
+              <option value="12" selected>12</option>
+              <option value="20">20</option>
+              <option value="44">All</option>
+            </select>
+            <span id="range" class="ml-2 font-semibold text-slate-700"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="prev" class="pg-btn">← Prev</button>
+            <span id="page" class="text-sm font-semibold text-slate-600 px-1"></span>
+            <button id="next" class="pg-btn">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">This is the same table you meet in every admin panel, CRM and dashboard. Under the hood it is a plain array of objects, a <code>colgroup</code> for fixed widths, three tiny comparators, a debounced filter and one <code>slice()</code> for the current page — no dependencies.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a data table works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A table described as data, rendered through a <code>colgroup</code> so widths are drag-adjustable, sorted by three type-aware comparators in a tri-state cycle, filtered live with a debounce, paged with a single <code>slice()</code>, and pinned with a sticky header — every interaction funnelled through one derive pipeline so sort + filter + page never fight. ~150 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Describe the data and the columns</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rows are a plain array of objects. Columns are their own array of descriptors — a <code>key</code> into each row, a <code>label</code>, a <code>type</code> (that drives the sort), a starting <code>width</code>, and an optional <code>format</code> for display. Keep the raw value for sorting; format only when you paint the cell.</p>
+        <div class="relative"><pre>const ROWS = [
+  { name:"Ava Chen", role:"Frontend Engineer", dept:"Engineering",
+    salary:118000, joined:"2021-03-14" },
+  /* …43 more… */
+];
+const COLUMNS = [
+  { key:"name",   label:"Name",       type:"string", width:200 },
+  { key:"role",   label:"Role",       type:"string", width:210 },
+  { key:"dept",   label:"Department", type:"string", width:150 },
+  { key:"salary", label:"Salary",     type:"number", width:130, align:"right",
+    format:v =&gt; "$" + v.toLocaleString() },
+  { key:"joined", label:"Joined",     type:"date",   width:140,
+    format:v =&gt; fmtDate(v) },
+];</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Render from data — with a colgroup</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Never hand-write <code>&lt;tr&gt;</code>s. Build a <code>&lt;colgroup&gt;</code> with one <code>&lt;col&gt;</code> per column (this is what makes widths controllable), set <code>table-layout:fixed</code>, then loop the rows into the body. Re-rendering the body is now just clearing <code>tbody</code> and looping the current page.</p>
+        <div class="relative"><pre>// one &lt;col&gt; per column → the single source of truth for width
+COLUMNS.forEach(c =&gt; {
+  const col = document.createElement("col");
+  col.style.width = c.width + "px";
+  colgroup.appendChild(col);
+});
+// body: clear + loop (never hardcoded)
+tbody.innerHTML = "";
+pageRows.forEach(r =&gt; {
+  const tr = document.createElement("tr");
+  COLUMNS.forEach(c =&gt; {
+    const td = document.createElement("td");
+    if (c.align === "right") td.classList.add("ta-right");
+    td.textContent = c.format ? c.format(r[c.key]) : r[c.key];
+    tr.appendChild(td);
+  });
+  tbody.appendChild(tr);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Type-aware comparators + tri-state sort</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The classic bug: <code>[9, 80, 100].sort()</code> gives <code>[100, 80, 9]</code> because the default sort compares strings. So branch on the column's <code>type</code> — numbers subtract, dates subtract as <code>Date</code> objects, strings use <code>localeCompare</code>. Clicking a header cycles <em>none → ascending → descending → none</em>; multiply the comparator by the direction.</p>
+        <div class="relative"><pre>function compare(a, b, type){
+  if (type === "number") return a - b;                 // numeric, not lexical
+  if (type === "date")   return new Date(a) - new Date(b);  // chronological
+  return String(a).localeCompare(String(b));           // alphabetical
+}
+function cycleSort(key){
+  if (state.sortKey !== key){ state.sortKey = key; state.sortDir = 1; }   // asc
+  else if (state.sortDir === 1) state.sortDir = -1;                        // desc
+  else if (state.sortDir === -1){ state.sortDir = 0; state.sortKey = null; } // off
+  else state.sortDir = 1;
+  render();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Drag to resize — pointer capture + min-width</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Drop a thin handle on each header's right edge. On <code>pointerdown</code> record the start X and the column's start width and <code>setPointerCapture</code> so you keep getting moves even if the cursor outruns the handle. On <code>pointermove</code> set the matching <code>&lt;col&gt;</code>'s width to <code>startW + dx</code>, clamped to a minimum so a column can't vanish. Stop the event so the same click doesn't trigger a sort.</p>
+        <div class="relative"><pre>function startResize(e, i, colEl){
+  e.preventDefault(); e.stopPropagation();      // don't let it become a sort
+  const startX = e.clientX, startW = colEl.getBoundingClientRect().width;
+  const h = e.currentTarget; h.setPointerCapture(e.pointerId);
+  function move(ev){
+    const w = Math.max(MIN_W, startW + (ev.clientX - startX));  // never below min
+    COLUMNS[i].width = w; colEl.style.width = w + "px";         // drive the &lt;col&gt;
+  }
+  function up(){ h.releasePointerCapture(e.pointerId);
+                 h.removeEventListener("pointermove", move);
+                 h.removeEventListener("pointerup", up); }
+  h.addEventListener("pointermove", move);
+  h.addEventListener("pointerup", up);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Live search — with a debounce</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Filtering keeps rows where any column contains the query (lower-cased both sides). But re-rendering on <em>every</em> keystroke is wasteful, so debounce: wait ~150ms after the last key before you filter. Filtering changes the row count, so reset to page 1 — otherwise you can be stranded on page 5 of a 2-page result.</p>
+        <div class="relative"><pre>let deb;
+search.addEventListener("input", e =&gt; {
+  clearTimeout(deb);
+  deb = setTimeout(() =&gt; {
+    state.filter = e.target.value.trim().toLowerCase();
+    state.page = 1;                 // filtering resets paging
+    render();
+  }, 150);                          // wait for the typing to settle
+});
+// inside the pipeline:
+rows = rows.filter(r =&gt;
+  COLUMNS.some(c =&gt; String(r[c.key]).toLowerCase().includes(state.filter)));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Pagination — one slice, careful math</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A page is just a window into the array. Total pages is <code>ceil(total / size)</code>. Clamp the current page into range (so shrinking the result never leaves you past the end), then take <code>slice(start, start + size)</code> where <code>start = (page − 1) × size</code>. That single slice is the only thing the body ever renders.</p>
+        <div class="relative"><pre>const total = rows.length;
+const pages = Math.max(1, Math.ceil(total / state.pageSize));
+state.page   = Math.min(Math.max(1, state.page), pages);   // clamp into range
+const start  = (state.page - 1) * state.pageSize;
+const pageRows = rows.slice(start, start + state.pageSize); // the window
+// footer readout: e.g. "13–24 of 44"
+range.textContent = (total ? start + 1 : 0) + "–" +
+                    (start + pageRows.length) + " of " + total;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Sticky header inside a scroll container</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Wrap the table in a box with a fixed <code>max-height</code> and <code>overflow:auto</code> — that box is what scrolls, not the page. Then <code>position:sticky; top:0</code> on the header cells pins them to the top of that box. Give the header a solid background and a higher <code>z-index</code> so scrolling rows pass cleanly underneath it.</p>
+        <div class="relative"><pre>.dt-wrap { max-height: 460px; overflow: auto; }   /* the scroll box */
+
+.dt thead th {
+  position: sticky; top: 0;      /* pin to the top of .dt-wrap */
+  z-index: 2;                    /* above the body rows */
+  background: #f8fafc;           /* opaque, or rows show through */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">One pipeline + accessibility</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep sort, filter and page in one <code>state</code> object and derive the view in a fixed order every render: <strong>filter → sort → paginate</strong>. Never mutate the source array (sort a copy). For screen readers, headers are <code>&lt;th scope="col"&gt;</code> and the sorted one carries <code>aria-sort="ascending"</code>/<code>"descending"</code>, kept off the others.</p>
+        <div class="relative"><pre>function getView(){
+  let rows = ROWS;                                       // never mutate source
+  if (state.filter) rows = rows.filter(matchesFilter);   // 1. filter
+  if (state.sortKey && state.sortDir)
+    rows = rows.slice().sort((a, b) =&gt;                   // 2. sort (a copy)
+      compare(a[state.sortKey], b[state.sortKey], type) * state.sortDir);
+  return paginate(rows);                                 // 3. paginate
+}
+// a11y: reflect the sort on the header
+th.setAttribute("scope", "col");
+if (sorted) th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending");
+else        th.removeAttribute("aria-sort");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 30 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real data table from scratch: rows and columns as data rendered through a <code>colgroup</code>, three type-aware comparators driving a tri-state sort, drag-to-resize widths with pointer capture and a min-width floor, a debounced live filter, pagination from a single <code>slice()</code>, a sticky header inside a scroll box, and one derive pipeline (<strong>filter → sort → paginate</strong>) keeping every bit of state coherent — plus <code>scope="col"</code> and <code>aria-sort</code> for screen readers. This is the grid behind every admin panel and dashboard. <strong>👉 Tomorrow — Day 31: Drawer (slide-in panel + focus trap).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DATA =====
+const ROWS = [
+  { name:"Ava Chen",        role:"Frontend Engineer",   dept:"Engineering", salary:118000, joined:"2021-03-14" },
+  { name:"Liam Novak",      role:"Backend Engineer",    dept:"Engineering", salary:126500, joined:"2019-11-02" },
+  { name:"Sofia Rossi",     role:"Product Designer",    dept:"Design",      salary:104000, joined:"2022-06-21" },
+  { name:"Noah Patel",      role:"Data Scientist",      dept:"Data",        salary:132000, joined:"2020-01-30" },
+  { name:"Mia Andersson",   role:"Engineering Manager", dept:"Engineering", salary:158000, joined:"2018-04-09" },
+  { name:"Ethan Brooks",    role:"QA Engineer",         dept:"Engineering", salary:92000,  joined:"2023-02-15" },
+  { name:"Zoe Nakamura",    role:"UX Researcher",       dept:"Design",      salary:98500,  joined:"2021-09-27" },
+  { name:"Lucas Fischer",   role:"DevOps Engineer",     dept:"Platform",    salary:121000, joined:"2020-07-18" },
+  { name:"Emma Silva",      role:"Product Manager",     dept:"Product",     salary:139000, joined:"2019-05-12" },
+  { name:"Oliver Kim",      role:"Frontend Engineer",   dept:"Engineering", salary:110000, joined:"2022-11-08" },
+  { name:"Amara Okafor",    role:"Data Analyst",        dept:"Data",        salary:88000,  joined:"2023-08-01" },
+  { name:"Hugo Martin",     role:"Backend Engineer",    dept:"Engineering", salary:124000, joined:"2021-01-19" },
+  { name:"Isla Murphy",     role:"Content Strategist",  dept:"Marketing",   salary:79000,  joined:"2022-03-30" },
+  { name:"Ravi Sharma",     role:"Security Engineer",   dept:"Platform",    salary:141000, joined:"2019-09-23" },
+  { name:"Clara Dubois",    role:"Product Designer",    dept:"Design",      salary:101500, joined:"2020-12-04" },
+  { name:"Marcus Webb",     role:"Sales Lead",          dept:"Sales",       salary:96000,  joined:"2018-10-16" },
+  { name:"Yuki Tanaka",     role:"Machine Learning Eng",dept:"Data",        salary:147000, joined:"2021-07-11" },
+  { name:"Nina Kowalski",   role:"HR Manager",          dept:"People",      salary:94500,  joined:"2019-02-28" },
+  { name:"Diego Ramirez",   role:"Support Engineer",    dept:"Support",     salary:71000,  joined:"2023-05-22" },
+  { name:"Freya Larsen",    role:"Marketing Manager",   dept:"Marketing",   salary:108000, joined:"2020-06-08" },
+  { name:"Kai Zhang",       role:"Frontend Engineer",   dept:"Engineering", salary:113500, joined:"2022-09-14" },
+  { name:"Priya Nair",      role:"Data Scientist",      dept:"Data",        salary:129000, joined:"2021-04-05" },
+  { name:"Sam O'Brien",     role:"Account Executive",   dept:"Sales",       salary:83000,  joined:"2022-12-19" },
+  { name:"Lena Vogel",      role:"Product Designer",    dept:"Design",      salary:99000,  joined:"2023-01-09" },
+  { name:"Tomas Novak",     role:"Backend Engineer",    dept:"Engineering", salary:122500, joined:"2019-08-27" },
+  { name:"Grace Bennett",   role:"Finance Analyst",     dept:"Finance",     salary:87500,  joined:"2020-03-16" },
+  { name:"Omar Haddad",     role:"DevOps Engineer",     dept:"Platform",    salary:119000, joined:"2021-10-02" },
+  { name:"Ruby Clarke",     role:"UX Writer",           dept:"Design",      salary:85000,  joined:"2022-05-25" },
+  { name:"Felix Braun",     role:"Engineering Manager", dept:"Engineering", salary:162000, joined:"2017-11-13" },
+  { name:"Hana Suzuki",     role:"QA Engineer",         dept:"Engineering", salary:90500,  joined:"2023-03-07" },
+  { name:"Julian Reyes",    role:"Product Manager",     dept:"Product",     salary:135000, joined:"2020-09-21" },
+  { name:"Elena Popov",     role:"Data Analyst",        dept:"Data",        salary:86000,  joined:"2023-07-18" },
+  { name:"Nathan Cole",     role:"Sales Lead",          dept:"Sales",       salary:98000,  joined:"2019-06-04" },
+  { name:"Aisha Rahman",    role:"Security Engineer",   dept:"Platform",    salary:138500, joined:"2021-02-22" },
+  { name:"Leo Ferrari",     role:"Frontend Engineer",   dept:"Engineering", salary:107000, joined:"2022-08-30" },
+  { name:"Maya Johansson",  role:"HR Coordinator",      dept:"People",      salary:68000,  joined:"2023-04-12" },
+  { name:"Caleb Wright",    role:"Support Engineer",    dept:"Support",     salary:73500,  joined:"2022-02-06" },
+  { name:"Ingrid Holm",     role:"Marketing Manager",   dept:"Marketing",   salary:105500, joined:"2020-11-24" },
+  { name:"Rohan Mehta",     role:"Machine Learning Eng",dept:"Data",        salary:151000, joined:"2021-06-15" },
+  { name:"Stella Marino",   role:"Finance Manager",     dept:"Finance",     salary:128000, joined:"2018-07-30" },
+  { name:"Dylan Foster",    role:"Backend Engineer",    dept:"Engineering", salary:120000, joined:"2022-10-11" },
+  { name:"Anya Volkov",     role:"Product Designer",    dept:"Design",      salary:102000, joined:"2021-12-01" },
+  { name:"Ben Carter",      role:"Account Executive",   dept:"Sales",       salary:81500,  joined:"2023-06-27" },
+  { name:"Layla Hassan",    role:"UX Researcher",       dept:"Design",      salary:97000,  joined:"2020-05-19" }
+];
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(iso){ const d = new Date(iso); return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear(); }
+
+const COLUMNS = [
+  { key:"name",   label:"Name",       type:"string", width:190 },
+  { key:"role",   label:"Role",       type:"string", width:210 },
+  { key:"dept",   label:"Department", type:"string", width:150 },
+  { key:"salary", label:"Salary",     type:"number", width:130, align:"right", format:v => "$" + v.toLocaleString("en-US") },
+  { key:"joined", label:"Joined",     type:"date",   width:140, format:fmtDate }
+];
+
+const MIN_W = 70;
+const state = { sortKey:null, sortDir:0, filter:"", page:1, pageSize:12 };
+
+// ===== ELEMENTS =====
+const colgroup = document.getElementById("cols");
+const headRow  = document.getElementById("headRow");
+const tbody    = document.getElementById("tbody");
+const searchEl = document.getElementById("search");
+const countEl  = document.getElementById("count");
+const rangeEl  = document.getElementById("range");
+const pageEl   = document.getElementById("page");
+const prevBtn  = document.getElementById("prev");
+const nextBtn  = document.getElementById("next");
+const sizeSel  = document.getElementById("pageSize");
+
+// ===== TYPE-AWARE COMPARE =====
+function compare(a, b, type){
+  if (type === "number") return a - b;
+  if (type === "date")   return new Date(a) - new Date(b);
+  return String(a).localeCompare(String(b));
+}
+
+// ===== DERIVE: filter -> sort -> paginate =====
+function getView(){
+  let rows = ROWS;
+  if (state.filter){
+    rows = rows.filter(r => COLUMNS.some(c => String(r[c.key]).toLowerCase().includes(state.filter)));
+  }
+  if (state.sortKey && state.sortDir){
+    const col = COLUMNS.find(c => c.key === state.sortKey);
+    rows = rows.slice().sort((a, b) => compare(a[col.key], b[col.key], col.type) * state.sortDir);
+  }
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / state.pageSize));
+  state.page  = Math.min(Math.max(1, state.page), pages);
+  const start = (state.page - 1) * state.pageSize;
+  const pageRows = rows.slice(start, start + state.pageSize);
+  return { pageRows, total, pages, start };
+}
+
+// ===== HEADER (built once; listeners attached once) =====
+function buildHeader(){
+  colgroup.innerHTML = "";
+  headRow.innerHTML = "";
+  COLUMNS.forEach((col, i) => {
+    const c = document.createElement("col");
+    c.style.width = col.width + "px";
+    colgroup.appendChild(c);
+
+    const th = document.createElement("th");
+    th.setAttribute("scope", "col");
+    th.dataset.key = col.key;
+    if (col.align === "right") th.classList.add("ta-right");
+    th.innerHTML = '<span class="th-lbl">' + col.label + '</span><span class="th-arrow" aria-hidden="true"></span>';
+
+    const handle = document.createElement("span");
+    handle.className = "col-resize";
+    handle.title = "Drag to resize";
+    th.appendChild(handle);
+
+    th.addEventListener("click", e => { if (e.target === handle) return; cycleSort(col.key); });
+    handle.addEventListener("pointerdown", e => startResize(e, i, c));
+
+    headRow.appendChild(th);
+  });
+}
+
+// ===== TRI-STATE SORT =====
+function cycleSort(key){
+  if (state.sortKey !== key){ state.sortKey = key; state.sortDir = 1; }
+  else if (state.sortDir === 1) state.sortDir = -1;
+  else if (state.sortDir === -1){ state.sortDir = 0; state.sortKey = null; }
+  else state.sortDir = 1;
+  render();
+}
+
+// ===== COLUMN RESIZE (pointer events + min-width) =====
+function startResize(e, i, colEl){
+  e.preventDefault(); e.stopPropagation();
+  const startX = e.clientX;
+  const startW = colEl.getBoundingClientRect().width;
+  const h = e.currentTarget;
+  h.setPointerCapture(e.pointerId);
+  h.classList.add("dragging");
+  document.body.style.cursor = "col-resize";
+  function move(ev){
+    const w = Math.max(MIN_W, startW + (ev.clientX - startX));
+    COLUMNS[i].width = w;
+    colEl.style.width = w + "px";
+  }
+  function up(){
+    h.releasePointerCapture(e.pointerId);
+    h.classList.remove("dragging");
+    document.body.style.cursor = "";
+    h.removeEventListener("pointermove", move);
+    h.removeEventListener("pointerup", up);
+  }
+  h.addEventListener("pointermove", move);
+  h.addEventListener("pointerup", up);
+}
+
+// ===== RENDER =====
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, m => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[m])); }
+
+function render(){
+  // header sort indicators + aria-sort
+  Array.prototype.forEach.call(headRow.children, th => {
+    const key = th.dataset.key;
+    const arrow = th.querySelector(".th-arrow");
+    if (state.sortKey === key && state.sortDir){
+      th.setAttribute("aria-sort", state.sortDir === 1 ? "ascending" : "descending");
+      th.classList.add("sorted");
+      arrow.textContent = state.sortDir === 1 ? "▲" : "▼";
+    } else {
+      th.removeAttribute("aria-sort");
+      th.classList.remove("sorted");
+      arrow.textContent = "";
+    }
+  });
+
+  const view = getView();
+  tbody.innerHTML = "";
+  if (!view.pageRows.length){
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td class="empty" colspan="' + COLUMNS.length + '">No employees match &ldquo;' + escapeHtml(state.filter) + '&rdquo;</td>';
+    tbody.appendChild(tr);
+  } else {
+    view.pageRows.forEach(r => {
+      const tr = document.createElement("tr");
+      COLUMNS.forEach(col => {
+        const td = document.createElement("td");
+        if (col.align === "right") td.classList.add("ta-right");
+        if (col.key === "name") td.classList.add("name");
+        if (col.key === "dept"){ td.innerHTML = '<span class="pill">' + escapeHtml(r[col.key]) + '</span>'; }
+        else td.textContent = col.format ? col.format(r[col.key]) : r[col.key];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  const from = view.total ? view.start + 1 : 0;
+  const to   = view.start + view.pageRows.length;
+  countEl.textContent = view.total + " employee" + (view.total === 1 ? "" : "s") + (state.filter ? " · filtered" : "");
+  rangeEl.textContent = from + "–" + to + " of " + view.total;
+  pageEl.textContent  = "Page " + state.page + " of " + view.pages;
+  prevBtn.disabled = state.page <= 1;
+  nextBtn.disabled = state.page >= view.pages;
+}
+
+// ===== WIRING =====
+let deb;
+searchEl.addEventListener("input", e => {
+  clearTimeout(deb);
+  deb = setTimeout(() => {
+    state.filter = e.target.value.trim().toLowerCase();
+    state.page = 1;
+    render();
+  }, 150);
+});
+sizeSel.addEventListener("change", e => { state.pageSize = parseInt(e.target.value, 10); state.page = 1; render(); });
+prevBtn.addEventListener("click", () => { state.page--; render(); });
+nextBtn.addEventListener("click", () => { state.page++; render(); });
+
+buildHeader();
+render();
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Rows and columns as data — never hardcoded markup", why:"A table is data first, markup second. Keep your rows as a plain array of objects and describe the columns in their own array — a key into each row, a human label, a type that will drive sorting, a starting width, and an optional format function for display. The moment structure lives in data instead of hand-written <tr> tags, everything else becomes easy: you can reorder columns, hide them, sort and filter, or swap the data source without touching a single DOM string. Crucially, keep the raw value (a number, an ISO date) for logic and only format at paint time — formatting the stored value would break sorting.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">ROWS = [ {name, role, dept, salary, joined}, … ]<br><br>COLUMNS = [<br>&nbsp;&nbsp;{ key:"salary", type:"number", format:$ }<br>&nbsp;&nbsp;{ key:"joined", type:"date",&nbsp;&nbsp; format:date }<br>]<br><br>data drives the DOM — not the other way round</div>`, code:`const ROWS = [
+  { name:"Ava Chen", role:"Frontend Engineer",
+    dept:"Engineering", salary:118000, joined:"2021-03-14" },
+  /* …more… */
+];
+const COLUMNS = [
+  { key:"name",   label:"Name",   type:"string", width:190 },
+  { key:"salary", label:"Salary", type:"number", width:130,
+    align:"right", format:v => "$" + v.toLocaleString() },
+  { key:"joined", label:"Joined", type:"date", width:140, format:fmtDate },
+];` },
+ { title:"2. Render from data through a colgroup", why:"Building the table is two loops. First a <colgroup> with one <col> per column — this is the trick that makes widths controllable later, because a single <col> governs the width of the whole column at once. Pair it with table-layout:fixed so the browser honours those widths instead of sizing columns to their content. Second, the body: clear tbody and loop the current page's rows, creating a <td> for each column and writing col.format(value) if a formatter exists. Because you always rebuild from the data, a re-render after sort, filter or page change is just 'clear and loop again'.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;colgroup&gt;&lt;col&gt;&lt;col&gt;…&lt;/colgroup&gt;  ← widths<br>table-layout: fixed;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← honour them<br><br>tbody.innerHTML = "";<br>page.forEach(r =&gt; tbody.append(rowFor(r)))</div>`, code:`COLUMNS.forEach(c => {
+  const col = document.createElement("col");
+  col.style.width = c.width + "px";       // one <col> = one column width
+  colgroup.appendChild(col);
+});
+tbody.innerHTML = "";
+pageRows.forEach(r => {
+  const tr = document.createElement("tr");
+  COLUMNS.forEach(c => {
+    const td = document.createElement("td");
+    td.textContent = c.format ? c.format(r[c.key]) : r[c.key];
+    tr.appendChild(td);
+  });
+  tbody.appendChild(tr);
+});` },
+ { title:"3. Type-aware sort comparators", why:"This is the number-one table bug. JavaScript's default Array.sort() converts everything to strings, so [9, 80, 100] sorts to [100, 80, 9] — '100' < '80' < '9' as text. Dates fare no better as strings unless they are strictly ISO. The fix is to branch on the column's declared type: numbers subtract (a - b), dates become Date objects and subtract (chronological order), and strings use localeCompare (which also handles accents and locale rules better than < / >). One tiny compare(a, b, type) function, chosen by the column you clicked, and every column sorts the way a human expects.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">default .sort():&nbsp;&nbsp;9, 80, 100 → 100, 80, 9  ✗<br><br>number → a - b<br>date&nbsp;&nbsp; → new Date(a) - new Date(b)<br>string → a.localeCompare(b)&nbsp;&nbsp;✓</div>`, code:`function compare(a, b, type){
+  if (type === "number") return a - b;                    // numeric
+  if (type === "date")   return new Date(a) - new Date(b); // chronological
+  return String(a).localeCompare(String(b));              // alphabetical
+}
+// pick the comparator by the clicked column's type:
+rows.sort((x, y) => compare(x[key], y[key], col.type) * dir);` },
+ { title:"4. Tri-state sort — none → ascending → descending", why:"Most good tables cycle a header through three states, not two: first click sorts ascending, second flips to descending, third clears the sort and returns to the natural (data) order. Model it as a direction of 1, -1, or 0, plus which key is active. Clicking a new column always starts fresh at ascending. The elegant part: you never write two sort functions — you multiply one comparator by the direction, so -1 simply reverses ascending. When direction is 0 you skip sorting entirely and show rows in their original sequence. Reflect the state in the header with a ▲/▼ arrow so it is obvious what is going on.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click ①  ▲ ascending&nbsp;&nbsp;(dir = 1)<br>click ②  ▼ descending (dir = -1)<br>click ③  — off&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(dir = 0)<br><br>comparator × dir  → one function, both ways</div>`, code:`function cycleSort(key){
+  if (state.sortKey !== key){ state.sortKey = key; state.sortDir = 1; } // new col → asc
+  else if (state.sortDir === 1)  state.sortDir = -1;                    // asc → desc
+  else if (state.sortDir === -1){ state.sortDir = 0; state.sortKey = null; } // desc → off
+  else state.sortDir = 1;
+  render();
+}` },
+ { title:"5. Column resize via pointer events + a min-width", why:"Resizing is a drag gesture, and pointer events are the modern, unified way to handle it (one code path for mouse, touch and pen). Put a thin invisible handle on each header's right edge. On pointerdown, record where the drag began (clientX) and the column's current width, then call setPointerCapture so you keep receiving pointermove events even when the cursor moves faster than the 9px handle or leaves it entirely. On each move, set the matching <col>'s width to startWidth + deltaX, clamped to a minimum so a column can never collapse to nothing. Call stopPropagation on the handle so the same gesture doesn't also register as a header click and trigger a sort.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Name ┃&lt;── drag the edge ──&gt;┃ Role<br><br>down: startX, startW + setPointerCapture<br>move: col.width = max(MIN, startW + dx)<br>up:&nbsp;&nbsp; release + unbind</div>`, code:`function startResize(e, i, colEl){
+  e.preventDefault(); e.stopPropagation();   // not a sort click
+  const startX = e.clientX, startW = colEl.getBoundingClientRect().width;
+  const h = e.currentTarget; h.setPointerCapture(e.pointerId);
+  function move(ev){
+    const w = Math.max(MIN_W, startW + (ev.clientX - startX));
+    COLUMNS[i].width = w; colEl.style.width = w + "px";
+  }
+  function up(){ h.releasePointerCapture(e.pointerId);
+    h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); }
+  h.addEventListener("pointermove", move); h.addEventListener("pointerup", up);
+}` },
+ { title:"6. Live filtering — with a debounce", why:"A search box should narrow the table as you type. The filter itself is simple: keep a row if any column's value, lower-cased, contains the lower-cased query. But firing a full re-render on every keystroke is wasteful — on large tables it stutters. Debounce it: start a short timer (about 150ms) on each keystroke and only run the filter when typing pauses, cancelling any pending timer first. One more thing that trips people up: filtering changes how many rows exist, so you must reset to page 1. Otherwise you can be sitting on page 5 while the filtered result only has two pages.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">keystroke → clearTimeout → setTimeout(150ms)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓ (typing settled)<br>filter rows · reset to page 1 · render<br><br>keep row if ANY column includes(query)</div>`, code:`let deb;
+search.addEventListener("input", e => {
+  clearTimeout(deb);
+  deb = setTimeout(() => {
+    state.filter = e.target.value.trim().toLowerCase();
+    state.page = 1;                       // filtering resets paging
+    render();
+  }, 150);
+});
+rows = rows.filter(r =>
+  COLUMNS.some(c => String(r[c.key]).toLowerCase().includes(state.filter)));` },
+ { title:"7. Pagination math — clamp, then slice", why:"Pagination is a moving window over the (already filtered and sorted) array. Total pages is ceil(total / pageSize), with a floor of 1 so an empty result still shows 'Page 1 of 1'. Before slicing, clamp the current page into [1, pages] — this is what saves you when the row count shrinks under you (filter narrows the list, or you switch to a bigger page size) and the old page number would now point past the end. The visible rows are one slice: start at (page - 1) × pageSize and take pageSize items. Everything the body renders is that single slice — the rest of the array simply isn't drawn.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">pages = max(1, ceil(total / size))<br>page&nbsp;&nbsp;= clamp(page, 1, pages)&nbsp;&nbsp;← key step<br>start = (page - 1) × size<br>view&nbsp;&nbsp;= rows.slice(start, start + size)<br><br>readout: "13–24 of 44"</div>`, code:`const total = rows.length;
+const pages = Math.max(1, Math.ceil(total / state.pageSize));
+state.page  = Math.min(Math.max(1, state.page), pages);   // clamp into range
+const start = (state.page - 1) * state.pageSize;
+const pageRows = rows.slice(start, start + state.pageSize);
+range.textContent = (total ? start + 1 : 0) + "–" +
+                    (start + pageRows.length) + " of " + total;` },
+ { title:"8. Sticky header + a scroll container", why:"You want the column headers to stay visible while the rows scroll. The mechanism is two-part. First, the table lives inside a wrapper with a fixed max-height and overflow:auto — that wrapper is the thing that scrolls, not the whole page. Second, position:sticky; top:0 on the header cells pins them to the top of that scroll wrapper. Two gotchas: give the header an opaque background (a transparent sticky header lets rows show through as they slide under it) and a higher z-index than the body so it always wins the overlap. With border-collapse the bottom border can detach when stuck, which is why many tables use border-spacing:0 plus a border on the cell.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">.wrap { max-height:460px; overflow:auto; }<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑ this box scrolls<br><br>th { position:sticky; top:0;<br>&nbsp;&nbsp;&nbsp;&nbsp; z-index:2; background:#f8fafc; }<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑ opaque, above rows</div>`, code:`.dt-wrap { max-height: 460px; overflow: auto; }  /* the scroll box */
+
+.dt thead th {
+  position: sticky; top: 0;   /* pin to top of .dt-wrap */
+  z-index: 2;                 /* sit above scrolling rows */
+  background: #f8fafc;        /* opaque — or rows bleed through */
+}` },
+ { title:"9. Virtualization — the escape hatch for huge datasets", why:"Everything so far renders one page at a time, so the DOM only ever holds a dozen or two rows — that already scales fine to thousands of records behind pagination. But if you must show one giant continuously-scrolling table of, say, 100,000 rows with no pages, don't put 100,000 <tr>s in the DOM; the browser will choke on layout and memory. The technique is virtualization (windowing): render only the rows currently in the viewport, plus a small buffer above and below, and translate them into place using the scroll offset, with spacer elements standing in for the rest so the scrollbar still reflects the true height. Reach for it only when row counts get extreme — pagination handles the common case with far less code (see Day 21, Virtual Scroll).", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">100,000 rows, no pages?<br><br>┌ spacer (rows above) ┐<br>│ ▓ only visible rows ▓ │ ← render these<br>└ spacer (rows below) ┘<br><br>render ≈ viewport ÷ rowHeight + buffer</div>`, code:`// concept — render only what's on screen
+const first = Math.floor(scrollTop / ROW_H);
+const count = Math.ceil(viewportH / ROW_H) + BUFFER;
+const slice = ROWS.slice(first, first + count);
+topSpacer.style.height    = first * ROW_H + "px";
+bottomSpacer.style.height = (ROWS.length - first - count) * ROW_H + "px";
+// DOM holds ~count rows no matter how big ROWS gets` },
+ { title:"10. One pipeline keeps sort + filter + page coherent", why:"The bugs in a table almost never come from any single feature — they come from features fighting each other: you sort, then filter, and the sort is lost; you filter down to two pages but stay on page 5; you sort and accidentally mutate the source array so the original order is gone forever. Prevent all of it with one rule: hold sort, filter and page in a single state object, and derive the view in one fixed order every render — filter, then sort a COPY (Array.slice before sort, so the source is untouched), then paginate. Every interaction just updates state and calls render(); render always recomputes from scratch. For accessibility, mark headers <th scope='col'> and set aria-sort on the active one so screen-reader users hear how the table is ordered.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">state = { sortKey, sortDir, filter, page, pageSize }<br><br>render(): FILTER → SORT(copy) → PAGINATE<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;same order, every time<br><br>th scope="col" · aria-sort="ascending"</div>`, code:`function getView(){
+  let rows = ROWS;                                    // never mutate source
+  if (state.filter) rows = rows.filter(matches);      // 1. filter
+  if (state.sortKey && state.sortDir)
+    rows = rows.slice().sort((a, b) =>                // 2. sort a COPY
+      compare(a[key], b[key], type) * state.sortDir);
+  return paginate(rows);                              // 3. paginate
+}
+th.setAttribute("scope", "col");
+sorted ? th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending")
+       : th.removeAttribute("aria-sort");` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
