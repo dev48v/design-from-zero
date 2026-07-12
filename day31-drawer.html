@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 31 — Drawer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== drawer demo surface ===== */
+  .edge-btn { border:1px solid #e2e8f0; background:#fff; border-radius:9px; padding:8px 14px; font-size:13px;
+              font-weight:600; color:#334155; cursor:pointer; }
+  .edge-btn:hover { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
+  .edge-btn.sel { background:#4338ca; color:#fff; border-color:#4338ca; }
+  .open-btn { background:#4f46e5; color:#fff; border:none; border-radius:10px; padding:11px 22px;
+              font-weight:700; font-size:14px; cursor:pointer; }
+  .open-btn:hover { background:#4338ca; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+          background:#eef2ff; color:#4338ca; }
+  .pill.off { background:#f1f5f9; color:#94a3b8; }
+  /* the dark backdrop behind the panel */
+  .scrim { position:fixed; inset:0; background:rgba(15,23,42,.5); opacity:0; visibility:hidden;
+           transition:opacity .3s ease, visibility .3s ease; z-index:60; }
+  .scrim.open { opacity:1; visibility:visible; }
+  /* the panel itself — fixed, parked off the chosen edge */
+  .drawer { position:fixed; background:#fff; z-index:61; display:flex; flex-direction:column;
+            box-shadow:0 10px 44px rgba(15,23,42,.28); transition:transform .32s cubic-bezier(.4,0,.2,1);
+            will-change:transform; touch-action:none; }
+  .drawer.left   { top:0; left:0;  height:100%; width:min(360px,86vw); transform:translateX(-100%); border-right:1px solid #e2e8f0; }
+  .drawer.right  { top:0; right:0; height:100%; width:min(360px,86vw); transform:translateX(100%);  border-left:1px solid #e2e8f0; }
+  .drawer.top    { top:0; left:0;  width:100%; height:min(320px,66vh); transform:translateY(-100%); border-bottom:1px solid #e2e8f0; }
+  .drawer.bottom { bottom:0; left:0; width:100%; height:min(320px,66vh); transform:translateY(100%); border-top:1px solid #e2e8f0; }
+  .drawer.open { transform:none; }              /* the on-screen resting state */
+  .drawer.dragging { transition:none; }         /* follow the finger 1:1 while swiping */
+  .grabber { flex:none; display:flex; align-items:center; justify-content:center; padding:9px 0 3px; cursor:grab; touch-action:none; }
+  .grabber span { width:44px; height:5px; border-radius:999px; background:#cbd5e1; }
+  .dw-head { flex:none; display:flex; align-items:center; justify-content:space-between; padding:8px 18px 14px; border-bottom:1px solid #f1f5f9; }
+  .dw-title { font-size:16px; font-weight:800; color:#0f172a; }
+  .dw-x { border:none; background:#f1f5f9; width:32px; height:32px; border-radius:9px; font-size:20px; line-height:1; color:#334155; cursor:pointer; }
+  .dw-x:hover { background:#e2e8f0; }
+  .dw-body { flex:1; overflow:auto; padding:16px 18px; }
+  .dw-foot { flex:none; display:flex; gap:10px; padding:14px 18px; border-top:1px solid #f1f5f9; }
+  .field { display:block; margin-bottom:15px; }
+  .field .lbl { display:block; font-size:12px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; }
+  .field input[type=text], .field select { width:100%; border:1px solid #e2e8f0; border-radius:9px; padding:9px 12px; font-size:14px; color:#334155; background:#fff; }
+  .field input:focus, .field select:focus { outline:none; border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+  .chk { display:flex; align-items:center; gap:9px; font-size:14px; color:#334155; padding:5px 0; cursor:pointer; }
+  .btn-primary { background:#4f46e5; color:#fff; border:none; border-radius:9px; padding:10px 16px; font-weight:700; font-size:14px; cursor:pointer; flex:1; }
+  .btn-primary:hover { background:#4338ca; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:9px; padding:10px 16px; font-weight:700; font-size:14px; cursor:pointer; flex:1; }
+  .btn-ghost:hover { background:#f8fafc; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .drawer, .scrim { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 31</div>
+      <h1 class="text-xl font-bold">🚪 Drawer — A Slide-in Panel From Any Edge, With a Scrim, Focus Trap, Scroll-Lock, Swipe-to-Close &amp; Dialog A11y</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Slide a real panel in from any edge.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A working <strong>drawer</strong> (off-canvas panel) built from scratch in vanilla JS. Pick an <strong>edge</strong> and hit <strong>Open</strong>: the panel slides in on a <code>transform</code> transition while a <strong>scrim</strong> fades in behind it. Focus jumps into the drawer and is <strong>trapped</strong> — <kbd>Tab</kbd> cycles through its controls and wraps around instead of leaking to the page behind. Close it with <kbd>Esc</kbd>, by clicking the scrim, with the × button, or by <strong>dragging the grabber</strong> toward the edge past a threshold. Focus <strong>returns to the button</strong> that opened it, and the page scroll stays locked the whole time.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Edge</span>
+            <button class="edge-btn" data-edge="left">&larr; Left</button>
+            <button class="edge-btn sel" data-edge="right">Right &rarr;</button>
+            <button class="edge-btn" data-edge="top">&uarr; Top</button>
+            <button class="edge-btn" data-edge="bottom">&darr; Bottom</button>
+          </div>
+          <button id="openDrawer" class="open-btn">Open drawer</button>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center text-xs text-slate-500">
+          <span class="font-semibold uppercase tracking-wider text-slate-400">State</span>
+          <span id="stOpen" class="pill off">closed</span>
+          <span id="stEdge" class="pill">right</span>
+          <span id="stTrap" class="pill off">focus-trap</span>
+          <span id="stLock" class="pill off">scroll-lock</span>
+          <span class="ml-auto text-slate-400 hidden sm:inline"><kbd>Tab</kbd> to cycle · <kbd>Esc</kbd> / scrim to close · drag the grabber to dismiss</span>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">This is the panel behind every mobile menu, cart, filter sheet and settings pane. Under the hood it is one fixed element parked off-screen with a <code>transform</code>, a backdrop that fades in, and a small amount of focus + scroll bookkeeping so it behaves like a real modal dialog — no library.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a drawer works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A drawer is one fixed panel parked off the edge with a <code>transform</code>, slid in on a transition with a fading scrim behind it, plus the focus + scroll bookkeeping that makes it behave like a real modal dialog: focus moves in and is trapped, the background scroll is locked, <kbd>Esc</kbd> and the scrim close it, focus returns to the trigger, and a pointer drag dismisses it. ~110 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Park the panel off-canvas</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A drawer is a <code>position:fixed</code> element pinned to one edge and pushed just out of view with a <code>transform</code>. A left drawer sits at <code>left:0</code> translated <code>-100%</code> on X; a bottom sheet sits at <code>bottom:0</code> translated <code>100%</code> on Y. It is fully laid out and ready — simply parked past the edge until you need it.</p>
+        <div class="relative"><pre>.drawer { position:fixed; z-index:61; background:#fff; }
+
+.drawer.left   { top:0; left:0;  height:100%; width:360px;  transform:translateX(-100%); }
+.drawer.right  { top:0; right:0; height:100%; width:360px;  transform:translateX(100%);  }
+.drawer.top    { top:0; left:0;  width:100%;  height:320px; transform:translateY(-100%); }
+.drawer.bottom { bottom:0; left:0; width:100%; height:320px; transform:translateY(100%); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Slide it in with transform + transition</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Opening is one class. <code>.open</code> sets <code>transform:none</code> and a <code>transition</code> animates from the parked offset to zero. Animate <strong>transform</strong>, not <code>left</code>/<code>display</code>: transform is GPU-composited (cheap, 60fps) and — unlike <code>display:none</code> — it is actually animatable, so you get a real slide instead of an instant pop.</p>
+        <div class="relative"><pre>.drawer      { transition: transform .32s cubic-bezier(.4,0,.2,1); will-change: transform; }
+.drawer.open { transform: none; }        /* slide to its resting position */
+
+// open / close is just a class toggle:
+drawer.classList.add("open");            // slides in
+drawer.classList.remove("open");         // slides back out</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">The scrim — fade a backdrop, click to close</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A full-screen backdrop below the drawer does two jobs: it dims the page so the panel reads as "modal", and it is the click-outside target. Fade it with <code>opacity</code> (also toggle <code>visibility</code> so it can't be clicked while transparent), and wire a click on it straight to close.</p>
+        <div class="relative"><pre>.scrim      { position:fixed; inset:0; background:rgba(15,23,42,.5);
+              opacity:0; visibility:hidden; transition:opacity .3s, visibility .3s; z-index:60; }
+.scrim.open { opacity:1; visibility:visible; }
+
+scrim.addEventListener("click", closeDrawer);   // click-outside to dismiss</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Move focus in — and remember the trigger</h3></div>
+        <p class="text-sm text-slate-600 mb-3">When the drawer opens, keyboard focus must follow. Remember the element that opened it (so you can restore focus later), then move focus to the first focusable control inside the panel. This is what lets a keyboard or screen-reader user actually operate the thing they just opened.</p>
+        <div class="relative"><pre>const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled])," +
+                  "select:not([disabled]), textarea, [tabindex]:not([tabindex='-1'])";
+
+function openDrawer(trigger){
+  lastTrigger = trigger || document.activeElement;   // remember who opened us
+  drawer.classList.add("open"); scrim.classList.add("open");
+  const f = drawer.querySelectorAll(FOCUSABLE);
+  (f[0] || drawer).focus();                           // move focus into the panel
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Trap focus — wrap first ↔ last</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Focus must not escape a modal drawer to the page behind it. Collect the focusable elements; when <kbd>Tab</kbd> is pressed on the <em>last</em> one, send focus back to the first; when <kbd>Shift</kbd>+<kbd>Tab</kbd> is pressed on the <em>first</em>, send it to the last. That two-line wrap is the whole focus trap.</p>
+        <div class="relative"><pre>function onKeydown(e){
+  if (e.key !== "Tab") return;
+  const f = focusables();
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey &amp;&amp; document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey &amp;&amp; document.activeElement === last){ e.preventDefault(); first.focus(); }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Lock the background scroll</h3></div>
+        <p class="text-sm text-slate-600 mb-3">While the drawer is open the page behind it must not scroll. Set <code>overflow:hidden</code> on <code>&lt;body&gt;</code>. But removing the scrollbar makes the page jump wider by its width — so measure the scrollbar (<code>innerWidth − clientWidth</code>) and add it back as <code>padding-right</code>. On close, restore both.</p>
+        <div class="relative"><pre>function lockScroll(){
+  const sbw = window.innerWidth - document.documentElement.clientWidth;  // scrollbar width
+  document.body.style.overflow = "hidden";
+  if (sbw &gt; 0) document.body.style.paddingRight = sbw + "px";            // no layout jump
+}
+function unlockScroll(){
+  document.body.style.overflow = "";
+  document.body.style.paddingRight = "";
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Close paths + return focus</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every dismissal funnels through one <code>closeDrawer()</code>: <kbd>Esc</kbd>, the scrim, the × button, the swipe. It removes <code>.open</code>, unlocks scroll, and — critically — returns focus to the element you saved when opening, so the keyboard user lands exactly where they left off instead of at the top of the page.</p>
+        <div class="relative"><pre>function closeDrawer(){
+  drawer.classList.remove("open"); scrim.classList.remove("open");
+  unlockScroll();
+  document.removeEventListener("keydown", onKeydown, true);
+  if (lastTrigger) lastTrigger.focus();     // restore focus to the opener
+}
+document.addEventListener("keydown", e =&gt; { if (e.key === "Escape") closeDrawer(); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Dialog a11y, swipe-to-close &amp; reduced motion</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Give the panel <code>role="dialog" aria-modal="true"</code> and label it with <code>aria-labelledby</code>; mark it <code>inert</code> while closed so nothing inside is tabbable. For swipe, follow the pointer with an inline transform (transition off), and on release close if the drag passed a third of the panel — else snap back. Finally, honour <code>prefers-reduced-motion</code> by dropping the transitions.</p>
+        <div class="relative"><pre>&lt;aside role="dialog" aria-modal="true" aria-labelledby="t" aria-hidden="true" inert&gt;…&lt;/aside&gt;
+
+function onDrag(e){                                   // follow the finger, transition off
+  const off = edge === "right" ? Math.max(0, e.clientX - startX) : 0; /* per edge */
+  drawer.style.transform = "translateX(" + off + "px)";
+}
+function endDrag(e){
+  if (Math.abs(e.clientX - startX) &gt; size * 0.33) closeDrawer();  // past threshold → close
+  else drawer.style.transform = "";                               // else snap back
+}
+@media (prefers-reduced-motion: reduce){ .drawer, .scrim { transition:none; } }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 31 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real drawer from scratch: a fixed panel parked off any edge and slid in on a GPU-friendly <code>transform</code> transition, a fading scrim that dims the page and closes on click, focus moved into the panel and <strong>trapped</strong> (Tab wraps first ↔ last), the background scroll locked with scrollbar-width compensation, four close paths (Esc, scrim, button, swipe) all returning focus to the trigger, plus <code>role="dialog"</code>/<code>aria-modal</code>/<code>inert</code> and a <code>prefers-reduced-motion</code> fallback. This is the off-canvas panel behind every mobile menu, cart and filter sheet. <strong>👉 Tomorrow — Day 32: Popover (anchored floating panel + positioning).</strong></p></div>
+  </div>
+</section>
+
+<!-- ===== the drawer + scrim (fixed, overlay the whole viewport) ===== -->
+<div id="scrim" class="scrim"></div>
+<aside id="drawer" class="drawer right" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true" inert>
+  <div class="grabber" id="grabber" aria-hidden="true"><span></span></div>
+  <div class="dw-head">
+    <div id="drawerTitle" class="dw-title">Filters</div>
+    <button class="dw-x" id="closeDrawer" aria-label="Close drawer">&times;</button>
+  </div>
+  <div class="dw-body">
+    <label class="field">
+      <span class="lbl">Search</span>
+      <input type="text" placeholder="Keyword…" />
+    </label>
+    <label class="field">
+      <span class="lbl">Category</span>
+      <select>
+        <option>All categories</option>
+        <option>Design</option>
+        <option>Engineering</option>
+        <option>Product</option>
+      </select>
+    </label>
+    <div class="field">
+      <span class="lbl">Availability</span>
+      <label class="chk"><input type="checkbox" checked /> In stock</label>
+      <label class="chk"><input type="checkbox" /> On sale</label>
+      <label class="chk"><input type="checkbox" /> Free shipping</label>
+    </div>
+    <p class="text-xs text-slate-400">Press <kbd>Tab</kbd> through these controls — focus stays inside the drawer and wraps from the last control back to the first.</p>
+  </div>
+  <div class="dw-foot">
+    <button class="btn-ghost" id="cancelDrawer">Cancel</button>
+    <button class="btn-primary">Apply filters</button>
+  </div>
+</aside>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DRAWER =====
+const scrim   = document.getElementById("scrim");
+const drawer  = document.getElementById("drawer");
+const openBtn = document.getElementById("openDrawer");
+const closeBtn= document.getElementById("closeDrawer");
+const cancelBtn = document.getElementById("cancelDrawer");
+const grabber = document.getElementById("grabber");
+const edgeBtns= document.querySelectorAll(".edge-btn");
+const stOpen  = document.getElementById("stOpen");
+const stEdge  = document.getElementById("stEdge");
+const stTrap  = document.getElementById("stTrap");
+const stLock  = document.getElementById("stLock");
+
+const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
+let currentEdge = "right";
+let isOpen = false;
+let lastTrigger = null;
+
+function focusables(){
+  return Array.prototype.slice.call(drawer.querySelectorAll(FOCUSABLE))
+    .filter(el => el.offsetParent !== null);
+}
+
+function setEdge(edge){
+  currentEdge = edge;
+  drawer.className = "drawer " + edge + (isOpen ? " open" : "");
+  edgeBtns.forEach(b => b.classList.toggle("sel", b.dataset.edge === edge));
+  stEdge.textContent = edge;
+}
+
+function lockScroll(){
+  const sbw = window.innerWidth - document.documentElement.clientWidth;
+  document.body.style.overflow = "hidden";
+  if (sbw > 0) document.body.style.paddingRight = sbw + "px";
+  stLock.classList.remove("off"); stLock.textContent = "scroll-locked";
+}
+function unlockScroll(){
+  document.body.style.overflow = "";
+  document.body.style.paddingRight = "";
+  stLock.classList.add("off"); stLock.textContent = "scroll-lock";
+}
+
+function openDrawer(trigger){
+  if (isOpen) return;
+  isOpen = true;
+  lastTrigger = trigger || document.activeElement;
+  drawer.removeAttribute("inert");
+  drawer.setAttribute("aria-hidden", "false");
+  drawer.classList.add("open");
+  scrim.classList.add("open");
+  lockScroll();
+  stOpen.classList.remove("off"); stOpen.textContent = "open";
+  stTrap.classList.remove("off"); stTrap.textContent = "focus-trapped";
+  const f = focusables();
+  (f[0] || drawer).focus();
+  document.addEventListener("keydown", onKeydown, true);
+}
+
+function closeDrawer(){
+  if (!isOpen) return;
+  isOpen = false;
+  drawer.classList.remove("open");
+  scrim.classList.remove("open");
+  unlockScroll();
+  document.removeEventListener("keydown", onKeydown, true);
+  stOpen.classList.add("off"); stOpen.textContent = "closed";
+  stTrap.classList.add("off"); stTrap.textContent = "focus-trap";
+  if (lastTrigger && typeof lastTrigger.focus === "function") lastTrigger.focus();
+  drawer.setAttribute("aria-hidden", "true");
+  drawer.setAttribute("inert", "");
+  drawer.style.transform = "";
+}
+
+function onKeydown(e){
+  if (e.key === "Escape"){ e.preventDefault(); closeDrawer(); return; }
+  if (e.key === "Tab"){
+    const f = focusables();
+    if (!f.length){ e.preventDefault(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  }
+}
+
+openBtn.addEventListener("click", () => openDrawer(openBtn));
+closeBtn.addEventListener("click", closeDrawer);
+cancelBtn.addEventListener("click", closeDrawer);
+scrim.addEventListener("click", closeDrawer);
+edgeBtns.forEach(b => b.addEventListener("click", () => setEdge(b.dataset.edge)));
+
+// ===== swipe / drag to close (pointer events) =====
+let dragging = false, startX = 0, startY = 0, size = 0;
+grabber.addEventListener("pointerdown", startDrag);
+function startDrag(e){
+  if (!isOpen) return;
+  dragging = true;
+  drawer.classList.add("dragging");
+  try { grabber.setPointerCapture(e.pointerId); } catch(_){}
+  startX = e.clientX; startY = e.clientY;
+  const r = drawer.getBoundingClientRect();
+  size = (currentEdge === "left" || currentEdge === "right") ? r.width : r.height;
+  grabber.addEventListener("pointermove", onDrag);
+  grabber.addEventListener("pointerup", endDrag);
+  grabber.addEventListener("pointercancel", endDrag);
+}
+function onDrag(e){
+  if (!dragging) return;
+  const dx = e.clientX - startX, dy = e.clientY - startY;
+  let off = 0, axis = "X";
+  if (currentEdge === "left")   { off = Math.min(0, dx); axis = "X"; }
+  if (currentEdge === "right")  { off = Math.max(0, dx); axis = "X"; }
+  if (currentEdge === "top")    { off = Math.min(0, dy); axis = "Y"; }
+  if (currentEdge === "bottom") { off = Math.max(0, dy); axis = "Y"; }
+  drawer.style.transform = "translate" + axis + "(" + off + "px)";
+}
+function endDrag(e){
+  if (!dragging) return;
+  dragging = false;
+  drawer.classList.remove("dragging");
+  try { grabber.releasePointerCapture(e.pointerId); } catch(_){}
+  grabber.removeEventListener("pointermove", onDrag);
+  grabber.removeEventListener("pointerup", endDrag);
+  grabber.removeEventListener("pointercancel", endDrag);
+  const dx = e.clientX - startX, dy = e.clientY - startY;
+  const moved = (currentEdge === "left" || currentEdge === "right") ? Math.abs(dx) : Math.abs(dy);
+  drawer.style.transform = "";
+  if (moved > size * 0.33) closeDrawer();
+}
+
+setEdge("right");
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Off-canvas — a fixed panel parked past the edge", why:"A drawer starts life fully built but out of sight. Give it position:fixed so it is measured against the viewport, pin it to an edge (left:0, right:0, top:0 or bottom:0), size it, and then push it out of view with a transform — translateX(-100%) parks a left drawer exactly its own width off the left edge, translateY(100%) drops a bottom sheet just below the fold. Nothing is hidden with display:none; the panel is laid out and interactive-ready, simply positioned where you cannot see it. That is the whole off-canvas idea, and it is why opening later can be a smooth slide rather than a sudden appearance.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">viewport<br>+---------------+<br>|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| # &larr; parked here<br>|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;translateX(100%)<br>+---------------+<br><br>position:fixed · right:0 · transform:translateX(100%)</div>`, code:`.drawer { position:fixed; z-index:61; background:#fff; }
+.drawer.left   { top:0; left:0;  height:100%; transform:translateX(-100%); }
+.drawer.right  { top:0; right:0; height:100%; transform:translateX(100%);  }
+.drawer.top    { top:0; left:0;  width:100%;  transform:translateY(-100%); }
+.drawer.bottom { bottom:0; left:0; width:100%; transform:translateY(100%); }` },
+ { title:"2. Slide in with transform — not display or left", why:"The temptation is to animate left from -360px to 0, or to flip display:none to block. Both are wrong. display cannot be transitioned at all, so it pops instantly. Animating left (or top/width) triggers layout on every frame, which is expensive and janky. transform is the right tool: it is compositor-only — the browser moves an already-painted layer on the GPU without re-running layout or paint — so it stays smooth at 60fps even on a phone. So the resting state is just transform:none, a transition on transform interpolates from the parked offset to zero, and opening/closing becomes a single class toggle. Add will-change:transform to hint the browser to promote it to its own layer ahead of time.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">display:none&nbsp;&nbsp;-&gt; instant pop&nbsp;&nbsp;X<br>left: -360-&gt;0&nbsp;-&gt; layout each frame&nbsp;X<br>transform&nbsp;&nbsp;&nbsp;&nbsp;-&gt; GPU composite&nbsp;&nbsp;OK<br><br>.drawer.open { transform: none; }<br>transition: transform .32s</div>`, code:`.drawer      { transition: transform .32s cubic-bezier(.4,0,.2,1); will-change: transform; }
+.drawer.open { transform: none; }     // resting, on-screen
+
+drawer.classList.add("open");         // slide in
+drawer.classList.remove("open");      // slide out — one class, both ways` },
+ { title:"3. The backdrop scrim — dim + click-to-close", why:"A modal drawer needs a scrim: a semi-transparent full-screen layer sitting between the page and the panel. It does three jobs. Visually it dims the page so the eye locks onto the drawer. Functionally it is the click-outside target — a click anywhere on it closes the drawer. And it blocks interaction with the content behind. Fade it with opacity for a soft entrance, but also toggle visibility (or pointer-events) so that while it is fully transparent it cannot accidentally swallow clicks. Give it a lower z-index than the drawer and a higher one than the page, and wire a single click listener straight to your close function.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">z-index:  page &lt; scrim(60) &lt; drawer(61)<br><br>+- scrim (click = close) -+<br>|##############| # drawer #|<br>+-------------------------+<br><br>opacity 0 -&gt; 1 · visibility hidden -&gt; visible</div>`, code:`.scrim      { position:fixed; inset:0; background:rgba(15,23,42,.5);
+              opacity:0; visibility:hidden;
+              transition:opacity .3s ease, visibility .3s ease; z-index:60; }
+.scrim.open { opacity:1; visibility:visible; }
+
+scrim.addEventListener("click", closeDrawer);   // click the backdrop to dismiss` },
+ { title:"4. On open, move focus into the drawer", why:"Opening a drawer with the mouse is easy; the hard part is the keyboard. If you slide the panel in but leave focus on the button behind it, a keyboard or screen-reader user is stranded — they can see a dialog but they are still standing on the page underneath. So opening has two focus responsibilities. First, save a reference to the element that triggered the open (usually the button that was clicked) — you will need it to restore focus on close. Second, move focus to the first focusable control inside the drawer (or the panel itself as a fallback) so the very next Tab keeps the user inside. Build a reusable selector of focusable elements once and reuse it everywhere.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click "Open"  ==&gt;  save trigger<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v<br>focus -&gt; first control inside the panel<br><br>lastTrigger = trigger; f[0].focus()</div>`, code:`const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled])," +
+  "select:not([disabled]), textarea, [tabindex]:not([tabindex='-1'])";
+
+function openDrawer(trigger){
+  lastTrigger = trigger || document.activeElement;   // remember the opener
+  drawer.classList.add("open"); scrim.classList.add("open");
+  const f = drawer.querySelectorAll(FOCUSABLE);
+  (f[0] || drawer).focus();                           // move focus inside
+}` },
+ { title:"5. Trap focus — Tab wraps first and last", why:"A modal must contain focus. Without a trap, tabbing off the last control jumps behind the drawer to the page links and buttons — which are still there, just visually covered — and the user is silently lost. The trap is small: on every Tab keydown, grab the ordered list of focusable elements in the drawer and identify the first and last. If Shift+Tab is pressed while on the first, prevent the default and send focus to the last; if plain Tab is pressed while on the last, prevent default and send it to the first. In between, let the browser do its normal thing. That single wrap turns the drawer into a closed loop the keyboard cannot leak out of. The robust libraries also guard against there being zero focusable elements — focus the container itself.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">[ first ] -&gt; ... -&gt; [ last ]<br>&nbsp;&nbsp;^&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|<br>&nbsp;&nbsp;+---- Tab wraps ----+<br>&nbsp;&nbsp;+- Shift+Tab wraps -+ (other way)<br><br>Tab on last -&gt; first · Shift+Tab on first -&gt; last</div>`, code:`function onKeydown(e){
+  if (e.key !== "Tab") return;
+  const f = focusables();
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
+document.addEventListener("keydown", onKeydown, true);   // capture phase` },
+ { title:"6. Lock the background scroll (no layout jump)", why:"When the drawer is open, scrolling the wheel or the touchpad should move the drawer own content — never the page behind it. The blunt fix is document.body.style.overflow = hidden. It works, but it introduces a classic bug: on desktop, hiding the scrollbar makes the page suddenly ~15px wider, so everything shifts right with a visible jolt the moment the drawer opens (and back when it closes). The fix is to measure the scrollbar width — window.innerWidth minus documentElement.clientWidth — and add exactly that as padding-right on the body while it is locked. The content stays put; only the scrolling stops. On close, clear both properties to restore normal scrolling.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">body { overflow: hidden }&nbsp;&nbsp;&lt;- stop the scroll<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;but page jumps wider X<br>sbw = innerWidth - clientWidth<br>body { padding-right: sbw }&nbsp;&lt;- put the width back OK</div>`, code:`function lockScroll(){
+  const sbw = window.innerWidth - document.documentElement.clientWidth;
+  document.body.style.overflow = "hidden";
+  if (sbw > 0) document.body.style.paddingRight = sbw + "px";   // compensate scrollbar
+}
+function unlockScroll(){
+  document.body.style.overflow = "";
+  document.body.style.paddingRight = "";
+}` },
+ { title:"7. Close and return focus to the trigger", why:"Closing is the mirror image of opening, and it has its own focus duty. All the ways to dismiss — the Escape key, a click on the scrim, the x button, a swipe — should funnel through one closeDrawer() so behaviour never drifts between them. That function removes the open class (the panel slides back out), unlocks scroll, and unbinds the keydown listener. The step people forget: move focus back to the element you saved when opening. If you do not, focus falls back to body and the keyboard user is dumped at the top of the page, disoriented. Restoring focus to the trigger closes the loop — they end up exactly where they were before they opened the drawer, as if nothing moved.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Esc · scrim · x · swipe<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+--+--+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;closeDrawer()<br>&nbsp;&nbsp;remove .open · unlock · unbind<br>&nbsp;&nbsp;lastTrigger.focus()&nbsp;&nbsp;&lt;- back where we started</div>`, code:`function closeDrawer(){
+  drawer.classList.remove("open"); scrim.classList.remove("open");
+  unlockScroll();
+  document.removeEventListener("keydown", onKeydown, true);
+  if (lastTrigger) lastTrigger.focus();      // hand focus back to the opener
+}
+// every dismissal routes here:
+closeBtn.onclick = scrim.onclick = closeDrawer;
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });` },
+ { title:"8. ARIA dialog semantics + inert", why:"Sighted users see an overlay; assistive tech needs to be told. Mark the panel role=dialog with aria-modal=true so screen readers announce it as a modal and (in supporting AT) keep the user virtual cursor inside it. Label it: aria-labelledby pointing at the drawer heading gives the dialog an accessible name, so it is announced as Filters dialog rather than just dialog. And handle the closed state: while parked off-screen the panel is still in the DOM, so its buttons and inputs are technically tabbable and clickable — a keyboard user could Tab into an invisible panel. The modern fix is the inert attribute: set it while closed to make the whole subtree non-focusable and non-interactive, and remove it on open. aria-hidden mirrors this for AT.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">&lt;aside role="dialog" aria-modal="true"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-labelledby="drawerTitle"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-hidden="true" inert&gt;<br><br>closed -&gt; inert (untabbable) · open -&gt; remove inert</div>`, code:`<aside id="drawer" role="dialog" aria-modal="true"
+       aria-labelledby="drawerTitle" aria-hidden="true" inert>
+  <h2 id="drawerTitle">Filters</h2> ...
+</aside>
+
+// open:  drawer.removeAttribute("inert"); drawer.setAttribute("aria-hidden","false");
+// close: drawer.setAttribute("inert",""); drawer.setAttribute("aria-hidden","true");` },
+ { title:"9. Swipe-to-close with pointer events + a threshold", why:"On touch, users expect to fling the drawer away. Pointer events give one code path for mouse, touch and pen. Put a grab handle on the panel; on pointerdown, capture the pointer (so you keep getting moves even if the finger slides off), record the start coordinates and the panel size, and turn the CSS transition off so the panel tracks the finger exactly instead of lagging behind. On pointermove, translate the panel by the drag distance — but only in the closing direction (a right-edge drawer only follows rightward drags; clamp the other way to zero so you cannot drag it further onto the screen). On pointerup, decide: if the drag passed a threshold — a third of the panel size is a good feel — commit and close; otherwise clear the inline transform so the open class snaps it smoothly back into place. Re-enable the transition on release so both outcomes animate.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">down: capture + transition off + record start<br>move: transform = drag (closing dir only)<br>up:&nbsp;&nbsp; drag &gt; 1/3 size ? close : snap back<br><br>####  &gt;&gt;&gt;  ·   (past 1/3 -&gt; dismiss)</div>`, code:`function onDrag(e){
+  const dx = e.clientX - startX;
+  const off = currentEdge === "right" ? Math.max(0, dx)      // only rightward
+            : currentEdge === "left"  ? Math.min(0, dx) : 0;
+  drawer.style.transform = "translateX(" + off + "px)";      // follow the finger
+}
+function endDrag(e){
+  drawer.style.transform = "";                               // class transform resumes
+  if (Math.abs(e.clientX - startX) > size * 0.33) closeDrawer();   // threshold -> close
+}` },
+ { title:"10. Respect prefers-reduced-motion", why:"Motion is a feature, not a given. Vestibular disorders make large sliding transitions genuinely uncomfortable, and users can ask the OS to minimise animation. Honour that with the prefers-reduced-motion media query: when it is set to reduce, drop the transitions on the drawer and scrim so the panel simply appears and disappears — same open/close logic and the same class toggle, just without the travel. Nothing else in your JavaScript changes; you are only removing the tweening. This is a one-block CSS addition and it is the difference between an interface that respects the user stated preference and one that ignores it. Pair it with visible focus-visible outlines and you have a drawer that is pleasant for people who love motion and safe for those who do not.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">@media (prefers-reduced-motion: reduce){<br>&nbsp;&nbsp;.drawer, .scrim { transition: none; }<br>}<br><br>motion on -&gt; slide&nbsp;&nbsp;·&nbsp;&nbsp;reduce -&gt; instant, no travel</div>`, code:`@media (prefers-reduced-motion: reduce){
+  .drawer, .scrim { transition: none; }
+}
+:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>

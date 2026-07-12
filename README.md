@@ -37,6 +37,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 28 — Color Picker](https://dev48v.infy.uk/design/day28-color-picker.html) — `day28-color-picker.html`
 - [DesignFromZero · Day 29 — Context Menu](https://dev48v.infy.uk/design/day29-context-menu.html) — `day29-context-menu.html`
 - [DesignFromZero · Day 30 — Data Table](https://dev48v.infy.uk/design/day30-data-table.html) — `day30-data-table.html`
+- [DesignFromZero · Day 31 — Drawer](https://dev48v.infy.uk/design/day31-drawer.html) — `day31-drawer.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk
