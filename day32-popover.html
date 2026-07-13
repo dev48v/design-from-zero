@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 32 — Popover</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== popover demo surface ===== */
+  .seg-btn { border:1px solid #e2e8f0; background:#fff; border-radius:9px; padding:7px 13px; font-size:13px;
+             font-weight:600; color:#334155; cursor:pointer; }
+  .seg-btn:hover { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
+  .seg-btn.sel { background:#4338ca; color:#fff; border-color:#4338ca; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+          background:#eef2ff; color:#4338ca; }
+  .pill.off { background:#f1f5f9; color:#94a3b8; }
+  /* the demo stage — anchors live here at fixed spots so flip + shift are easy to trigger */
+  .stage { position:relative; border:1px dashed #cbd5e1; border-radius:16px;
+           background:linear-gradient(#f8fafc,#eef2f7); min-height:470px; overflow:hidden; }
+  .anchor-btn { position:absolute; border:1px solid #c7d2fe; background:#fff; color:#4338ca;
+                border-radius:9px; padding:7px 11px; font-size:12px; font-weight:700; cursor:pointer;
+                box-shadow:0 1px 2px rgba(15,23,42,.06); white-space:nowrap; }
+  .anchor-btn:hover { background:#eef2ff; }
+  .anchor-btn.active { background:#4338ca; color:#fff; border-color:#4338ca; }
+  /* the floating panel — position:fixed, coordinates set from JS */
+  .pop { position:fixed; z-index:70; width:262px; background:#fff; border:1px solid #e2e8f0;
+         border-radius:12px; box-shadow:0 14px 44px rgba(15,23,42,.20); left:0; top:0;
+         opacity:0; visibility:hidden; transform:scale(.96);
+         transition:opacity .14s ease, transform .14s ease, visibility .14s ease; }
+  .pop.open { opacity:1; visibility:visible; transform:scale(1); }
+  .pop-arrow { position:absolute; width:0; height:0; }
+  .pop-head { display:flex; align-items:center; justify-content:space-between; padding:12px 14px 10px; border-bottom:1px solid #f1f5f9; }
+  .pop-title { font-size:14px; font-weight:800; color:#0f172a; }
+  .pop-x { border:none; background:#f1f5f9; width:26px; height:26px; border-radius:7px; font-size:17px; line-height:1; color:#334155; cursor:pointer; }
+  .pop-x:hover { background:#e2e8f0; }
+  .pop-body { padding:13px 14px; }
+  .pop-body p { font-size:12.5px; color:#64748b; line-height:1.5; margin-bottom:11px; }
+  .pop-body .lbl { display:block; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; }
+  .pop-body input[type=text] { width:100%; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px; color:#334155; }
+  .pop-body input:focus { outline:none; border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+  .pop-foot { display:flex; gap:8px; padding:0 14px 13px; }
+  .btn-primary { background:#4f46e5; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; flex:1; }
+  .btn-primary:hover { background:#4338ca; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:8px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; flex:1; }
+  .btn-ghost:hover { background:#f8fafc; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .pop { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 32</div>
+      <h1 class="text-xl font-bold">🎯 Popover — An Anchored Floating Panel With Flip + Shift Positioning, a Tracking Arrow, Click / Hover / Focus Triggers, Dismiss &amp; A11y</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Anchor a real floating panel to any element.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A working <strong>popover</strong> built from scratch in vanilla JS — a tiny <em>floating-ui</em>. Pick a preferred <strong>side</strong> and <strong>alignment</strong>, then open a panel on any anchor below. The math reads the anchor's rectangle, measures the panel, and places it on your chosen side — but if that side would spill off-screen it <strong>flips</strong> to the opposite side, and it <strong>shifts</strong> along the edge to stay inside the viewport. The <strong>arrow</strong> always points back at the anchor's centre and tracks that shift. Switch the trigger to <strong>hover</strong> or <strong>focus</strong>, tab into the fields inside, and dismiss with an outside click or <kbd>Esc</kbd>. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-3 mb-5">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Side</span>
+            <button class="seg-btn" data-side="top">↑ Top</button>
+            <button class="seg-btn sel" data-side="bottom">↓ Bottom</button>
+            <button class="seg-btn" data-side="left">← Left</button>
+            <button class="seg-btn" data-side="right">→ Right</button>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Align</span>
+            <button class="seg-btn" data-align="start">Start</button>
+            <button class="seg-btn sel" data-align="center">Center</button>
+            <button class="seg-btn" data-align="end">End</button>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Trigger</span>
+            <button class="seg-btn sel" data-trigger="click">Click</button>
+            <button class="seg-btn" data-trigger="hover">Hover</button>
+            <button class="seg-btn" data-trigger="focus">Focus</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center text-xs text-slate-500 mb-5">
+          <span class="font-semibold uppercase tracking-wider text-slate-400">State</span>
+          <span id="stReq"   class="pill">req: bottom</span>
+          <span id="stSide"  class="pill off">side: —</span>
+          <span id="stFlip"  class="pill off">no flip</span>
+          <span id="stShift" class="pill off">shift 0px</span>
+          <span id="stTrig"  class="pill">click</span>
+        </div>
+
+        <div class="stage" id="stage">
+          <button class="anchor-btn" style="top:14px; left:14px;"                       data-a>Top-left anchor</button>
+          <button class="anchor-btn" style="top:14px; left:50%; transform:translateX(-50%);" data-a>Top-center anchor</button>
+          <button class="anchor-btn" style="top:14px; right:14px;"                      data-a>Top-right anchor</button>
+          <button class="anchor-btn" style="top:50%; left:14px; transform:translateY(-50%);"  data-a>Left-edge anchor</button>
+          <button class="anchor-btn" style="top:50%; left:50%; transform:translate(-50%,-50%); padding:10px 18px;" data-a>Center anchor</button>
+          <button class="anchor-btn" style="top:50%; right:14px; transform:translateY(-50%);" data-a>Right-edge anchor</button>
+          <button class="anchor-btn" style="bottom:14px; left:14px;"                    data-a>Bottom-left anchor</button>
+          <button class="anchor-btn" style="bottom:14px; left:50%; transform:translateX(-50%);" data-a>Bottom-center anchor</button>
+          <button class="anchor-btn" style="bottom:14px; right:14px;"                   data-a>Bottom-right anchor</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-3 text-center">Try <strong>Side: Bottom</strong> on a bottom-row anchor, or <strong>Side: Right</strong> on the right-edge anchor — watch it flip. Open a center anchor with <strong>Align: End</strong> and resize the window to watch it shift.</p>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-10 text-center max-w-2xl mx-auto">This is the engine behind every rich tooltip, menu, date-picker and hover-card. Unlike a modal drawer it does not take over the screen — it stays pinned to the thing that opened it and only nudges itself to stay visible. Real production apps reach for <code>floating-ui</code> for the edge cases (scroll containers, iframes, transforms), but the core is exactly the flip + shift + arrow math you can drive here.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a popover positions itself</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A popover is a <code>position:fixed</code> panel whose coordinates you compute yourself from the anchor's rectangle. Place it on a preferred side, <strong>flip</strong> to the opposite side when it would overflow, <strong>shift</strong> it along the edge to stay in the viewport, and point an <strong>arrow</strong> at the anchor that tracks the shift. Then wire click / hover / focus triggers, outside-click + <kbd>Esc</kbd> dismissal, focus management, and a reposition on scroll/resize. ~120 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Read the anchor rect, float the panel</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The anchor is any element on the page; the panel floats above everything at <code>position:fixed</code>. <code>getBoundingClientRect()</code> hands you the anchor's box in <strong>viewport</strong> coordinates — exactly the space a fixed element lives in — so its numbers drop straight into the panel's <code>top</code>/<code>left</code>. Measure the panel with <code>offsetWidth</code>/<code>offsetHeight</code> while it is rendered (not <code>display:none</code>).</p>
+        <div class="relative"><pre>.pop { position:fixed; z-index:70; visibility:hidden; }   /* laid out, measurable */
+.pop.open { visibility:visible; }
+
+const a  = anchor.getBoundingClientRect();      // {top,left,width,height} in viewport space
+const pw = pop.offsetWidth, ph = pop.offsetHeight;
+const vw = innerWidth,      vh = innerHeight;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Place it on the preferred side + alignment</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two axes. The <strong>side</strong> (top/bottom/left/right) sets the main-axis coordinate: a <code>bottom</code> popover sits at the anchor's bottom edge plus a small gap. The <strong>alignment</strong> (start/center/end) sets the cross-axis: <code>center</code> lines the panel's midpoint up with the anchor's. That is the whole "preferred" placement, before any correction.</p>
+        <div class="relative"><pre>const GAP = 12;
+let top, left;
+if (side === "bottom") top = a.top + a.height + GAP;   // main axis
+if (side === "top")    top = a.top - GAP - ph;
+
+// cross axis (for a vertical side, that's horizontal):
+if (align === "start")  left = a.left;
+if (align === "center") left = a.left + a.width/2 - pw/2;
+if (align === "end")    left = a.left + a.width - pw;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Flip when the preferred side overflows</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Before committing, ask: does the panel actually fit on that side? A <code>bottom</code> popover fits only if <code>anchor.bottom + gap + panelHeight</code> is still above the viewport floor. If it does not fit but the <em>opposite</em> side does, flip. This is why a menu near the bottom of the screen opens upward instead of getting clipped.</p>
+        <div class="relative"><pre>const opposite = { top:"bottom", bottom:"top", left:"right", right:"left" };
+function fits(s){
+  if (s === "bottom") return a.top + a.height + GAP + ph &lt;= vh - PAD;
+  if (s === "top")    return a.top - GAP - ph &gt;= PAD;
+  if (s === "right")  return a.left + a.width + GAP + pw &lt;= vw - PAD;
+  if (s === "left")   return a.left - GAP - pw &gt;= PAD;
+}
+if (!fits(side) &amp;&amp; fits(opposite[side])) side = opposite[side];   // flip</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Shift along the edge to stay in view</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Flipping fixes the main axis; shifting fixes the cross axis. A bottom popover aligned to a left-edge anchor can still poke off the left of the screen. Clamp its cross-axis coordinate between the viewport padding and <code>viewport − panel − padding</code>. Remember how far you moved — the arrow will need it.</p>
+        <div class="relative"><pre>const vertical = side === "top" || side === "bottom";
+let shift = 0;
+if (vertical){                                   // clamp horizontally
+  const min = PAD, max = vw - pw - PAD;
+  const clamped = Math.max(min, Math.min(left, max));
+  shift = clamped - left;                        // how far we nudged it
+  left  = clamped;
+}                                                // (mirror for horizontal sides)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The arrow — point at the anchor, track the shift</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The arrow must point at the anchor's <em>centre</em>, not the panel's. Compute the anchor centre in the cross axis, subtract the panel's edge to get an offset inside the panel — this naturally accounts for the shift. Then clamp it so a heavy shift never pushes the arrow past the panel's rounded corner.</p>
+        <div class="relative"><pre>const AM = 16;                                   // keep arrow off the corners
+let arrow;
+if (vertical){
+  const centerX = a.left + a.width/2;            // anchor centre
+  arrow = centerX - left;                        // offset within the panel
+  arrow = Math.max(AM, Math.min(arrow, pw - AM));// clamp to panel edges
+}
+// arrow is a CSS border-triangle nudged half its base: left = arrow - 8</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Triggers — click, hover, focus</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One <code>openFor(anchor)</code> / <code>close()</code> pair, three ways to fire it. <strong>Click</strong> toggles (and closes on outside click). <strong>Hover</strong> opens on <code>mouseenter</code> and closes on <code>mouseleave</code> — but with a small delay and a listener on the panel too, so the mouse can travel from anchor to panel without it snapping shut. <strong>Focus</strong> opens on <code>focus</code> / closes on <code>blur</code> for keyboard users.</p>
+        <div class="relative"><pre>anchor.addEventListener("click", () =&gt; {
+  if (mode === "click") current === anchor ? close() : openFor(anchor);
+});
+anchor.addEventListener("mouseenter", () =&gt; { if (mode === "hover"){ clearTimeout(t); openFor(anchor); }});
+anchor.addEventListener("mouseleave", () =&gt; { if (mode === "hover") t = setTimeout(close, 120); });
+pop.addEventListener("mouseenter",    () =&gt; clearTimeout(t));        // bridge the gap
+anchor.addEventListener("focus", () =&gt; { if (mode === "focus") openFor(anchor); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Dismiss + focus management</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because a popover can hold interactive content (a form, buttons), it is more than a tooltip. On a click open, move focus into the panel and give it <code>role="dialog"</code> with an <code>aria-labelledby</code>; the anchor gets <code>aria-expanded</code>. Dismiss on outside <code>mousedown</code> and on <kbd>Esc</kbd>, and on close return focus to the anchor so the keyboard user is never stranded.</p>
+        <div class="relative"><pre>document.addEventListener("mousedown", e =&gt; {
+  if (current &amp;&amp; !pop.contains(e.target) &amp;&amp; !isAnchor(e.target)) close();   // outside click
+});
+document.addEventListener("keydown", e =&gt; {
+  if (e.key === "Escape" &amp;&amp; current){ const a = current; close(); a.focus(); }
+});
+function openFor(a){ current = a; pop.classList.add("open");
+  a.setAttribute("aria-expanded","true"); if (mode==="click") firstField().focus(); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Reposition live + the native platform note</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A fixed panel is placed once — but the anchor moves when the page scrolls or the window resizes, so recompute on both (use capture-phase scroll to catch nested scrollers). The platform is catching up: the native <strong>Popover API</strong> (<code>popovertarget</code>) gives you top-layer + light-dismiss for free, and CSS <strong>anchor-positioning</strong> (<code>anchor()</code> / <code>position-try</code>) does flip + shift in pure CSS. Support is still uneven, which is exactly why <code>floating-ui</code> exists.</p>
+        <div class="relative"><pre>addEventListener("scroll", () =&gt; current &amp;&amp; reposition(), true);   // capture nested scroll
+addEventListener("resize", () =&gt; current &amp;&amp; reposition());
+
+&lt;!-- native, no JS positioning yet everywhere: --&gt;
+&lt;button popovertarget="p"&gt;Open&lt;/button&gt;
+&lt;div id="p" popover&gt;…&lt;/div&gt;
+/* CSS: .pop { position-anchor:--a; top:anchor(bottom); position-try:flip-block; } */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 32 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real popover from scratch — a tiny floating-ui: a fixed panel placed from the anchor's <code>getBoundingClientRect()</code> on a preferred side + alignment, that <strong>flips</strong> to the opposite side when it would overflow and <strong>shifts</strong> along the edge to stay in the viewport, with an <strong>arrow</strong> that points at the anchor centre and tracks the shift. Click / hover / focus triggers, outside-click + <kbd>Esc</kbd> dismissal, focus moved in and returned, <code>role="dialog"</code> + <code>aria-expanded</code>, and a live reposition on scroll/resize — plus a nod to the native Popover API and CSS anchor-positioning. This is the engine under every rich tooltip, menu and hover-card. <strong>👉 Tomorrow — Day 33: Stepper (multi-step wizard + progress).</strong></p></div>
+  </div>
+</section>
+
+<!-- ===== the shared popover panel (fixed, positioned from JS) ===== -->
+<div id="pop" class="pop" role="dialog" aria-modal="false" aria-labelledby="popTitle" aria-hidden="true">
+  <span id="popArrow" class="pop-arrow" aria-hidden="true"></span>
+  <div class="pop-head">
+    <div id="popTitle" class="pop-title">Quick edit</div>
+    <button class="pop-x" id="popClose" aria-label="Close popover">&times;</button>
+  </div>
+  <div class="pop-body">
+    <p>An anchored panel can hold real interactive content — not just text. Tab through the field and buttons; the panel stays pinned to its anchor.</p>
+    <label class="lbl" for="popInput">Label name</label>
+    <input type="text" id="popInput" placeholder="e.g. Priority" />
+  </div>
+  <div class="pop-foot">
+    <button class="btn-ghost" id="popCancel">Cancel</button>
+    <button class="btn-primary" id="popSave">Save</button>
+  </div>
+</div>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+  if (t.dataset.tab !== "look") close();
+});
+
+// ===== POPOVER =====
+const pop     = document.getElementById("pop");
+const arrow   = document.getElementById("popArrow");
+const anchors = Array.prototype.slice.call(document.querySelectorAll("[data-a]"));
+const stReq   = document.getElementById("stReq");
+const stSide  = document.getElementById("stSide");
+const stFlip  = document.getElementById("stFlip");
+const stShift = document.getElementById("stShift");
+const stTrig  = document.getElementById("stTrig");
+
+let reqSide = "bottom", align = "center", mode = "click";
+let current = null, closeTimer = null;
+
+// ---- the pure positioning engine (a mini floating-ui) ----
+function computePosition(a, pw, ph, vw, vh, side, align, opts){
+  opts = opts || {};
+  const GAP = opts.gap != null ? opts.gap : 12;
+  const PAD = opts.pad != null ? opts.pad : 8;
+  const AM  = opts.arrowMargin != null ? opts.arrowMargin : 16;
+  const opposite = { top:"bottom", bottom:"top", left:"right", right:"left" };
+
+  function fits(s){
+    if (s === "top")    return a.top - GAP - ph >= PAD;
+    if (s === "bottom") return a.top + a.height + GAP + ph <= vh - PAD;
+    if (s === "left")   return a.left - GAP - pw >= PAD;
+    if (s === "right")  return a.left + a.width + GAP + pw <= vw - PAD;
+    return true;
+  }
+
+  // 1. flip main axis if the preferred side overflows and the opposite fits
+  let finalSide = side, flipped = false;
+  if (!fits(side) && fits(opposite[side])){ finalSide = opposite[side]; flipped = true; }
+  const vertical = finalSide === "top" || finalSide === "bottom";
+
+  // 2. main-axis coordinate
+  let top, left;
+  if (finalSide === "top")    top  = a.top - GAP - ph;
+  if (finalSide === "bottom") top  = a.top + a.height + GAP;
+  if (finalSide === "left")   left = a.left - GAP - pw;
+  if (finalSide === "right")  left = a.left + a.width + GAP;
+
+  // 3. cross-axis coordinate from alignment
+  if (vertical){
+    if (align === "start")  left = a.left;
+    if (align === "center") left = a.left + a.width/2 - pw/2;
+    if (align === "end")    left = a.left + a.width - pw;
+  } else {
+    if (align === "start")  top = a.top;
+    if (align === "center") top = a.top + a.height/2 - ph/2;
+    if (align === "end")    top = a.top + a.height - ph;
+  }
+
+  // 4. shift the cross axis to clamp inside the viewport
+  let shift = 0;
+  if (vertical){
+    const min = PAD, max = vw - pw - PAD;
+    const clamped = Math.max(min, Math.min(left, max));
+    shift = clamped - left; left = clamped;
+  } else {
+    const min = PAD, max = vh - ph - PAD;
+    const clamped = Math.max(min, Math.min(top, max));
+    shift = clamped - top; top = clamped;
+  }
+
+  // 5. arrow points at the anchor centre, clamped to the panel edge
+  let arrowPos;
+  if (vertical){
+    arrowPos = (a.left + a.width/2) - left;
+    arrowPos = Math.max(AM, Math.min(arrowPos, pw - AM));
+  } else {
+    arrowPos = (a.top + a.height/2) - top;
+    arrowPos = Math.max(AM, Math.min(arrowPos, ph - AM));
+  }
+
+  return { side:finalSide, requested:side, top:top, left:left, arrow:arrowPos, flipped:flipped, shift:shift, vertical:vertical };
+}
+
+function paintArrow(side, arrowPos){
+  const S = 8, col = "#fff";
+  arrow.removeAttribute("style");
+  arrow.style.position = "absolute";
+  arrow.style.width = "0"; arrow.style.height = "0";
+  if (side === "bottom"){
+    arrow.style.borderLeft = S+"px solid transparent"; arrow.style.borderRight = S+"px solid transparent";
+    arrow.style.borderBottom = S+"px solid "+col; arrow.style.top = (-S)+"px"; arrow.style.left = Math.round(arrowPos - S)+"px";
+  } else if (side === "top"){
+    arrow.style.borderLeft = S+"px solid transparent"; arrow.style.borderRight = S+"px solid transparent";
+    arrow.style.borderTop = S+"px solid "+col; arrow.style.bottom = (-S)+"px"; arrow.style.left = Math.round(arrowPos - S)+"px";
+  } else if (side === "right"){
+    arrow.style.borderTop = S+"px solid transparent"; arrow.style.borderBottom = S+"px solid transparent";
+    arrow.style.borderRight = S+"px solid "+col; arrow.style.left = (-S)+"px"; arrow.style.top = Math.round(arrowPos - S)+"px";
+  } else if (side === "left"){
+    arrow.style.borderTop = S+"px solid transparent"; arrow.style.borderBottom = S+"px solid transparent";
+    arrow.style.borderLeft = S+"px solid "+col; arrow.style.right = (-S)+"px"; arrow.style.top = Math.round(arrowPos - S)+"px";
+  }
+}
+
+function reposition(){
+  if (!current) return;
+  const a = current.getBoundingClientRect();
+  const r = computePosition(a, pop.offsetWidth, pop.offsetHeight, window.innerWidth, window.innerHeight, reqSide, align, {gap:12, pad:8, arrowMargin:16});
+  pop.style.left = Math.round(r.left) + "px";
+  pop.style.top  = Math.round(r.top)  + "px";
+  paintArrow(r.side, r.arrow);
+  stReq.textContent  = "req: " + r.requested;
+  stSide.textContent = "side: " + r.side; stSide.classList.remove("off");
+  stFlip.textContent = r.flipped ? "flipped " + r.requested + "→" + r.side : "no flip";
+  stFlip.classList.toggle("off", !r.flipped);
+  const sh = Math.round(r.shift);
+  stShift.textContent = "shift " + sh + "px";
+  stShift.classList.toggle("off", sh === 0);
+}
+
+function firstField(){ return pop.querySelector("input, button"); }
+
+function openFor(anchor, moveFocus){
+  current = anchor;
+  pop.classList.add("open");
+  pop.setAttribute("aria-hidden", "false");
+  anchors.forEach(b => b.classList.toggle("active", b === anchor));
+  anchor.setAttribute("aria-expanded", "true");
+  reposition();
+  if (moveFocus){ const f = firstField(); if (f) f.focus(); }
+}
+
+function close(returnFocus){
+  if (!current) return;
+  const a = current;
+  current = null;
+  pop.classList.remove("open");
+  pop.setAttribute("aria-hidden", "true");
+  a.removeAttribute("aria-expanded");
+  anchors.forEach(b => b.classList.remove("active"));
+  stSide.textContent = "side: —"; stSide.classList.add("off");
+  if (returnFocus && typeof a.focus === "function") a.focus();
+}
+
+function scheduleClose(){ clearTimeout(closeTimer); closeTimer = setTimeout(() => close(false), 130); }
+
+// ---- triggers ----
+anchors.forEach(a => {
+  a.addEventListener("click", () => {
+    if (mode !== "click") return;
+    if (current === a) close(true);
+    else { close(false); openFor(a, true); }
+  });
+  a.addEventListener("mouseenter", () => {
+    if (mode !== "hover") return;
+    clearTimeout(closeTimer);
+    if (current !== a){ close(false); openFor(a, false); }
+  });
+  a.addEventListener("mouseleave", () => { if (mode === "hover") scheduleClose(); });
+  a.addEventListener("focus", () => { if (mode === "focus"){ close(false); openFor(a, false); } });
+  a.addEventListener("blur",  () => { if (mode === "focus") scheduleClose(); });
+});
+pop.addEventListener("mouseenter", () => { if (mode === "hover") clearTimeout(closeTimer); });
+pop.addEventListener("mouseleave", () => { if (mode === "hover") scheduleClose(); });
+
+// ---- dismiss ----
+document.getElementById("popClose").addEventListener("click", () => close(true));
+document.getElementById("popCancel").addEventListener("click", () => close(true));
+document.getElementById("popSave").addEventListener("click", () => close(true));
+document.addEventListener("mousedown", e => {
+  if (!current) return;
+  if (pop.contains(e.target)) return;
+  if (anchors.indexOf(e.target) !== -1 || (e.target.closest && e.target.closest("[data-a]"))) return;
+  close(false);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && current) close(true);
+});
+window.addEventListener("scroll", () => { if (current) reposition(); }, true);
+window.addEventListener("resize", () => { if (current) reposition(); });
+
+// ---- controls ----
+document.querySelectorAll("[data-side]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-side]").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); reqSide = b.dataset.side; stReq.textContent = "req: " + reqSide;
+  if (current) reposition();
+}));
+document.querySelectorAll("[data-align]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-align]").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); align = b.dataset.align;
+  if (current) reposition();
+}));
+document.querySelectorAll("[data-trigger]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-trigger]").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); mode = b.dataset.trigger; stTrig.textContent = mode; close(false);
+}));
+
+// ===== UNDERSTAND step engine =====
+const STEPS = [
+ { title:"1. Popover vs tooltip vs dropdown", why:"All three are floating panels anchored to an element, and they share the same positioning engine — the differences are behavioural, not geometric. A tooltip is a tiny, non-interactive label that appears on hover or focus and holds nothing you can click; it is purely descriptive. A dropdown (or menu) is a list of choices opened from a button, navigated with the arrow keys, that closes when you pick one. A popover sits in between and is the richest of the three: it opens on click (or hover, or focus), it can contain arbitrary interactive content — text, form fields, buttons, even another control — and it behaves like a small non-modal dialog. Because it can hold focusable content, it carries real accessibility duties a tooltip never does: it needs role=dialog, an accessible name, aria-expanded on its trigger, focus moved in, and a proper dismiss story. Everything after this step is shared machinery; this step is about knowing which behaviours you owe the user.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">tooltip&nbsp;&nbsp;= hover label, no clicks<br>dropdown = menu of choices, arrow-keys<br>popover&nbsp;&nbsp;= rich panel, forms + buttons<br><br>same math &middot; different behaviour + a11y</div>`, code:`// A popover is a non-modal dialog pinned to an anchor:
+<div class="pop" role="dialog" aria-labelledby="t" aria-modal="false">
+  <h2 id="t">Quick edit</h2>
+  <input> <button>Save</button>        <!-- real interactive content -->
+</div>
+// trigger carries aria-expanded; tooltip would carry none of this.` },
+ { title:"2. The anchor rect via getBoundingClientRect", why:"Everything starts from where the anchor actually is on screen right now. element.getBoundingClientRect() returns a DOMRect with top, left, right, bottom, width and height measured in viewport coordinates — pixels from the top-left of the visible window, already accounting for scroll. That last part matters: because a position:fixed element is also laid out relative to the viewport, the rect's numbers can be dropped straight into the panel's top and left with no conversion. If instead you position the panel absolutely inside some scrolling container you would have to add scroll offsets and subtract the container's own rect, which is where hand-rolled popovers usually break. Keeping the panel fixed and reading the anchor with getBoundingClientRect keeps the whole calculation in one coordinate space. The one caveat: the rect is a snapshot at the instant you read it, so you must re-read it whenever the anchor could have moved — which is exactly why a later step re-runs the whole computation on scroll and resize.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">anchor.getBoundingClientRect()<br>+-------------------+<br>| top,left&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|<br>|&nbsp;&nbsp;&nbsp;[ anchor ]&nbsp;&nbsp;&nbsp;| width x height<br>+-------------------+<br>viewport coords &rarr; drop into fixed panel</div>`, code:`const a  = anchor.getBoundingClientRect();
+// a.top / a.left are viewport pixels (scroll already applied)
+const pw = pop.offsetWidth, ph = pop.offsetHeight;   // panel size
+const vw = window.innerWidth, vh = window.innerHeight;` },
+ { title:"3. Place on the preferred side + alignment", why:"Placement is two independent axes, and separating them keeps the math clean. The side — top, bottom, left or right — fixes the main axis: it decides which edge of the anchor the panel hangs off, plus a small gap so the two are not touching. For a bottom popover that is anchor.bottom + gap; for a top popover it is anchor.top − gap − panelHeight, because you are positioning the panel's top edge and must subtract its own height. The alignment — start, center or end — fixes the cross axis: for a vertical side the cross axis is horizontal, so start lines the panel's left edge up with the anchor's left, center lines the midpoints up (anchor.left + anchor.width/2 − panel.width/2), and end lines the right edges up. For a horizontal side the roles swap and alignment runs vertically. This is the panel's preferred position — the place it would sit if the viewport were infinite. The next two steps are corrections applied only when reality intrudes.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">side = main axis&nbsp;&nbsp;(which edge + gap)<br>align = cross axis (start / center / end)<br><br>&nbsp;&nbsp;[anchor]<br>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;gap<br>&nbsp;+----------+&nbsp;&larr; bottom, center<br>&nbsp;|&nbsp;&nbsp;panel&nbsp;&nbsp;&nbsp;|</div>`, code:`const GAP = 12;
+let top, left;
+if (side === "bottom") top = a.top + a.height + GAP;
+if (side === "top")    top = a.top - GAP - ph;   // subtract own height
+// cross axis for a vertical side = horizontal alignment:
+if (align === "center") left = a.left + a.width/2 - pw/2;
+if (align === "start")  left = a.left;
+if (align === "end")    left = a.left + a.width - pw;` },
+ { title:"4. Flip when the preferred side overflows", why:"The preferred side is a wish, not a guarantee. If the anchor sits near the bottom of the screen and you asked for a bottom popover, the panel would extend past the viewport floor and get clipped — useless. Flipping is the fix: before committing, test whether the panel fits on the requested side, and if it does not but the opposite side does, swap to the opposite. Fits is a simple inequality per side — a bottom popover fits when anchor.bottom + gap + panelHeight is still at least a padding above the viewport height; a top popover fits when anchor.top − gap − panelHeight is still below the top padding. Note the asymmetry of the check: you only flip if the opposite side is genuinely better, otherwise you keep the original and let the next step (shift) do what it can, because flipping into an even-worse side helps no one. This single rule is why menus near the bottom of the screen open upward and why a tooltip on a top-row element drops below instead of vanishing above the fold.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">asked: bottom, but no room below<br>+-------------------------+<br>|&nbsp;&nbsp;+--------+&nbsp;&larr; flipped to top<br>|&nbsp;&nbsp;| panel&nbsp;&nbsp;|<br>|&nbsp;&nbsp;+--------+<br>|&nbsp;&nbsp;[ anchor ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|<br>+--- viewport floor ------+</div>`, code:`const opposite = { top:"bottom", bottom:"top", left:"right", right:"left" };
+function fits(s){
+  if (s === "bottom") return a.top + a.height + GAP + ph <= vh - PAD;
+  if (s === "top")    return a.top - GAP - ph >= PAD;
+  if (s === "right")  return a.left + a.width + GAP + pw <= vw - PAD;
+  if (s === "left")   return a.left - GAP - pw >= PAD;
+}
+let side = requested;
+if (!fits(side) && fits(opposite[side])) side = opposite[side];   // flip` },
+ { title:"5. Shift along the cross axis to stay in view", why:"Flipping only ever fixes the main axis. The cross axis has its own overflow problem: a bottom popover that is center-aligned to an anchor sitting in the far corner will still hang off the left or right edge of the screen, because centering ignores the walls. Shifting solves it by clamping the cross-axis coordinate into the visible band. For a vertical side you compute the legal range for left — from PAD on the left to viewportWidth − panelWidth − PAD on the right — and clamp the desired left into it with Math.max(min, Math.min(left, max)). Crucially you record how far you moved: shift = clamped − original. That number is not just bookkeeping; the arrow depends on it in the next step, because once the panel slides sideways the arrow can no longer sit at the panel's centre and still point at the anchor. Flip plus shift together are the entire reason a well-built popover never gets clipped: flip guarantees the side has room, shift guarantees the length of the panel fits along that side.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">center-aligned near the left wall:<br>X wanted:&nbsp;&nbsp;[pan]el&nbsp;&nbsp;(off-screen)<br>| shifted: [panel]&nbsp;&nbsp;&nbsp;(clamped in)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shift = clamped - wanted<br>left in [PAD, vw - pw - PAD]</div>`, code:`const vertical = side === "top" || side === "bottom";
+let shift = 0;
+if (vertical){
+  const min = PAD, max = vw - pw - PAD;
+  const clamped = Math.max(min, Math.min(left, max));
+  shift = clamped - left;      // remember the nudge — the arrow needs it
+  left  = clamped;
+} // mirror with top / vh for horizontal sides` },
+ { title:"6. The arrow — point at the anchor, offset for the shift", why:"The arrow is the visual thread tying the panel back to its anchor, and the subtle bug everyone hits is pointing it at the panel's centre instead of the anchor's. When the panel is perfectly centered they coincide and the naive version looks fine — until a shift slides the panel sideways and the arrow, still at panel-centre, now points at empty space next to the anchor. The fix is to compute the arrow's position from the anchor's centre expressed in the panel's own coordinate space: for a vertical side, arrow = anchorCenterX − panelLeft. Because panelLeft already includes the shift, this offset automatically slides the arrow the opposite way, keeping it aimed at the anchor no matter how far the panel moved. The final safety step is clamping: if the anchor is so far off that the arrow would land on the panel's rounded corner (or beyond its edge), clamp it to a small margin inside the panel so it always renders cleanly against a straight run of the border. Draw the arrow itself as a CSS border-triangle nudged out by half its base.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">arrow = anchorCentre - panelLeft<br>&nbsp;&nbsp;[ anchor ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&larr; tracks the shift<br>+----^------------+<br>|&nbsp;&nbsp;panel&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|<br>clamp within [AM, pw - AM]</div>`, code:`const AM = 16;                       // corner margin
+let arrow;
+if (vertical){
+  arrow = (a.left + a.width/2) - left;         // anchor centre, panel space
+  arrow = Math.max(AM, Math.min(arrow, pw - AM));
+}
+// CSS triangle, base 16px, nudged half its base:
+arrowEl.style.left = (arrow - 8) + "px";
+arrowEl.style.borderBottom = "8px solid #fff";  // points up (side=bottom)` },
+ { title:"7. Trigger modes — click, hover, focus", why:"A popover can open three ways and each has a personality. Click is the default for interactive popovers: it toggles — clicking the same anchor again closes it — and it pairs with outside-click dismissal, which makes it feel like a small dialog. Hover suits lightweight preview cards, but it has a famous trap: if you close the instant the mouse leaves the anchor, the user can never reach the panel, because moving toward it crosses the gap between anchor and panel where neither is hovered. The cure is a short close delay plus a mouseenter listener on the panel itself that cancels the pending close, so the pointer can bridge the gap. Focus is the keyboard's equivalent of hover — open on focus, close on blur — and is essential for accessibility so a keyboard user can reach a popover that mouse users get on hover. Real components often combine them (hover + focus for a tooltip; click + focus for a menu). Routing every mode through one openFor / close pair keeps behaviour identical no matter which input fired it.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click&nbsp;&nbsp;-&gt; toggle + outside-click closes<br>hover&nbsp;-&gt; open; delay-close; panel bridges gap<br>focus&nbsp;-&gt; open on focus, close on blur (kbd)<br><br>one openFor() / close() &middot; three fires</div>`, code:`anchor.onmouseenter = () => { if (mode==="hover"){ clearTimeout(t); openFor(anchor); } };
+anchor.onmouseleave = () => { if (mode==="hover") t = setTimeout(close, 130); };
+pop.onmouseenter    = () => clearTimeout(t);        // let the pointer cross the gap
+anchor.onclick      = () => { if (mode==="click") current===anchor ? close() : openFor(anchor); };
+anchor.onfocus      = () => { if (mode==="focus") openFor(anchor); };` },
+ { title:"8. Focus management for an interactive popover", why:"This is the line that separates a popover from a tooltip. Because the panel can contain a form and buttons, a keyboard or screen-reader user must be able to operate it — which means focus has to go in when it opens and come back when it closes. On a click-triggered open, move focus to the first focusable control inside the panel; on hover or focus triggers you generally do not steal focus, since the user did not ask to be moved. Tell assistive tech what happened: give the panel role=dialog with aria-modal=false (it is non-modal — the page behind is still usable) and an accessible name via aria-labelledby, and set aria-expanded=true on the trigger so a screen reader announces the button as expanded. When the panel closes, return focus to the anchor that opened it, so a keyboard user lands exactly where they were instead of at the top of the document. Unlike a modal drawer you usually do not trap focus — tabbing past the last control should move on to the page — but you must still handle Escape and provide a visible close affordance.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">open (click) -&gt; focus first field inside<br>trigger gets aria-expanded="true"<br>close&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&gt; focus returns to anchor<br><br>role="dialog" aria-modal="false" (non-modal)</div>`, code:`function openFor(a, moveFocus){
+  current = a; pop.classList.add("open");
+  a.setAttribute("aria-expanded", "true");
+  if (moveFocus) pop.querySelector("input, button").focus();  // into the panel
+}
+function close(returnFocus){
+  const a = current; current = null; pop.classList.remove("open");
+  a.removeAttribute("aria-expanded");
+  if (returnFocus) a.focus();                                 // back to the trigger
+}` },
+ { title:"9. Dismiss logic — outside click, Esc, scroll", why:"A popover must be easy to get rid of, and a robust one closes on several signals. The outside click (light dismiss) is the main one: listen on the document for mousedown and close if the target is neither inside the panel nor an anchor — using mousedown rather than click means the popover closes before a click on the page behind it activates something, which feels crisp. Escape is the keyboard equivalent and should always work while the popover is open, returning focus to the trigger. Beyond those, decide what scrolling should do: rich popovers usually reposition on scroll to stay glued to their anchor (the next step), while some lightweight ones simply close on any scroll. Two details keep this bug-free. First, guard the outside-click handler so clicking an anchor does not immediately close the very popover it is opening — check with element.closest so a click on an icon inside the anchor still counts. Second, funnel every dismissal — the close button, Cancel, Save, Escape, outside click — through the same close() function so behaviour (focus return, aria cleanup, arrow reset) never drifts between paths. The native Popover API bakes this light-dismiss behaviour in for free; hand-rolled, it is these two listeners.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">outside mousedown -&gt; close (light dismiss)<br>Escape&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&gt; close + return focus<br>scroll&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-&gt; reposition (or close)<br><br>every path routes through close()</div>`, code:`document.addEventListener("mousedown", e => {
+  if (current && !pop.contains(e.target) && !e.target.closest("[data-a]")) close();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && current){ const a = current; close(); a.focus(); }
+});` },
+ { title:"10. Reposition live + the native platform", why:"A fixed panel is positioned once at open time, but the anchor is not frozen — the page can scroll, the window can resize, fonts can load and reflow. So the last piece is keeping the popover glued: re-run the whole compute-and-place function on scroll and resize while it is open. Use a capture-phase scroll listener (addEventListener with true) so it fires for nested scroll containers too, not just the window, otherwise a popover anchored inside a scrolling panel drifts away from its anchor. That is essentially all a hand-rolled floating engine does — read rect, flip, shift, arrow, repeat. The platform is finally absorbing this: the native Popover API (the popover attribute plus popovertarget) gives you top-layer rendering above everything, and light-dismiss and Escape handling for free, with no z-index wars. CSS anchor-positioning goes further, letting you write top: anchor(bottom) and position-try: flip-block so flip and shift happen in pure CSS with no JavaScript at all. Support is still landing unevenly across browsers, and real apps have to handle scroll containers, iframes, CSS transforms and RTL — which is exactly the long tail of edge cases a library like floating-ui exists to absorb. Knowing the core math, though, means you can read, debug and reach for those tools with your eyes open.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">scroll / resize -&gt; reposition() (capture: true)<br><br>native:&nbsp;&lt;button popovertarget="p"&gt;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;div id="p" popover&gt;<br>CSS:&nbsp;&nbsp;&nbsp;top: anchor(bottom); position-try: flip-block<br>floating-ui = the edge cases</div>`, code:`window.addEventListener("scroll", () => current && reposition(), true); // nested too
+window.addEventListener("resize", () => current && reposition());
+
+/* platform native (support still uneven): */
+// <button popovertarget="menu">Open</button>
+// <div id="menu" popover>…</div>
+// .pop { position-anchor:--a; top:anchor(bottom); position-try:flip-block; }` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
