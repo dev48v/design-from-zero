@@ -39,6 +39,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 30 — Data Table](https://dev48v.infy.uk/design/day30-data-table.html) — `day30-data-table.html`
 - [DesignFromZero · Day 31 — Drawer](https://dev48v.infy.uk/design/day31-drawer.html) — `day31-drawer.html`
 - [DesignFromZero · Day 32 — Popover](https://dev48v.infy.uk/design/day32-popover.html) — `day32-popover.html`
+- [DesignFromZero · Day 33 — Stepper](https://dev48v.infy.uk/design/day33-stepper.html) — `day33-stepper.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

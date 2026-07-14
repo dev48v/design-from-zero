@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 33 — Stepper</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== stepper demo surface ===== */
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+          background:#eef2ff; color:#4338ca; }
+  .pill.off { background:#f1f5f9; color:#94a3b8; }
+  /* progress header — numbered circles + connector bars */
+  .steps-row { display:flex; align-items:flex-start; }
+  .step-item { display:flex; flex-direction:column; align-items:center; text-align:center; width:96px; flex:0 0 auto; }
+  .step-circle { width:40px; height:40px; border-radius:999px; display:flex; align-items:center; justify-content:center;
+                 font-weight:800; font-size:15px; border:2px solid #e2e8f0; background:#fff; color:#94a3b8;
+                 transition:background .2s, border-color .2s, color .2s, box-shadow .2s; }
+  .step-item.active .step-circle { border-color:#4f46e5; background:#fff; color:#4338ca; box-shadow:0 0 0 4px rgba(99,102,241,.18); }
+  .step-item.done   .step-circle { border-color:#4f46e5; background:#4f46e5; color:#fff; }
+  .step-item.clickable { cursor:pointer; }
+  .step-item.clickable:hover .step-circle { box-shadow:0 0 0 4px rgba(99,102,241,.14); }
+  .step-label { font-size:12.5px; font-weight:700; color:#334155; margin-top:8px; line-height:1.2; }
+  .step-item.upcoming .step-label { color:#94a3b8; }
+  .step-desc { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .step-bar { flex:1 1 auto; height:3px; background:#e2e8f0; border-radius:3px; margin-top:19px;
+              transition:background .25s; }
+  .step-bar.fill { background:#4f46e5; }
+  /* form fields */
+  .wiz-card { background:#fff; border:1px solid #e2e8f0; border-radius:18px; }
+  .wiz-field { margin-bottom:16px; }
+  .wiz-field .lbl { display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:6px; }
+  .wiz-field input, .wiz-field select { width:100%; border:1px solid #e2e8f0; border-radius:9px; padding:10px 12px;
+                                         font-size:14px; color:#0f172a; background:#fff; }
+  .wiz-field input:focus, .wiz-field select:focus { outline:none; border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,.18); }
+  .wiz-field input.invalid, .wiz-field select.invalid { border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,.14); }
+  .err { color:#dc2626; font-size:12px; font-weight:600; margin-top:6px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  /* review */
+  .rev-row { display:flex; justify-content:space-between; gap:14px; padding:10px 0; border-bottom:1px dashed #e2e8f0; font-size:13.5px; }
+  .rev-row:last-child { border-bottom:none; }
+  .rev-k { color:#64748b; font-weight:600; }
+  .rev-v { color:#0f172a; font-weight:700; text-align:right; word-break:break-word; }
+  .btn-primary { background:#4f46e5; color:#fff; border:none; border-radius:10px; padding:10px 20px; font-weight:700; font-size:14px; cursor:pointer; }
+  .btn-primary:hover { background:#4338ca; }
+  .btn-primary:disabled { background:#c7d2fe; cursor:not-allowed; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:10px 20px; font-weight:700; font-size:14px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.45; cursor:not-allowed; }
+  /* toggle */
+  .switch { position:relative; display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; font-weight:600; color:#334155; }
+  .switch .track { width:40px; height:22px; border-radius:999px; background:#cbd5e1; position:relative; transition:background .2s; }
+  .switch .track::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:999px; background:#fff; transition:transform .2s; box-shadow:0 1px 2px rgba(15,23,42,.25); }
+  .switch.on .track { background:#4f46e5; }
+  .switch.on .track::after { transform:translateX(18px); }
+  .prog-track { height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+  .prog-fill { height:100%; background:linear-gradient(90deg,#6366f1,#4f46e5); border-radius:999px; transition:width .3s ease; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .prog-fill, .step-bar, .step-circle { transition:none; } }
+  @media (max-width:640px){ .step-desc { display:none; } .step-item { width:64px; } .step-label { font-size:11px; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 33</div>
+      <h1 class="text-xl font-bold">🎯 Stepper — A Multi-Step Wizard With Numbered Progress, Per-Step Validation Gating, Linear vs Non-Linear Jumps, a State Machine &amp; A11y</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-3xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Walk a long form through one step at a time.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>4-step sign-up wizard</strong> built from scratch in vanilla JS — <em>Account → Profile → Payment → Review</em>. The header tracks a real <strong>state machine</strong>: each step is <strong>upcoming</strong>, <strong>active</strong>, or <strong>done ✓</strong>. <strong>Next</strong> advances <em>only</em> if the current step validates — bad fields show inline errors and block you. <strong>Back</strong> returns to the previous step, keeping everything you typed. Flip <strong>non-linear</strong> on and you can <strong>click any completed step</strong> to jump straight back to edit it. The last step reviews every value before <strong>Submit</strong>. No library.</p>
+      </div>
+
+      <div class="wiz-card p-6 mb-5">
+        <!-- progress header (built by JS) -->
+        <div id="stepsRow" class="steps-row mb-2"></div>
+
+        <!-- meta row -->
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-5 mb-4">
+          <span id="stCount" class="text-sm font-bold text-slate-700">Step 1 of 4</span>
+          <span id="stPct" class="pill">0% complete</span>
+          <span id="stMode" class="pill off">linear</span>
+          <label class="switch ms-auto" id="nlToggle" role="switch" aria-checked="false" tabindex="0" style="margin-left:auto;">
+            <span class="track"></span><span>Non-linear navigation</span>
+          </label>
+        </div>
+        <div class="prog-track mb-6"><div id="progFill" class="prog-fill" style="width:0%"></div></div>
+
+        <!-- step panels -->
+        <div id="panels">
+          <div class="wizstep" data-step="0">
+            <h3 class="font-bold text-lg mb-1">Create your account</h3>
+            <p class="text-sm text-slate-500 mb-4">Your login details. Try clicking Next with an empty or invalid email — you will be blocked.</p>
+            <div class="wiz-field">
+              <label class="lbl" for="f-email">Email address</label>
+              <input type="email" id="f-email" autocomplete="off" placeholder="you@example.com" />
+              <p class="err hidden" id="e-email"></p>
+            </div>
+            <div class="wiz-field">
+              <label class="lbl" for="f-password">Password</label>
+              <input type="password" id="f-password" autocomplete="off" placeholder="At least 8 characters" />
+              <p class="err hidden" id="e-password"></p>
+            </div>
+          </div>
+
+          <div class="wizstep hidden" data-step="1">
+            <h3 class="font-bold text-lg mb-1">Your profile</h3>
+            <p class="text-sm text-slate-500 mb-4">A little about you.</p>
+            <div class="wiz-field">
+              <label class="lbl" for="f-name">Full name</label>
+              <input type="text" id="f-name" autocomplete="off" placeholder="Ada Lovelace" />
+              <p class="err hidden" id="e-name"></p>
+            </div>
+            <div class="wiz-field">
+              <label class="lbl" for="f-country">Country</label>
+              <select id="f-country">
+                <option value="">Select a country…</option>
+                <option value="Australia">Australia</option>
+                <option value="France">France</option>
+                <option value="India">India</option>
+                <option value="United Kingdom">United Kingdom</option>
+                <option value="United States">United States</option>
+              </select>
+              <p class="err hidden" id="e-country"></p>
+            </div>
+          </div>
+
+          <div class="wizstep hidden" data-step="2">
+            <h3 class="font-bold text-lg mb-1">Payment details</h3>
+            <p class="text-sm text-slate-500 mb-4">Nothing is sent anywhere — this is a demo. Enter any 16 digits.</p>
+            <div class="wiz-field">
+              <label class="lbl" for="f-card">Card number</label>
+              <input type="text" id="f-card" inputmode="numeric" autocomplete="off" placeholder="4242 4242 4242 4242" />
+              <p class="err hidden" id="e-card"></p>
+            </div>
+            <div class="grid-2">
+              <div class="wiz-field">
+                <label class="lbl" for="f-exp">Expiry (MM/YY)</label>
+                <input type="text" id="f-exp" autocomplete="off" placeholder="09/28" />
+                <p class="err hidden" id="e-exp"></p>
+              </div>
+              <div class="wiz-field">
+                <label class="lbl" for="f-cvc">CVC</label>
+                <input type="text" id="f-cvc" inputmode="numeric" autocomplete="off" placeholder="123" />
+                <p class="err hidden" id="e-cvc"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="wizstep hidden" data-step="3">
+            <h3 class="font-bold text-lg mb-1">Review &amp; confirm</h3>
+            <p class="text-sm text-slate-500 mb-4">Everything you entered, in one place. Jump back to any step to change it, then Submit.</p>
+            <div id="reviewBox" class="bg-slate-50 border border-slate-200 rounded-xl p-4"></div>
+            <div id="doneBox" class="hidden mt-4 bg-indigo-50 border border-indigo-200 rounded-xl p-5 text-center">
+              <div class="text-3xl mb-1">✓</div>
+              <div class="font-bold text-indigo-900">Submitted!</div>
+              <p class="text-sm text-indigo-700 mt-1">Every step validated, data persisted across the flow, and the wizard confirmed before committing.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- nav -->
+        <div class="flex items-center justify-between mt-6 pt-5 border-t border-slate-100">
+          <button id="backBtn" class="btn-ghost" disabled>← Back</button>
+          <button id="nextBtn" class="btn-primary">Next →</button>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">This is the engine behind every checkout, onboarding flow and multi-page form. A stepper is really a tiny finite-state machine: a current index, a per-step <em>done</em> flag, a validator that <strong>gates</strong> forward motion, and a rule for which steps you are allowed to jump to. Everything else — the circles, the bar, the review — is a projection of that state.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a stepper works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A stepper is a small state machine: an array of steps, a <code>current</code> index, a <code>done[]</code> flag per step, and one <code>data</code> object that survives the whole flow. The header is a pure projection of that state; <strong>Next</strong> is gated by a per-step validator; <strong>Back</strong> and jump-to-completed are just index moves constrained by whether the target step is reachable. ~120 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Model the state, not the DOM</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Describe the flow as data first. A <code>STEPS</code> array holds each step's label and description; <code>current</code> is the active index; <code>done[]</code> records which steps have passed validation; one <code>data</code> object collects every field so nothing is scoped to a single panel. Everything the UI shows is derived from these four values — render is a function of state.</p>
+        <div class="relative"><pre>const STEPS = [
+  { key:"account", label:"Account", desc:"Login details" },
+  { key:"profile", label:"Profile", desc:"About you" },
+  { key:"payment", label:"Payment", desc:"Billing" },
+  { key:"review",  label:"Review",  desc:"Confirm" },
+];
+let current = 0;                       // active step index
+const done  = [false,false,false,false];  // has each step validated?
+const data  = {};                      // one bag for all steps' values</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Derive each step's state, render the header</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every circle is in exactly one of three states, and the rule is tiny: the active index is <code>active</code>, anything flagged <code>done</code> is <code>done ✓</code>, the rest are <code>upcoming</code>. The connector <em>bar</em> before step <code>i</code> fills when step <code>i-1</code> is done. Re-run this projection after every state change — never poke individual nodes.</p>
+        <div class="relative"><pre>function stepState(i){
+  if (i === current) return "active";
+  if (done[i])       return "done";
+  return "upcoming";
+}
+STEPS.forEach((s,i) =&gt; {
+  circle[i].className = "step-item " + stepState(i);
+  if (i &gt; 0) bar[i].classList.toggle("fill", done[i-1]);  // connector
+  circle[i].querySelector(".num").textContent =
+    stepState(i) === "done" ? "✓" : (i+1);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Show one panel at a time</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep all panels in the DOM and toggle visibility — do <strong>not</strong> destroy and rebuild them, because the fields (and the values in them) must survive when the user steps back and forth. Hiding rather than removing is what makes persistence free.</p>
+        <div class="relative"><pre>document.querySelectorAll(".wizstep").forEach(p =&gt; {
+  p.classList.toggle("hidden", +p.dataset.step !== current);
+});
+// Back/Next just move `current`; the inputs are never re-created,
+// so whatever the user typed is still sitting in the DOM.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Gate Next behind per-step validation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the heart of a wizard. Each step owns a validator that returns an <em>errors</em> map — empty means valid. <code>Next</code> runs it first: if there are errors, paint them inline and <strong>do not move</strong>; only a clean pass sets <code>done[current]=true</code> and advances. Forward motion is impossible while the current step is invalid.</p>
+        <div class="relative"><pre>const RULES = {
+  0: v =&gt; ({
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email) ? "" : "Enter a valid email.",
+    password: (v.password||"").length &gt;= 8 ? "" : "Min 8 characters.",
+  }),
+  /* 1: profile, 2: payment … */
+};
+function validate(i){
+  const errs = RULES[i] ? RULES[i](readFields(i)) : {};
+  paintErrors(errs);
+  return Object.values(errs).every(m =&gt; m === "");   // true = clean
+}
+function next(){
+  const ok = validate(current);
+  done[current] = ok;
+  if (!ok) return;                 // blocked — errors are showing
+  if (current &lt; STEPS.length-1) current++;
+  render();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Back + jump-to-completed (linear vs non-linear)</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>Back</code> is unconditional — going backward can never land you on invalid data. Jumping <em>forward</em> is the interesting policy: in <strong>linear</strong> mode you may only reach a step through Next, so circles are inert; in <strong>non-linear</strong> mode you may click any already-<code>done</code> step to jump straight to it. The guard is one predicate.</p>
+        <div class="relative"><pre>function canJump(i){                       // is a header click allowed?
+  if (i === current) return false;
+  return nonLinear && done[i];             // only completed steps, only non-linear
+}
+function goTo(i){ if (canJump(i)){ current = i; render(); } }
+function back(){ if (current &gt; 0){ current--; render(); } }
+// linear mode: canJump is always false → the header is display-only.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Persist data + build the review step</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because panels are only hidden, the inputs remember themselves — but you still want a single source of truth for the summary and eventual submit. Snapshot fields into <code>data</code> as each step passes, then the review step is just a read-out of <code>data</code>. The confirm screen is where the user catches their own mistakes before anything is committed.</p>
+        <div class="relative"><pre>function readFields(i){ /* {email, password} for step 0, etc. */ }
+// on a clean validate, fold the step's fields into the shared bag:
+Object.assign(data, readFields(current));
+
+function renderReview(){
+  reviewBox.innerHTML = [
+    row("Email", data.email), row("Name", data.name),
+    row("Country", data.country), row("Card", mask(data.card)),
+  ].join("");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Progress indication + the Submit swap</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Give the user a sense of distance: a <code>Step X of N</code> label, a percentage, and a fill bar — all derived from <code>current</code>. On the last step the primary button becomes <strong>Submit</strong>, and Back is disabled on the first step so there is nowhere invalid to go.</p>
+        <div class="relative"><pre>const total = STEPS.length, isLast = current === total - 1;
+countEl.textContent = `Step ${current+1} of ${total}`;
+const pct = Math.round(current / (total - 1) * 100);   // review = 100%
+progFill.style.width = pct + "%";
+nextBtn.textContent  = isLast ? "Submit ✓" : "Next →";
+backBtn.disabled     = current === 0;
+nextBtn.onclick = () =&gt; isLast ? submit() : next();</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard + ARIA</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Expose the machine to assistive tech. Mark the active circle with <code>aria-current="step"</code>; when a step is blocked, set <code>aria-invalid</code> on the bad fields and move focus to the first one so the error is announced and reachable. Clickable circles in non-linear mode must be real buttons (Enter/Space + focus ring). Never rely on colour alone — the ✓ glyph and label carry the state too.</p>
+        <div class="relative"><pre>circle[i].setAttribute("aria-current", i === current ? "step" : "false");
+
+function paintErrors(errs){
+  let firstBad = null;
+  for (const id in errs){
+    const el = field(id), msg = errs[id];
+    el.classList.toggle("invalid", !!msg);
+    el.setAttribute("aria-invalid", msg ? "true" : "false");
+    errEl(id).textContent = msg;
+    if (msg && !firstBad) firstBad = el;
+  }
+  if (firstBad) firstBad.focus();     // land the user on the problem
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 33 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real multi-step wizard from scratch — a tiny finite-state machine: a <code>STEPS</code> array, a <code>current</code> index, a <code>done[]</code> flag and one shared <code>data</code> bag. The header is a pure projection (<strong>upcoming / active / done ✓</strong> plus filling connectors); <strong>Next</strong> is gated by a per-step validator that paints inline errors and refuses to advance while invalid; <strong>Back</strong> and non-linear jump-to-completed are index moves constrained by one <code>canJump</code> predicate; values persist because panels are hidden not destroyed; and a review step reads back <code>data</code> before Submit — with <code>aria-current</code>, <code>aria-invalid</code> and focus-to-first-error for accessibility. This is the engine under every checkout, onboarding and long form. <strong>👉 Tomorrow — Day 34: Tree-View (expand/collapse nodes + keyboard).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== STEPPER =====
+const STEPS = [
+  { key:"account", label:"Account", desc:"Login details" },
+  { key:"profile", label:"Profile", desc:"About you" },
+  { key:"payment", label:"Payment", desc:"Billing" },
+  { key:"review",  label:"Review",  desc:"Confirm" }
+];
+
+let current   = 0;
+const done    = [false, false, false, false];
+const data    = {};
+let nonLinear = false;
+let submitted = false;
+
+// ---- per-step validation rules (pure: values in, errors-map out) ----
+const RULES = {
+  0: v => ({
+    "f-email":    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v["f-email"]||"").trim()) ? "" : "Enter a valid email address.",
+    "f-password": (v["f-password"]||"").length >= 8 ? "" : "Password must be at least 8 characters."
+  }),
+  1: v => ({
+    "f-name":    (v["f-name"]||"").trim().length >= 2 ? "" : "Please enter your full name.",
+    "f-country": (v["f-country"]||"") !== "" ? "" : "Please choose a country."
+  }),
+  2: v => ({
+    "f-card": /^\d{16}$/.test((v["f-card"]||"").replace(/\s+/g, "")) ? "" : "Card number must be 16 digits.",
+    "f-exp":  /^(0[1-9]|1[0-2])\/\d{2}$/.test((v["f-exp"]||"").trim()) ? "" : "Use MM/YY format (e.g. 09/28).",
+    "f-cvc":  /^\d{3,4}$/.test((v["f-cvc"]||"").trim()) ? "" : "CVC is 3 or 4 digits."
+  })
+};
+const FIELD_IDS = { 0:["f-email","f-password"], 1:["f-name","f-country"], 2:["f-card","f-exp","f-cvc"] };
+
+function readFields(i){
+  const out = {};
+  (FIELD_IDS[i] || []).forEach(id => { const el = document.getElementById(id); if (el) out[id] = el.value; });
+  return out;
+}
+function paintErrors(errs){
+  let firstBad = null;
+  for (const id in errs){
+    const el = document.getElementById(id);
+    const errEl = document.getElementById(id.replace("f-", "e-"));
+    const msg = errs[id];
+    if (el){ el.classList.toggle("invalid", !!msg); el.setAttribute("aria-invalid", msg ? "true" : "false"); }
+    if (errEl){ errEl.textContent = msg; errEl.classList.toggle("hidden", !msg); }
+    if (msg && !firstBad) firstBad = el;
+  }
+  if (firstBad) firstBad.focus();
+}
+function clearErrors(i){
+  (FIELD_IDS[i] || []).forEach(id => {
+    const el = document.getElementById(id), errEl = document.getElementById(id.replace("f-", "e-"));
+    if (el){ el.classList.remove("invalid"); el.removeAttribute("aria-invalid"); }
+    if (errEl){ errEl.textContent = ""; errEl.classList.add("hidden"); }
+  });
+}
+// returns true when the step is clean; paints inline errors when not.
+function validate(i){
+  if (!RULES[i]) return true;
+  const errs = RULES[i](readFields(i));
+  paintErrors(errs);
+  const ok = Object.keys(errs).every(k => errs[k] === "");
+  if (ok) Object.assign(data, readFields(i));   // persist step's values
+  return ok;
+}
+
+// ---- the state machine ----
+function stepState(i){
+  if (i === current) return "active";
+  if (done[i])       return "done";
+  return "upcoming";
+}
+function canJump(i){
+  if (i === current) return false;
+  return nonLinear && done[i];         // only completed steps, only in non-linear mode
+}
+function next(){
+  const ok = validate(current);
+  done[current] = ok;
+  if (!ok){ render(); return; }        // blocked — errors are showing
+  if (current < STEPS.length - 1){ current++; }
+  render();
+}
+function back(){ if (current > 0){ current--; render(); } }
+function goTo(i){ if (canJump(i)){ current = i; render(); } }
+function submit(){ if (!validate(current)) { render(); return; } submitted = true; render(); }
+
+// ---- DOM refs ----
+const stepsRow = document.getElementById("stepsRow");
+const progFill = document.getElementById("progFill");
+const stCount  = document.getElementById("stCount");
+const stPct    = document.getElementById("stPct");
+const stMode   = document.getElementById("stMode");
+const backBtn  = document.getElementById("backBtn");
+const nextBtn  = document.getElementById("nextBtn");
+const reviewBox = document.getElementById("reviewBox");
+const doneBox   = document.getElementById("doneBox");
+
+// build the header once
+STEPS.forEach((s, i) => {
+  if (i > 0){
+    const bar = document.createElement("div");
+    bar.className = "step-bar"; bar.dataset.bar = i;
+    stepsRow.appendChild(bar);
+  }
+  const item = document.createElement("div");
+  item.className = "step-item"; item.dataset.item = i;
+  item.innerHTML = '<div class="step-circle"><span class="num">' + (i + 1) + '</span></div>' +
+                   '<div class="step-label">' + s.label + '</div>' +
+                   '<div class="step-desc">' + s.desc + '</div>';
+  item.addEventListener("click", () => goTo(i));
+  item.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && canJump(i)){ e.preventDefault(); goTo(i); } });
+  stepsRow.appendChild(item);
+});
+
+function mask(card){ const d = (card||"").replace(/\s+/g,""); return d ? "•••• •••• •••• " + d.slice(-4) : "—"; }
+function row(k, v){ return '<div class="rev-row"><span class="rev-k">' + k + '</span><span class="rev-v">' + (v || "—") + '</span></div>'; }
+function renderReview(){
+  reviewBox.innerHTML =
+    row("Email", data["f-email"]) +
+    row("Password", data["f-password"] ? "•".repeat(data["f-password"].length) : "") +
+    row("Full name", data["f-name"]) +
+    row("Country", data["f-country"]) +
+    row("Card number", mask(data["f-card"])) +
+    row("Expiry", data["f-exp"]) +
+    row("CVC", data["f-cvc"] ? "•".repeat(data["f-cvc"].length) : "");
+}
+
+function render(){
+  const total = STEPS.length, isLast = current === total - 1;
+
+  // header projection
+  STEPS.forEach((s, i) => {
+    const item = stepsRow.querySelector('[data-item="' + i + '"]');
+    const state = submitted ? "done" : stepState(i);
+    item.className = "step-item " + state + (canJump(i) ? " clickable" : "");
+    item.querySelector(".num").textContent = (state === "done") ? "✓" : (i + 1);
+    item.setAttribute("aria-current", (i === current && !submitted) ? "step" : "false");
+    if (canJump(i)){ item.setAttribute("role", "button"); item.setAttribute("tabindex", "0"); item.setAttribute("aria-label", "Go to step " + (i + 1) + ": " + s.label); }
+    else { item.removeAttribute("role"); item.removeAttribute("tabindex"); item.removeAttribute("aria-label"); }
+    const bar = stepsRow.querySelector('[data-bar="' + i + '"]');
+    if (bar) bar.classList.toggle("fill", submitted || done[i - 1]);
+  });
+
+  // panels
+  document.querySelectorAll(".wizstep").forEach(p => p.classList.toggle("hidden", (+p.dataset.step) !== current));
+  if (isLast){ renderReview(); }
+  doneBox.classList.toggle("hidden", !submitted);
+  reviewBox.classList.toggle("hidden", submitted);
+
+  // meta + progress
+  const pct = Math.round(current / (total - 1) * 100);
+  stCount.textContent = "Step " + (current + 1) + " of " + total;
+  stPct.textContent = (submitted ? 100 : pct) + "% complete";
+  progFill.style.width = (submitted ? 100 : pct) + "%";
+  stMode.textContent = nonLinear ? "non-linear" : "linear";
+  stMode.classList.toggle("off", !nonLinear);
+
+  // nav buttons
+  backBtn.disabled = current === 0 || submitted;
+  nextBtn.disabled = submitted;
+  nextBtn.textContent = isLast ? "Submit ✓" : "Next →";
+}
+
+backBtn.addEventListener("click", back);
+nextBtn.addEventListener("click", () => { (current === STEPS.length - 1) ? submit() : next(); });
+
+// non-linear toggle
+const nlToggle = document.getElementById("nlToggle");
+function flipMode(){ nonLinear = !nonLinear; nlToggle.classList.toggle("on", nonLinear); nlToggle.setAttribute("aria-checked", nonLinear ? "true" : "false"); render(); }
+nlToggle.addEventListener("click", flipMode);
+nlToggle.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); flipMode(); } });
+
+// clear a field's error as the user fixes it
+["f-email","f-password","f-name","f-country","f-card","f-exp","f-cvc"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("input", () => {
+    const errEl = document.getElementById(id.replace("f-", "e-"));
+    el.classList.remove("invalid"); el.removeAttribute("aria-invalid");
+    if (errEl){ errEl.textContent = ""; errEl.classList.add("hidden"); }
+  });
+});
+
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. Why steppers exist — chunk a long form", why:"A form with twenty fields on one screen is intimidating, easy to abandon, and hard to validate all at once. A stepper breaks that wall of inputs into a short sequence of focused screens — three or four fields at a time — each with a single clear job: account, then profile, then payment, then review. This is progressive disclosure applied to data entry: the user only ever sees what is relevant right now, which lowers cognitive load and, crucially, lets you validate and save in small, meaningful chunks instead of one giant all-or-nothing submit. Steppers also give you a natural place to hang context and reassurance (a progress bar, a step count) so the user knows how much is left. The trade-off is that navigation now has state — where am I, where have I been, where am I allowed to go — which is exactly the machine the rest of these steps builds. Reach for a stepper when a task is genuinely sequential or long; for two or three simple fields a plain form is better, because a wizard adds ceremony that only pays off past a certain size.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">one huge form:  [ 20 fields ] &rarr; abandon<br><br>stepper:<br>[Account] &rarr; [Profile] &rarr; [Payment] &rarr; [Review]<br>&nbsp;&nbsp;3 fields &nbsp;&nbsp;&nbsp;2 fields &nbsp;&nbsp;3 fields &nbsp;&nbsp;confirm<br><br>progressive disclosure &middot; validate in chunks</div>`, code:`// A stepper is just a sequence of small forms + navigation state.
+const STEPS = ["account", "profile", "payment", "review"];
+// Show ONE at a time; validate + save each chunk before moving on.
+// Rule of thumb: use a wizard when the task is long or sequential,
+// a plain form when it is short.` },
+ { title:"2. The step state machine — upcoming / active / done", why:"At any instant every step is in exactly one of three states, and the entire UI is a projection of them. The active step is the one on screen. A done step is one the user has completed and validated — it earns a check mark and a filled connector behind it. An upcoming step has not been reached yet and is greyed out. The single source of truth is tiny: a current index plus a done[] flag per step. From those two values you can derive each circle's state with a three-line function — if it is the current index it is active, else if its done flag is set it is done, otherwise it is upcoming. This matters because it keeps the component honest: there is no separate 'is this circle green' boolean scattered around to fall out of sync. You change current or done, then re-render, and the header, the bar, the buttons and the panel all recompute from the same state. Thinking of a stepper as a finite-state machine — not a pile of DOM toggles — is what makes it debuggable: every visual is a pure function of (current, done).", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">(&#10003;)---(&#10003;)---( 3 )---( 4 )<br>done &nbsp;done &nbsp;active &nbsp;upcoming<br><br>state[i] = i===current ? "active"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: done[i] ? "done" : "upcoming"</div>`, code:`let current = 0;
+const done = [false, false, false, false];
+
+function stepState(i){
+  if (i === current) return "active";
+  if (done[i])       return "done";     // validated already
+  return "upcoming";
+}
+// The header, bar, buttons and panel are ALL derived from this.` },
+ { title:"3. Validation gating — you cannot advance while invalid", why:"The defining behaviour of a real wizard is that Next is a gate, not a plain navigation button. Each step owns a validator — a pure function that takes the step's field values and returns a map of error messages, where an empty string means that field is fine. When the user clicks Next, you run the current step's validator first: if any message is non-empty, you paint the errors inline next to the offending fields and simply return without changing the index. Only a completely clean pass sets done[current] = true and increments current. This guarantees an invariant that everything downstream relies on: you can never be standing on a step whose predecessors hold invalid data. Keeping the validator pure (values in, errors out, no DOM) is what lets you unit-test it and reuse it for a final all-steps check before submit. A subtle but important detail: re-running validation on Next means if a user jumps back, breaks a field, and tries to go forward again, the gate catches it — done is only ever as true as the latest validation says.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">click Next<br>&nbsp;&nbsp;|<br>&nbsp;&nbsp;v<br>validate(current) --invalid--&gt; paint errors, STAY<br>&nbsp;&nbsp;|<br>&nbsp;valid<br>&nbsp;&nbsp;v<br>done[current]=true; current++</div>`, code:`const RULES = {
+  0: v => ({
+    "f-email":    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(v["f-email"]) ? "" : "Bad email.",
+    "f-password": v["f-password"].length >= 8 ? "" : "Min 8 chars."
+  })
+};
+function next(){
+  const errs = RULES[current](readFields(current));
+  const ok = Object.values(errs).every(m => m === "");
+  paintErrors(errs);
+  done[current] = ok;
+  if (ok && current < STEPS.length-1) current++;   // gate
+  render();
+}` },
+ { title:"4. Linear vs non-linear navigation", why:"There are two philosophies for how freely a user may move between steps. In a linear wizard the only way forward is through Next, one step at a time, so the header circles are purely informational — you cannot click them. This suits flows where each step genuinely depends on the previous one (you cannot compute shipping before you have an address). A non-linear wizard lets the user jump directly to any step they have already completed by clicking its circle, which is far friendlier for editing — a user on the review screen who spots a typo in their email can click the Account circle and fix it without clicking Back three times. The whole difference collapses into one guard predicate, canJump(i): backward motion is always safe, but a forward jump is allowed only to a step that is already done, and only when non-linear mode is on. Note what stays constant across both modes: you still never let someone jump to an un-validated future step, because that would skip the gate. Non-linear loosens where you may go, not whether validation runs.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">linear:&nbsp;&nbsp;&nbsp;&nbsp;circles inert, only Next/Back<br>&nbsp;&nbsp;( &#10003; )--( &#10003; )--( 3 )   (clicks ignored)<br><br>non-linear: click any DONE circle to jump<br>&nbsp;&nbsp;( &#10003; )&larr;click ok &nbsp;( 4 )&larr;click blocked</div>`, code:`let nonLinear = false;   // toggled by the user
+
+function canJump(i){
+  if (i === current) return false;
+  return nonLinear && done[i];   // only completed steps, only non-linear
+}
+function goTo(i){ if (canJump(i)) { current = i; render(); } }
+function back(){ if (current > 0) { current--; render(); } } // always safe` },
+ { title:"5. Persisting data across steps", why:"A wizard is worthless if walking back to step one wipes what you typed in step two. There are two ways to keep data alive and they are often combined. The first is structural: keep every step's panel in the DOM and merely hide the inactive ones (display:none) instead of destroying and recreating them — hidden inputs retain their values for free, so Back and Next cost nothing. The second is a model: maintain one plain data object that every step folds its validated fields into, giving you a single source of truth independent of the DOM. That model is what you render the review screen from, what you would persist to localStorage to survive a refresh, and what you finally submit. The two approaches reinforce each other: the DOM holds the live editing state, the object holds the committed snapshot. The cardinal sin is rebuilding a step's markup on every navigation — it feels clean but it throws away user input and resets scroll and focus. Hide, do not destroy; and mirror into a model you control.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">panels: hide, don't destroy &rarr; inputs keep values<br><br>+ one shared model:<br>data = { email, name, country, card... }<br>&nbsp;&nbsp;&uarr; each step folds its fields in on validate<br>&nbsp;&nbsp;&darr; review + submit read from here</div>`, code:`// 1) DOM: toggle visibility, never re-create the fields
+document.querySelectorAll(".wizstep").forEach(p =>
+  p.classList.toggle("hidden", +p.dataset.step !== current));
+
+// 2) model: one bag of truth, folded in as each step passes
+function validate(i){
+  const ok = /* ...run rules... */ true;
+  if (ok) Object.assign(data, readFields(i));   // persist
+  return ok;
+}` },
+ { title:"6. Progress indication", why:"Two questions nag every user in a multi-step flow: how far along am I, and how much is left? Answer them explicitly and abandonment drops. Three signals do the job, all derived purely from the state. A textual Step X of N is the most literal and the most screen-reader friendly. A percentage and a fill bar give an at-a-glance sense of momentum — compute the percent from the current index over the last index so the final review screen reads as one hundred percent. And the header circles themselves are a progress indicator: the trail of check marks and filled connectors behind the active step shows exactly what is banked. The key discipline is that none of these are stored separately; they are all functions of current (and done), recomputed on every render, so they can never disagree with each other or with the panel on screen. Honest progress matters too — do not show ninety percent when half the work remains, and if steps can be skipped or are optional, reflect that rather than implying a rigid straight line.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">Step 2 of 4 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;33% complete<br>[############----------------------]<br><br>pct = current / (N - 1) * 100<br>review (last step) &rarr; 100%</div>`, code:`const total = STEPS.length;
+countEl.textContent  = "Step " + (current+1) + " of " + total;
+const pct = Math.round(current / (total - 1) * 100);
+pctEl.textContent    = pct + "% complete";
+progFill.style.width = pct + "%";
+// every number here is derived from current — never stored twice.` },
+ { title:"7. The review / confirm step", why:"The last step of most serious wizards is not another input screen but a read-only summary: every value the user entered, laid out for a final glance before anything irreversible happens. This exists because people make mistakes they do not notice mid-flow — a transposed digit in a card number, the wrong country — and the review is the cheap, low-stakes moment to catch them. It pays for itself in fewer failed charges and support tickets. A good review screen renders entirely from your data model, groups values under the step they came from, and — in a non-linear wizard — lets each group link back to its step for a one-click edit. It should also be honest about sensitivity: mask a card number to its last four digits and never echo a password back in plain text. Only after the user confirms on this screen do you run a final validation of the whole model and actually submit. Treat review as a safety gate, not decoration: it is the difference between a form that commits blindly and one that gives the user the last word.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">REVIEW<br>Email &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ada@x.com &nbsp;[edit]<br>Country &nbsp;&nbsp;&nbsp;France &nbsp;&nbsp;&nbsp;&nbsp;[edit]<br>Card &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&bull;&bull;&bull;&bull; 4242 &nbsp;[edit]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ Submit ]</div>`, code:`function renderReview(){
+  reviewBox.innerHTML =
+    row("Email",   data["f-email"]) +
+    row("Country", data["f-country"]) +
+    row("Card",    mask(data["f-card"]));   // •••• •••• •••• 4242
+}
+// Submit only after the user confirms on this screen:
+function submit(){ if (validate(current)) { submitted = true; render(); } }` },
+ { title:"8. Keyboard & ARIA", why:"A stepper mixes a navigation widget (the header) with a series of forms, and both owe accessibility. Mark the active step's element with aria-current=\"step\" so a screen reader announces which of N you are on. If circles are clickable (non-linear mode) they must behave like real buttons — reachable by Tab, activated by Enter or Space, with a visible focus ring — and carry an accessible label like 'Go to step 2: Profile'; if they are inert (linear mode) they should not be focusable at all, so keyboard users are not stopped on dead targets. The forms carry the usual duties: every input needs a associated label, and when validation fails you set aria-invalid=\"true\" on the bad fields, tie each error message to its input, and move focus to the first offending field so the problem is both announced and immediately editable. Never signal state with colour alone — the check glyph, the label text and aria attributes must all carry the meaning for colour-blind and screen-reader users. Finally, when a step changes, moving focus to the new step's heading or first field keeps keyboard users oriented instead of stranded at the top of the document.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">active circle: aria-current="step"<br>clickable circle: role=button, tabindex=0<br>bad field: aria-invalid="true" + focus()<br><br>state via &#10003; glyph + label, NOT colour alone</div>`, code:`circle.setAttribute("aria-current", i === current ? "step" : "false");
+// clickable only when a jump is allowed:
+if (canJump(i)){ circle.setAttribute("role","button"); circle.tabIndex = 0; }
+else           { circle.removeAttribute("role");       circle.removeAttribute("tabindex"); }
+// on a blocked Next, announce + land on the first bad field:
+badField.setAttribute("aria-invalid","true");
+badField.focus();` },
+ { title:"9. Horizontal vs vertical, and responsive", why:"The same state machine drives two common layouts. A horizontal stepper — circles in a row joined by connector bars — reads like a timeline and suits three to five short steps on a wide screen; it is the classic checkout look. A vertical stepper stacks the steps down the side, often revealing each step's content inline beneath its label as an accordion; it scales better to many steps, to long step labels, and to narrow screens. The responsive challenge is that a horizontal row of labelled circles is the first thing to overflow on a phone. Common tactics: drop the per-step description and keep just the number on small screens; collapse to a compact 'Step 2 of 4' label plus a bare progress bar; or switch the whole thing to the vertical layout under a breakpoint. Whichever you choose, the logic underneath does not change — current, done, canJump and validate are layout-agnostic. That separation is the payoff of modelling state independently of the DOM: you can restyle or re-flow the header freely, on any breakpoint, without touching the machine that decides where the user may go.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">horizontal (wide):<br>(1)---(2)---(3)---(4)<br><br>vertical / mobile (narrow):<br>(1) Account<br>&nbsp;|<br>(2) Profile &nbsp;&larr; active<br>&nbsp;|<br>(3) Payment</div>`, code:`/* same state, different CSS — logic is layout-agnostic */
+@media (max-width: 640px){
+  .step-desc { display: none; }          /* number-only circles */
+  .steps-row { /* or flex-direction: column for a vertical rail */ }
+}
+/* current, done, canJump, validate never change with layout */` },
+ { title:"10. Error recovery & edge cases", why:"A robust wizard is defined by how gracefully it handles things going wrong, not just the happy path. Inline errors must be recoverable: clear a field's error the moment the user starts fixing it (on input), rather than making them click Next again just to see if they got it right — instant feedback feels responsive and reduces frustration. Guard the boundaries: disable Back on the first step and swap Next for Submit on the last, so there is never a move that leads nowhere. Decide what a jump-back-then-edit does to downstream state — if changing the country in step two invalidates a tax choice made in step three, you may need to clear that later step's done flag so the user is forced back through its gate. Consider persistence across a page refresh (mirror data to localStorage) so an accidental reload does not wipe a half-finished flow. Handle async validation — an email-already-taken check that hits the server — by disabling Next while the request is in flight and surfacing the server error inline just like a local one. And on final submit, validate the entire model once more, because a non-linear wizard means the user could have reached review by a path your per-step gates did not fully cover. Anticipating these is what separates a demo from something you would ship.", concept:`<div class="bg-slate-100 p-4 rounded text-xs w-full text-center font-mono">on input &rarr; clear that field's error live<br>first step &rarr; Back disabled<br>last step &nbsp;&rarr; Next becomes Submit<br>edit early step &rarr; may reset later done[]<br>submit &rarr; re-validate the WHOLE model</div>`, code:`// live recovery: clear the error as the user types
+field.addEventListener("input", () => clearError(field));
+
+// boundaries
+backBtn.disabled = current === 0;
+nextBtn.textContent = (current === last) ? "Submit ✓" : "Next →";
+
+// editing an early step can invalidate a later one:
+function onEdit(i){ for (let j=i+1; j<STEPS.length; j++) done[j] = false; }` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
