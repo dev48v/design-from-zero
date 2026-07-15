@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 34 — Rating Stars</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== rating demo surface ===== */
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;
+          background:#fef3c7; color:#b45309; }
+  .pill.off { background:#f1f5f9; color:#94a3b8; }
+  /* the star strip */
+  .stars { --star:46px; display:inline-flex; gap:8px; cursor:pointer; }
+  .stars.readonly { cursor:default; }
+  .star { position:relative; width:var(--star); height:var(--star); display:inline-block;
+          transition:transform .12s ease; }
+  .stars:not(.readonly) .star:hover { transform:scale(1.12); }
+  .star svg { width:100%; height:100%; display:block; }
+  .star-bg svg { fill:#e2e8f0; }
+  .star-fill { position:absolute; top:0; left:0; height:100%; width:0; overflow:hidden;
+               transition:width .06s linear; }
+  .star-fill svg { width:var(--star); height:var(--star); fill:#f59e0b; }
+  .star.previewing .star-fill svg { fill:#fbbf24; }             /* amber-400 while previewing */
+  @media (prefers-reduced-motion: reduce){ .star, .star-fill { transition:none; } }
+  @media (max-width:640px){ .stars { --star:38px; } }
+  /* focus ring lives on the slider element */
+  #stars:focus-visible { outline:2px solid #6366f1; outline-offset:6px; border-radius:10px; }
+  .rate-card { background:#fff; border:1px solid #e2e8f0; border-radius:18px; }
+  .val-num { font-size:52px; font-weight:900; color:#0f172a; line-height:1; }
+  .val-den { font-size:22px; font-weight:800; color:#cbd5e1; }
+  .cap-preview { color:#b45309; }
+  .cap-committed { color:#475569; }
+  .cap-empty { color:#94a3b8; }
+  .switch { position:relative; display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; font-weight:600; color:#334155; }
+  .switch .track { width:40px; height:22px; border-radius:999px; background:#cbd5e1; position:relative; transition:background .2s; }
+  .switch .track::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:999px; background:#fff; transition:transform .2s; box-shadow:0 1px 2px rgba(15,23,42,.25); }
+  .switch.on .track { background:#f59e0b; }
+  .switch.on .track::after { transform:translateX(18px); }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 16px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.45; cursor:not-allowed; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 34</div>
+      <h1 class="text-xl font-bold">⭐ Rating Stars — Hover-Preview vs Committed Value, Half-Star Precision, A Slider-Style Keyboard Model &amp; Full ARIA</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-3xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Point, hover, click — tell us how it was.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>star-rating input</strong> built from scratch in vanilla JS. The trick behind every rating widget is <strong>two values, not one</strong>: the <strong>committed</strong> rating you have actually chosen, and a throwaway <strong>hover preview</strong> that paints the stars as your pointer sweeps across them without changing anything until you click. Turn on <strong>half-stars</strong> and each star splits down the middle — the left half is <em>x.5</em>, the right half is <em>x</em>. It is fully keyboard-driven too: <kbd>Tab</kbd> to the stars, then <kbd>←</kbd> <kbd>→</kbd> to adjust, <kbd>Home</kbd>/<kbd>End</kbd> for min/max. No library.</p>
+      </div>
+
+      <div class="rate-card p-8 mb-5">
+        <div class="flex flex-col sm:flex-row items-center gap-8">
+          <!-- the widget -->
+          <div class="flex-1 w-full text-center sm:text-left">
+            <div id="stars" class="stars" role="slider" tabindex="0"
+                 aria-label="Rate this from 0 to 5 stars"
+                 aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="No rating"></div>
+            <p class="text-sm text-slate-500 mt-4" id="hint">Hover to preview, click to set — or focus the stars and use the arrow keys.</p>
+          </div>
+          <!-- the read-out: committed vs preview made visible -->
+          <div class="text-center px-6 py-4 rounded-2xl bg-slate-50 border border-slate-200 min-w-[150px]">
+            <div><span id="valNum" class="val-num">0</span><span class="val-den"> / 5</span></div>
+            <div id="valLabel" class="text-sm font-bold text-slate-600 mt-1">Not rated yet</div>
+            <div id="stateCap" class="text-xs font-semibold mt-1 cap-empty">no value stored</div>
+          </div>
+        </div>
+
+        <!-- controls -->
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-3 mt-7 pt-5 border-t border-slate-100">
+          <label class="switch on" id="halfToggle" role="switch" aria-checked="true" tabindex="0">
+            <span class="track"></span><span>Half-stars</span>
+          </label>
+          <label class="switch" id="roToggle" role="switch" aria-checked="false" tabindex="0">
+            <span class="track"></span><span>Read-only</span>
+          </label>
+          <span id="stepPill" class="pill">step 0.5</span>
+          <button id="resetBtn" class="btn-ghost ms-auto" style="margin-left:auto;">Clear rating</button>
+        </div>
+      </div>
+
+      <!-- polite live region: announces the committed value to screen readers -->
+      <div id="live" class="sr-only" aria-live="polite"></div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every star rating you have ever used — product reviews, driver ratings, app-store scores — is this same shape: a maximum <em>N</em>, a committed <code>value</code>, and a transient <code>hover</code> preview. The visible fill is a pure function of whichever of those two is currently in charge; half-stars are just a smaller step size; and exposing it as an ARIA <code>slider</code> is what makes it work without a mouse at all.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a star rating works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A star rating is deceptively small: a <code>MAX</code>, a committed <code>value</code>, a <code>hover</code> preview that is <code>null</code> when idle, and a <code>step</code> (1 or 0.5). The stars are drawn as two stacked layers so any fraction can be shown by clipping the gold layer's width. Hover, click and the keyboard all do the same thing — change one of those two numbers and re-render. ~90 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Two numbers: committed value + hover preview</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The whole component turns on a single idea. Keep the rating the user has actually chosen in <code>value</code>, and keep a separate <code>hover</code> that is <code>null</code> unless the pointer (or a key) is actively previewing. What the stars display is whichever one is in charge right now — <code>hover</code> if it is set, otherwise <code>value</code>. Hovering never touches <code>value</code>; only a click or a keypress commits.</p>
+        <div class="relative"><pre>const MAX = 5;
+let value = 0;        // committed rating — survives after the pointer leaves
+let hover = null;     // transient preview; null means "not previewing"
+let step  = 0.5;      // 0.5 = half-stars, 1 = whole stars only
+
+// what the stars should paint RIGHT NOW:
+const displayValue = () =&gt; hover !== null ? hover : value;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Draw each star as two stacked layers</h3></div>
+        <p class="text-sm text-slate-600 mb-3">You cannot paint "half a star" with a single glyph, so stack two identical stars: a grey <em>empty</em> layer underneath and a gold <em>fill</em> layer on top. The fill layer is a clipping window — set its width to a percentage and it reveals only that slice of the gold star. The inner SVG keeps its full pixel width so it does not squash as the window narrows. This is what lets one mechanism show 0%, 50%, 100% — or any fraction.</p>
+        <div class="relative"><pre>&lt;span class="star"&gt;
+  &lt;span class="star-bg"&gt;&lt;svg&gt;…star…&lt;/svg&gt;&lt;/span&gt;   &lt;!-- grey, full --&gt;
+  &lt;span class="star-fill"&gt;&lt;svg&gt;…star…&lt;/svg&gt;&lt;/span&gt; &lt;!-- gold, clipped --&gt;
+&lt;/span&gt;
+
+.star      { position:relative; width:46px; height:46px; }
+.star-fill { position:absolute; inset:0 auto 0 0; width:0; overflow:hidden; }
+.star-fill svg { width:46px; }   /* fixed → the window clips, glyph never shrinks */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Render: turn one number into N fill widths</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rendering is a pure projection of <code>displayValue()</code>. For star <code>i</code> (1-based) the portion filled is <code>displayValue − (i−1)</code>, clamped to the 0–1 range: star 1 fills first, then star 2, and so on. Multiply by 100 for the CSS width. Re-run this after <em>every</em> change — never nudge one star by hand.</p>
+        <div class="relative"><pre>function render(){
+  const dv = displayValue();
+  stars.forEach((star, idx) =&gt; {
+    const i = idx + 1;
+    const portion = Math.min(1, Math.max(0, dv - (i - 1)));  // 0 … 1
+    star.querySelector(".star-fill").style.width = (portion * 100) + "%";
+  });
+  readout.textContent = dv.toFixed(step === 0.5 ? 1 : 0);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Hover preview + which half of the star</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On <code>mousemove</code> over a star, measure where the pointer sits relative to that star's box. If half-stars are on and the pointer is in the left half, the preview is <code>i − 0.5</code>; otherwise it is <code>i</code>. Store it in <code>hover</code> and re-render — <code>value</code> is untouched. When the pointer leaves the whole strip, clear <code>hover</code> back to <code>null</code> and the committed value snaps back into view.</p>
+        <div class="relative"><pre>star.addEventListener("mousemove", e =&gt; {
+  const r = star.getBoundingClientRect();
+  const leftHalf = step === 0.5 && (e.clientX - r.left) &lt; r.width / 2;
+  hover = i - (leftHalf ? 0.5 : 0);
+  render();
+});
+strip.addEventListener("mouseleave", () =&gt; { hover = null; render(); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Click to commit (and click-again to clear)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A click is the moment the preview becomes real: copy whatever <code>hover</code> is showing into <code>value</code>. A nice touch is a toggle — clicking the exact value you already have clears it back to zero, which gives people an obvious way to undo a mis-tap without hunting for a separate button.</p>
+        <div class="relative"><pre>star.addEventListener("click", () =&gt; {
+  const picked = hover !== null ? hover : i;
+  value = (picked === value) ? 0 : picked;   // click same star again → clear
+  announce();                                // tell assistive tech
+  render();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Keyboard: it is really a slider</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A rating is a value on a bounded scale, which is exactly a slider. Make the strip one focusable element and adopt the slider key model: <kbd>→</kbd>/<kbd>↑</kbd> add a step, <kbd>←</kbd>/<kbd>↓</kbd> subtract, <kbd>Home</kbd> goes to 0 and <kbd>End</kbd> to <code>MAX</code>. The step is 0.5 or 1 depending on the half-star mode, so the same keys give whole or half increments for free. Keyboard changes commit immediately, so clear <code>hover</code> first.</p>
+        <div class="relative"><pre>strip.addEventListener("keydown", e =&gt; {
+  const map = { ArrowRight:+step, ArrowUp:+step, ArrowLeft:-step, ArrowDown:-step };
+  let v = value;
+  if (e.key in map)      v = value + map[e.key];
+  else if (e.key==="Home") v = 0;
+  else if (e.key==="End")  v = MAX;
+  else return;                                  // ignore other keys
+  e.preventDefault();
+  hover = null;                                 // committing, not previewing
+  value = Math.min(MAX, Math.max(0, v));
+  announce(); render();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">ARIA: expose it as a slider with a spoken value</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Give the strip <code>role="slider"</code> with <code>aria-valuemin</code>, <code>aria-valuemax</code> and a live <code>aria-valuenow</code>. The important extra is <code>aria-valuetext</code>: a screen reader announcing "3.5" is meaningless, but "3.5 out of 5 stars, Good" is clear. Update both on every commit, and never signal the rating by gold colour alone — the numeric read-out and the value-text carry it for colour-blind and non-visual users.</p>
+        <div class="relative"><pre>strip.setAttribute("role", "slider");
+strip.setAttribute("aria-valuemin", 0);
+strip.setAttribute("aria-valuemax", MAX);
+
+function announce(){
+  const txt = value ? `${value} out of ${MAX} stars, ${labelFor(value)}` : "No rating";
+  strip.setAttribute("aria-valuenow", value);
+  strip.setAttribute("aria-valuetext", txt);
+  liveRegion.textContent = txt;               // aria-live="polite" mirror
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Modes: half-stars, read-only, reset</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two switches cover most real needs. Toggling half-stars just flips <code>step</code> between 0.5 and 1, snapping any existing value to a whole number when you turn precision off. A read-only mode (for <em>showing</em> an average score rather than collecting one) removes the pointer cursor, drops the strip out of the tab order and ignores input — but keeps the exact same rendering, so a 3.7 average still displays correctly. Reset simply sets <code>value = 0</code>.</p>
+        <div class="relative"><pre>function setHalf(on){ step = on ? 0.5 : 1; if(!on) value = Math.round(value); render(); }
+
+function setReadOnly(on){
+  readOnly = on;
+  strip.tabIndex = on ? -1 : 0;               // out of tab order when display-only
+  strip.setAttribute("aria-readonly", on);
+  strip.classList.toggle("readonly", on);
+}
+resetBtn.onclick = () =&gt; { value = 0; hover = null; announce(); render(); };
+// mousemove / click / keydown all early-return while readOnly is true.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 34 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real star-rating input from scratch. The core is two numbers — a committed <code>value</code> and a nullable <code>hover</code> preview — with the visible fill being a pure function of whichever is in charge. Half-stars come from stacking a clipped gold layer over a grey one and setting its width per star; the left/right half of a star is decided from the pointer's x-position; a click commits the preview (and click-again clears it). The whole thing is really a bounded slider, so <kbd>←</kbd>/<kbd>→</kbd>/<kbd>Home</kbd>/<kbd>End</kbd> work with a step of 0.5 or 1, and <code>role="slider"</code> + <code>aria-valuetext</code> make it speak a meaningful "3.5 out of 5 stars, Good". <strong>👉 Tomorrow — Day 35: Tree-View (expand/collapse nodes + keyboard).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== RATING STARS =====
+const MAX = 5;
+let value = 0;        // committed rating
+let hover = null;     // transient preview; null = not previewing
+let step  = 0.5;      // 0.5 half-stars, 1 whole stars
+let readOnly = false;
+
+const STAR_PATH = "M12 .587l3.668 7.431 8.2 1.192-5.934 5.783 1.401 8.168L12 18.897l-7.335 3.864 1.401-8.168L.132 9.21l8.2-1.192z";
+const STAR_SVG  = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR_PATH + '"></path></svg>';
+
+const strip     = document.getElementById("stars");
+const valNum    = document.getElementById("valNum");
+const valLabel  = document.getElementById("valLabel");
+const stateCap  = document.getElementById("stateCap");
+const stepPill  = document.getElementById("stepPill");
+const live      = document.getElementById("live");
+const halfToggle = document.getElementById("halfToggle");
+const roToggle   = document.getElementById("roToggle");
+const resetBtn   = document.getElementById("resetBtn");
+
+// build the five stars once
+const starEls = [];
+for (let i = 1; i <= MAX; i++){
+  const star = document.createElement("span");
+  star.className = "star";
+  star.dataset.index = i;
+  star.innerHTML = '<span class="star-bg">' + STAR_SVG + '</span>' +
+                   '<span class="star-fill">' + STAR_SVG + '</span>';
+
+  star.addEventListener("mousemove", e => {
+    if (readOnly) return;
+    const r = star.getBoundingClientRect();
+    const leftHalf = step === 0.5 && (e.clientX - r.left) < r.width / 2;
+    hover = i - (leftHalf ? 0.5 : 0);
+    render();
+  });
+  star.addEventListener("click", () => {
+    if (readOnly) return;
+    const picked = hover !== null ? hover : i;
+    value = (picked === value) ? 0 : picked;   // click the same value again → clear
+    announce(); render();
+  });
+
+  strip.appendChild(star);
+  starEls.push(star);
+}
+strip.addEventListener("mouseleave", () => { if (readOnly) return; hover = null; render(); });
+
+function labelFor(v){
+  if (v <= 0) return "Not rated yet";
+  if (v <= 1) return "Terrible";
+  if (v <= 2) return "Poor";
+  if (v <= 3) return "Okay";
+  if (v <= 4) return "Good";
+  return "Excellent";
+}
+function displayValue(){ return hover !== null ? hover : value; }
+
+function render(){
+  const dv = displayValue();
+  // paint each star's fill window
+  starEls.forEach((star, idx) => {
+    const portion = Math.min(1, Math.max(0, dv - idx));   // idx = i-1
+    star.querySelector(".star-fill").style.width = (portion * 100) + "%";
+    star.classList.toggle("previewing", hover !== null);
+  });
+  // numeric read-out reflects what is currently shown (preview or committed)
+  valNum.textContent = dv ? dv.toFixed(step === 0.5 ? 1 : 0) : "0";
+  valLabel.textContent = labelFor(dv);
+  // caption makes the preview-vs-committed distinction explicit
+  if (hover !== null){
+    stateCap.textContent = "previewing — not saved";
+    stateCap.className = "text-xs font-semibold mt-1 cap-preview";
+  } else if (value > 0){
+    stateCap.textContent = "your rating (saved)";
+    stateCap.className = "text-xs font-semibold mt-1 cap-committed";
+  } else {
+    stateCap.textContent = "no value stored";
+    stateCap.className = "text-xs font-semibold mt-1 cap-empty";
+  }
+}
+
+function announce(){
+  const txt = value ? (value + " out of " + MAX + " stars, " + labelFor(value)) : "No rating";
+  strip.setAttribute("aria-valuenow", value);
+  strip.setAttribute("aria-valuetext", txt);
+  live.textContent = value ? txt : "Rating cleared";
+}
+
+// keyboard — the strip behaves as a bounded slider
+strip.addEventListener("keydown", e => {
+  if (readOnly) return;
+  let v = value, handled = true;
+  switch (e.key){
+    case "ArrowRight": case "ArrowUp":   v = value + step; break;
+    case "ArrowLeft":  case "ArrowDown": v = value - step; break;
+    case "Home": v = 0;   break;
+    case "End":  v = MAX; break;
+    case "Delete": case "Backspace": v = 0; break;
+    default: handled = false;
+  }
+  if (!handled) return;
+  e.preventDefault();
+  hover = null;                                   // a key commits, it does not preview
+  value = Math.min(MAX, Math.max(0, v));
+  announce(); render();
+});
+
+// half-star toggle
+function setHalf(on){
+  step = on ? 0.5 : 1;
+  halfToggle.classList.toggle("on", on);
+  halfToggle.setAttribute("aria-checked", on ? "true" : "false");
+  stepPill.textContent = "step " + (on ? "0.5" : "1");
+  if (!on) value = Math.round(value);             // snap to whole when precision off
+  hover = null; announce(); render();
+}
+halfToggle.addEventListener("click", () => setHalf(step !== 0.5));
+halfToggle.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); setHalf(step !== 0.5); } });
+
+// read-only toggle
+function setReadOnly(on){
+  readOnly = on;
+  roToggle.classList.toggle("on", on);
+  roToggle.setAttribute("aria-checked", on ? "true" : "false");
+  strip.tabIndex = on ? -1 : 0;
+  strip.setAttribute("aria-readonly", on ? "true" : "false");
+  strip.classList.toggle("readonly", on);
+  hover = null; render();
+}
+roToggle.addEventListener("click", () => setReadOnly(!readOnly));
+roToggle.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); setReadOnly(!readOnly); } });
+
+// clear
+resetBtn.addEventListener("click", () => { if (readOnly) return; value = 0; hover = null; announce(); render(); });
+
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a star rating really is", why:"A star rating looks playful but it is doing serious work: capturing a single number on a bounded ordinal scale and making that number obvious at a glance. The user is answering 'how many out of five', and the row of stars is just a friendly skin over an integer (or half-integer) between zero and a maximum. Reading a rating is instant — a filled row versus a mostly-empty one communicates faster than any digit — and entering one is a single gesture. That is why the pattern is everywhere: product reviews, ride and delivery apps, app stores, feedback prompts. Because the underlying data is so small, the entire component is defined by a maximum N and one current value, and every visual — how many stars are gold, the number in the read-out, the label 'Good' — is a projection of that value. Get that mental model right (a bounded number wearing a costume) and the hover, half-star and keyboard behaviours all fall out of it naturally, instead of feeling like separate features bolted on.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">a number 0..5, drawn as stars<br><br>&#9733;&#9733;&#9733;&#9734;&#9734; &nbsp;=&nbsp; value = 3<br><br>read: instant &middot; enter: one gesture<br>everything visible = a projection of ONE number</div>`, code:`const MAX = 5;      // the scale
+let value  = 0;     // the single source of truth (0 … MAX)
+// stars, the read-out "3 / 5", and the label "Okay"
+// are ALL just different views of \`value\`.` },
+ { title:"2. Two states: committed vs hover preview", why:"This is the idea that separates a real rating widget from a naive one. There are two different numbers, not one. The committed value is what the user has actually chosen and what you would save; the hover preview is a throwaway that shows what they would get if they clicked right now. As the pointer sweeps across the stars, the preview updates continuously and the display follows it — but the committed value does not budge. The instant the pointer leaves, the preview is discarded and the committed value snaps back into view. Model this with value plus a nullable hover: null means 'nobody is previewing, show the committed value'. The display function is a one-liner — return hover if it is set, otherwise value. Beginners often make the mistake of writing hover straight into value on mouseover, which means merely gliding your mouse over the stars silently changes the rating; the preview/commit split is precisely what prevents that. It is also why keyboard changes clear hover: a keypress is a commit, so there is no preview in flight.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">value = 3 &nbsp;(committed, saved)<br>hover = 4.5 &nbsp;(preview, throwaway)<br><br>display = hover ?? value<br><br>pointer moves &rarr; hover changes, value stays<br>pointer leaves &rarr; hover = null &rarr; back to 3</div>`, code:`let value = 0;      // committed
+let hover = null;   // preview; null = not previewing
+
+const displayValue = () => hover !== null ? hover : value;
+// hovering NEVER writes value. Only click / keypress commits.` },
+ { title:"3. Rendering fractional fill", why:"To show 3.5 stars you need to fill three stars completely and one star exactly halfway, and the clean way is to make each star two stacked layers: a grey empty star and, clipped on top of it, a gold filled star whose visible width is a percentage. The render step converts one number into N widths. For star i (counting from one) the filled portion is the display value minus the number of stars before it, clamped between zero and one: star one fills as the value climbs from 0 to 1, star two from 1 to 2, and so on. A value of 3.5 gives stars one to three a portion of 1 (full), star four a portion of 0.5 (half), star five a portion of 0 (empty). Multiply by a hundred and that is the CSS width of the gold layer. The reason to keep the inner glyph at a fixed pixel width while only the wrapper's width shrinks is so the star clips like a curtain being drawn rather than squashing horizontally. And critically, render is a pure function of the display value — you call it after every change and let it recompute all five stars, rather than trying to mutate one star in place, which is how these widgets drift out of sync.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">displayValue = 3.5<br><br>star1: 3.5-0 &rarr; 1.0 &rarr; 100%<br>star2: 3.5-1 &rarr; 1.0 &rarr; 100%<br>star3: 3.5-2 &rarr; 1.0 &rarr; 100%<br>star4: 3.5-3 &rarr; 0.5 &rarr; &nbsp;50%<br>star5: 3.5-4 &rarr; &minus;0.5 &rarr; &nbsp; 0%</div>`, code:`function render(){
+  const dv = displayValue();
+  starEls.forEach((star, idx) => {           // idx = i - 1
+    const portion = Math.min(1, Math.max(0, dv - idx));  // 0 … 1
+    star.querySelector(".star-fill").style.width = portion * 100 + "%";
+  });
+}` },
+ { title:"4. Hover: previewing and picking the half", why:"Hover is where the widget feels alive, and it is driven by mousemove rather than a plain mouseenter because whole-versus-half depends on where inside a star the pointer is, which only mousemove tracks continuously. For each star you measure the pointer's x-position relative to that star's bounding box: if half-stars are enabled and the pointer is in the left half, the preview is i minus 0.5, otherwise it is i. You write that to hover and re-render — nothing touches the committed value. The one piece people forget is resetting the preview when the pointer leaves: attach a single mouseleave on the whole strip that sets hover back to null, so the committed value reappears instead of the display being stuck on the last previewed number. Using getBoundingClientRect each move (rather than caching offsets) keeps it correct even if the page has scrolled or the layout shifted. This left-half / right-half hit-testing is the entire mechanism behind half-star precision on the mouse — there is no separate 'half star' element, just a decision about which fraction the current pointer position maps to.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointer over star 4:<br>|&larr; left half &rarr;|&larr; right half &rarr;|<br>&nbsp;&nbsp;&nbsp;3.5 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 4.0<br><br>hover = i - (leftHalf ? 0.5 : 0)<br>leave the strip &rarr; hover = null</div>`, code:`star.addEventListener("mousemove", e => {
+  const r = star.getBoundingClientRect();
+  const leftHalf = step === 0.5 && (e.clientX - r.left) < r.width/2;
+  hover = i - (leftHalf ? 0.5 : 0);
+  render();                       // preview only — value untouched
+});
+strip.addEventListener("mouseleave", () => { hover = null; render(); });` },
+ { title:"5. Click to commit — and click again to clear", why:"The click is the contract: it promotes whatever the preview is currently showing into the committed value. Read hover (falling back to the star's own index if for some reason there is no preview), assign it to value, then announce and render. A small but genuinely useful refinement is toggle-to-clear: if the user clicks the exact rating they already have, set the value back to zero. This gives an intuitive undo for a fat-fingered tap — click the third star by accident, click it again, it is gone — without needing a separate clear control, which matters a lot on touch where a stray tap is common. Be deliberate about the interaction with half-stars: on a click the committed value should be whatever was previewed, half included, so a click on the left of star four commits 3.5, not 4. And because committing is a discrete event, this is the right place to fire your side effects — persist to a server, update an average, emit a change event — rather than doing any of that during the noisy stream of hover updates.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">click &rarr; value = hover<br><br>value 3, click star 3 again &rarr; value = 0<br>(toggle-to-clear — easy undo)<br><br>side effects (save, emit) live HERE,<br>never in mousemove</div>`, code:`star.addEventListener("click", () => {
+  const picked = hover !== null ? hover : i;
+  value = (picked === value) ? 0 : picked;   // same value again → clear
+  announce();                                // fire side effects on COMMIT
+  render();
+});` },
+ { title:"6. Keyboard — a rating is a slider", why:"A rating is a value on a bounded, ordered scale, and the ARIA authoring guidance for exactly that is the slider pattern — so treat the whole star strip as one slider rather than five separate buttons. Make the strip a single tab stop, then implement the standard slider keys: Right and Up arrows add one step, Left and Down subtract one, Home jumps to the minimum and End to the maximum. The beauty is that 'one step' is your half-star setting: with step at 0.5 the arrows move in halves, with step at 1 they move in wholes, and you did not write any special half-star keyboard code. Clamp the result to the zero-to-MAX range so the ends do not overshoot, and clear hover first because a keypress is a commit, not a preview — you want the committed value to be what changes and shows. Offering Delete or Backspace to clear is a friendly extra. Doing this as a real slider (one focusable element, arrow semantics) is far better than making each star individually tabbable, which would force a keyboard user to tab through five targets and gives no natural notion of increment.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab &rarr; focus the strip (one stop)<br>&larr; &darr; &nbsp;&minus;step &nbsp;&nbsp;&nbsp; &rarr; &uarr; &nbsp;+step<br>Home &rarr; 0 &nbsp;&nbsp;&nbsp; End &rarr; 5<br><br>step = 0.5 or 1 &rarr; halves or wholes, free</div>`, code:`strip.addEventListener("keydown", e => {
+  let v = value;
+  if (e.key==="ArrowRight"||e.key==="ArrowUp")   v += step;
+  else if (e.key==="ArrowLeft"||e.key==="ArrowDown") v -= step;
+  else if (e.key==="Home") v = 0;
+  else if (e.key==="End")  v = MAX;
+  else return;
+  e.preventDefault();
+  hover = null;                              // a key commits
+  value = Math.min(MAX, Math.max(0, v));     // clamp
+  announce(); render();
+});` },
+ { title:"7. Accessibility — make it speak", why:"Colour alone cannot carry a rating: a colour-blind user may not distinguish gold from grey, and a screen-reader user sees no colour at all, so the value must be exposed programmatically and textually. Since the widget is a slider, put role=slider on the strip with aria-valuemin of zero, aria-valuemax of your maximum, and aria-valuenow tracking the committed value. The single most important attribute is aria-valuetext, because a raw aria-valuenow of 3.5 is announced as a bare number with no context; aria-valuetext lets you say 'three and a half out of five stars, Good', which is what the user actually needs. Update valuenow and valuetext together on every commit, and mirror the message into a polite aria-live region so a change is announced even when focus does not move. Keep the visible numeric read-out too, so the value is legible without relying on the gold fill. And when the strip is display-only, mark aria-readonly and take it out of the tab order so keyboard users are not stopped on a control they cannot change. The rule of thumb: any state you show with colour, also show with text and ARIA.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="slider"<br>aria-valuemin=0 &nbsp;aria-valuemax=5<br>aria-valuenow=3.5<br>aria-valuetext="3.5 out of 5 stars, Good"<br><br>+ polite live region &middot; visible "3.5 / 5"<br>never colour alone</div>`, code:`strip.setAttribute("role", "slider");
+strip.setAttribute("aria-valuemin", 0);
+strip.setAttribute("aria-valuemax", MAX);
+function announce(){
+  const txt = value ? \`\${value} out of \${MAX} stars, \${labelFor(value)}\` : "No rating";
+  strip.setAttribute("aria-valuenow", value);
+  strip.setAttribute("aria-valuetext", txt);   // the meaningful bit
+  liveRegion.textContent = txt;                // aria-live="polite"
+}` },
+ { title:"8. Read-only & display mode", why:"The same component has two jobs: collecting a rating from one person, and displaying an aggregate to everyone else — the '4.3 average across 812 reviews' you see above a product. Both are the identical rendering (a value projected onto stars), so you do not build a second widget; you add a read-only mode. In that mode you keep the exact fractional fill — a 4.3 average shows four full stars and a partial fifth — but you switch off all input: early-return from mousemove, click and keydown, remove the pointer cursor, and set the element out of the tab order with tabindex minus one plus aria-readonly true, so assistive tech announces it as a value to read rather than a control to operate. This is a good example of why modelling the state as a plain number pays off: the display average and the interactive input are the same render function fed a different number and a flag. It also means server-provided fractional averages like 3.7 just work, because the fill logic never assumed the value was a whole or a half — it always came from a clamp on an arbitrary fraction.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">INPUT mode: hover + click + keys, tabbable<br>READ-ONLY: same fill, no input<br><br>&#9733;&#9733;&#9733;&#9733;&#189; &nbsp; 4.3 average (812)<br>tabindex=-1 &middot; aria-readonly=true</div>`, code:`function setReadOnly(on){
+  readOnly = on;                              // guards mousemove/click/keydown
+  strip.tabIndex = on ? -1 : 0;               // out of tab order when display-only
+  strip.setAttribute("aria-readonly", on);
+  strip.classList.toggle("readonly", on);     // drop the pointer cursor
+}
+// render() is unchanged — a 4.3 average fills exactly the same way.` },
+ { title:"9. Edge cases & polish", why:"The difference between a demo and a shippable rating lives in the corners. Decide your granularity deliberately: half-stars are common, but some products want tenths for averages and only whole numbers for input — keep step configurable and snap the value when you tighten it (rounding 3.5 to 4 when you turn half-stars off). Give people a way out: toggle-to-clear on click, plus Delete or a small clear button, because a mis-set rating with no way to unset it is a real frustration, especially where a rating is required to submit. Touch needs thought — there is no hover on a phone, so a tap must both preview and commit in one gesture, and your targets should be at least around forty-four pixels so half-star hit zones are not impossibly thin; on very small screens dropping half-stars for touch is a reasonable call. Respect prefers-reduced-motion by dropping the hover scale and fill transition. Consider persistence so a rating survives a reload, and if you show an average, be honest about rounding — do not paint a full fifth star for a 4.6. Finally, remember your render is pure: any of these tweaks changes the input to render, never render itself.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">step: 1 &middot; 0.5 &middot; 0.1 (snap on change)<br>clear: click-again / Delete / button<br>touch: tap = preview + commit, &ge;44px targets<br>reduced-motion: no scale / no transition<br>honest rounding on displayed averages</div>`, code:`// tighten granularity → snap existing value
+function setHalf(on){ step = on ? 0.5 : 1; if(!on) value = Math.round(value); render(); }
+
+// touch: no hover, so a tap previews AND commits at once
+star.addEventListener("touchend", e => { e.preventDefault(); commitFromTouch(e); });
+
+@media (prefers-reduced-motion: reduce){ .star, .star-fill { transition:none; } }` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
