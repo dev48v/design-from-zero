@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 35 — Tree View</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+  /* ===== tree demo surface ===== */
+  .tree-card { background:#fff; border:1px solid #e2e8f0; border-radius:18px; }
+  .tree { user-select:none; font-size:14px; color:#334155; }
+  .tree:focus-visible { outline:none; }
+  .tv-group { display:none; }
+  .tv-group.open { display:block; }
+  .tv-row { display:flex; align-items:center; gap:6px; height:30px; border-radius:8px;
+            cursor:pointer; padding-right:8px; transition:background .1s; white-space:nowrap; }
+  .tv-row:hover { background:#f1f5f9; }
+  .tv-item[aria-selected="true"] > .tv-row { background:#eef2ff; color:#4338ca; font-weight:600; }
+  /* the ONE tab stop draws a visible focus ring on its row */
+  .tv-item[tabindex="0"] > .tv-row { box-shadow:inset 0 0 0 2px #6366f1; }
+  .tv-chev { width:16px; height:16px; flex:0 0 16px; display:inline-flex; align-items:center;
+             justify-content:center; color:#94a3b8; transition:transform .15s ease; }
+  .tv-chev.open { transform:rotate(90deg); }
+  .tv-chev svg { width:12px; height:12px; display:block; fill:currentColor; }
+  .tv-chev.leaf { visibility:hidden; }
+  .tv-icon { width:18px; height:18px; flex:0 0 18px; display:inline-flex; }
+  .tv-icon svg { width:100%; height:100%; display:block; }
+  .ic-folder { fill:#f59e0b; }
+  .ic-file   { fill:#94a3b8; }
+  .tv-label { line-height:1; }
+  .tv-count { color:#cbd5e1; font-size:11px; font-weight:600; margin-left:4px; }
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .crumb { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  .crumb span { background:#eef2ff; color:#4338ca; border-radius:6px; padding:1px 7px; font-size:12px; font-weight:700; }
+  .crumb .sep { background:none; color:#cbd5e1; padding:0; font-weight:400; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .tv-chev { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 35</div>
+      <h1 class="text-xl font-bold">🌲 Tree View — A Recursive File Explorer: Expand/Collapse, Roving-Tabindex Keyboard Nav &amp; Full ARIA <code>tree</code> Roles</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-3xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Expand a folder, collapse it, arrow your way around.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>file-explorer tree</strong> built from scratch in vanilla JS — the same widget you use in VS Code's sidebar, a file dialog, or a nested-comment thread. Two ideas make it work: it is drawn by a <strong>recursive render</strong> (a folder renders its label, then renders each child the exact same way), and it is driven by <strong>one</strong> tab stop that roams — a <strong>roving tabindex</strong> — so the whole tree behaves like a single control. Click a chevron or a folder to open/close it. Then click the tree and try the keyboard: <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>→</kbd> open / dive in, <kbd>←</kbd> close / jump to parent, <kbd>Enter</kbd> select, <kbd>Home</kbd>/<kbd>End</kbd> ends, or just type a letter to jump. No library.</p>
+      </div>
+
+      <div class="tree-card p-4 sm:p-6 mb-5">
+        <div class="flex flex-col sm:flex-row gap-6">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2 px-1">Explorer</div>
+            <div id="tree" class="tree" role="tree" aria-label="File explorer"></div>
+          </div>
+          <!-- the read-out -->
+          <div class="sm:w-56 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Selected</div>
+              <div id="selName" class="text-lg font-bold text-slate-800 break-all">— nothing yet —</div>
+              <div id="selMeta" class="text-xs font-semibold text-slate-400 mt-1">click or focus a node</div>
+              <div class="mt-3 pt-3 border-t border-slate-200">
+                <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Path</div>
+                <div id="selPath" class="crumb text-slate-400 text-xs">root</div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span class="text-slate-400 font-semibold">Open folders</span>
+                <span id="openCount" class="pill">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- controls -->
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-3 mt-6 pt-5 border-t border-slate-100">
+          <button id="expandAll"   class="btn-ghost">Expand all</button>
+          <button id="collapseAll" class="btn-ghost">Collapse all</button>
+          <span class="text-xs text-slate-400 ms-auto" style="margin-left:auto;">
+            <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>→</kbd> open · <kbd>←</kbd> close · <kbd>Enter</kbd> select · type to jump
+          </span>
+        </div>
+      </div>
+
+      <!-- polite live region: announces moves/selection to screen readers -->
+      <div id="live" class="sr-only" aria-live="polite"></div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every tree you have ever used — a file sidebar, a category picker, a threaded comment list, an org chart, a JSON viewer — is this same shape: a recursive list of nodes, each folder holding a collapsible <code>role="group"</code> of children. The visible rows are whatever survives after you drop every collapsed subtree, and the keyboard treats that visible list as one roving-focus control. That is the whole widget.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a tree view works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A tree view is a recursive data structure wearing a recursive UI. The data is an array of nodes, where a folder node carries its own array of <code>children</code>. You render it with a function that draws one node and then <em>calls itself</em> for each child, wrapping them in a collapsible <code>role="group"</code>. Expand/collapse is just toggling one class plus <code>aria-expanded</code>. The keyboard is the interesting part: you compute the list of <em>currently visible</em> rows and move a single roving <code>tabindex=0</code> through it. ~110 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The data: recursive nodes</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A tree is a nested list. Each node has a <code>name</code> and a <code>type</code>; a <code>folder</code> additionally carries a <code>children</code> array (which may hold more folders, nesting as deep as you like), and an <code>open</code> flag for its starting state. This one recursive shape is what lets the same rendering and navigation code handle two levels or twenty.</p>
+        <div class="relative"><pre>const TREE = [
+  { name:"src", type:"folder", open:true, children:[
+    { name:"components", type:"folder", children:[
+      { name:"Button.jsx", type:"file" },
+      { name:"TreeView.jsx", type:"file" },
+    ]},
+    { name:"index.js", type:"file" },
+  ]},
+  { name:"package.json", type:"file" },
+];</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Recursive render: a node draws its children the same way</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>buildNode</code> makes one <code>role="treeitem"</code> containing a label row, and — if it is a folder — a <code>role="group"</code> into which it appends <code>buildNode(child, level+1)</code> for every child. The function calling itself is the entire trick: depth is just how many times the recursion nested. Pass the <code>level</code> down so each item can set <code>aria-level</code> and indent its row.</p>
+        <div class="relative"><pre>function buildNode(node, level){
+  const item = el("div", { role:"treeitem", "aria-level":level });
+  item._node = node;
+  item.tabIndex = -1;
+  item.appendChild(buildRow(node, level));      // chevron + icon + label
+  if (node.type === "folder"){
+    item.setAttribute("aria-expanded", !!node.open);
+    const group = el("div", { role:"group", class:"tv-group" });
+    node.children.forEach(c =&gt; group.appendChild(buildNode(c, level+1))); // ↻ recurse
+    group.classList.toggle("open", !!node.open);
+    item.appendChild(group);
+  }
+  return item;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Expand / collapse = one class + one attribute</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Opening or closing a folder does not touch the DOM structure — the children are always built and always present. You just toggle the child group's <code>.open</code> class (CSS shows/hides it), flip <code>aria-expanded</code> so assistive tech knows the state, and rotate the chevron. Because the subtree stays in the DOM, its state is preserved when you re-open it.</p>
+        <div class="relative"><pre>function setOpen(item, open){
+  if (item._node.type !== "folder") return;
+  item.setAttribute("aria-expanded", open);
+  item.querySelector(":scope > .tv-group").classList.toggle("open", open);
+  item.querySelector(":scope > .tv-row .tv-chev").classList.toggle("open", open);
+  item._node.open = open;
+}
+const toggle = item =&gt; setOpen(item, item.getAttribute("aria-expanded") !== "true");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The visible-nodes list — the backbone of navigation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The keyboard does not care about the tree's shape; it cares about the flat list of rows the user can actually see right now. A node is visible only if <em>every</em> folder above it is open — so walk up from each item and drop it if any ancestor group is collapsed. <kbd>↑</kbd>/<kbd>↓</kbd> then become "previous / next in this list", regardless of nesting depth.</p>
+        <div class="relative"><pre>const allItems = () =&gt; [...tree.querySelectorAll('[role="treeitem"]')];
+
+function visibleItems(){
+  return allItems().filter(item =&gt; {
+    for (let g = item.parentElement; g && g !== tree; g = g.parentElement)
+      if (g.classList.contains("tv-group") && !g.classList.contains("open"))
+        return false;                 // an ancestor is collapsed → hidden
+    return true;
+  });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Roving tabindex: the tree is ONE tab stop</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A tree with 50 files must not be 50 <kbd>Tab</kbd> stops. So exactly one item holds <code>tabindex=0</code> and every other holds <code>tabindex=-1</code>. To move focus you set them all to <code>-1</code>, give the target <code>0</code>, and call <code>.focus()</code>. <kbd>Tab</kbd> now enters and leaves the whole tree in one hop, and the arrow keys do the moving inside.</p>
+        <div class="relative"><pre>let current = null;                    // the item that currently owns focus
+
+function focusItem(item){
+  if (!item) return;
+  allItems().forEach(it =&gt; it.tabIndex = -1);   // everyone out of tab order
+  item.tabIndex = 0;                            // …except the current one
+  item.focus();
+  current = item;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The keyboard model (WAI-ARIA tree keys)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the standard tree contract. Up/Down step through the visible list. Right is context-sensitive: on a closed folder it opens it, on an already-open folder it dives to the first child, on a file it does nothing. Left mirrors it: on an open folder it closes, otherwise it jumps to the parent folder. Home/End go to the first/last visible row.</p>
+        <div class="relative"><pre>tree.addEventListener("keydown", e =&gt; {
+  const item = e.target.closest('[role="treeitem"]'); if (!item) return;
+  const vis = visibleItems(), i = vis.indexOf(item);
+  const folder = item._node.type === "folder";
+  const open = item.getAttribute("aria-expanded") === "true";
+  switch (e.key){
+    case "ArrowDown": focusItem(vis[i+1]); break;
+    case "ArrowUp":   focusItem(vis[i-1]); break;
+    case "ArrowRight":
+      if (folder && !open) setOpen(item, true);
+      else if (folder)     focusItem(firstChild(item));
+      break;
+    case "ArrowLeft":
+      if (folder && open)  setOpen(item, false);
+      else                 focusItem(parentItem(item));
+      break;
+    case "Home": focusItem(vis[0]); break;
+    case "End":  focusItem(vis[vis.length-1]); break;
+    case "Enter": case " ": if (folder) toggle(item); select(item); break;
+    default: return;                 // let other keys (type-ahead) fall through
+  }
+  e.preventDefault();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Move within the tree: first child &amp; parent</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Right-into and Left-to-parent need two tiny DOM lookups. The first child is the first <code>treeitem</code> inside this item's own group. The parent is found by climbing out of the containing group with <code>closest</code> — which returns <code>null</code> at the root, so top-level Left simply does nothing. Both use <code>:scope</code> so they only match direct descendants, never grandchildren.</p>
+        <div class="relative"><pre>const firstChild = item =&gt;
+  item.querySelector(':scope > .tv-group > [role="treeitem"]');
+
+const parentItem = item =&gt;
+  item.parentElement.closest('[role="treeitem"]');   // null at the root</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">ARIA: tree · treeitem · group, plus selection</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The roles form a contract screen readers understand: <code>role="tree"</code> on the container, <code>role="treeitem"</code> on every node, and <code>role="group"</code> on each folder's child list. Folders expose <code>aria-expanded</code>; every item exposes <code>aria-level</code> (depth, 1-based) so users hear "level 3". Selection (distinct from focus) is carried by <code>aria-selected</code>. Give each item an explicit <code>aria-label</code> so its name is not polluted by the child text nested inside it, and mirror moves into a polite live region.</p>
+        <div class="relative"><pre>&lt;div role="tree" aria-label="File explorer"&gt;
+  &lt;div role="treeitem" aria-level="1" aria-expanded="true" aria-label="src" tabindex="0"&gt;
+    &lt;div class="tv-row"&gt;…chevron · icon · “src”…&lt;/div&gt;
+    &lt;div role="group"&gt;
+      &lt;div role="treeitem" aria-level="2" aria-label="index.js" tabindex="-1"&gt;…&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+function select(item){
+  allItems().forEach(it =&gt; it.setAttribute("aria-selected", it === item));
+  live.textContent = item._node.name + ", " +
+    (item._node.type === "folder" ? "folder" : "file");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Polish: type-ahead, expand-all, indentation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A few touches make it feel native. <strong>Type-ahead</strong>: pressing a printable key jumps to the next visible node whose name starts with it, wrapping around — invaluable in a long list. <strong>Expand-all / collapse-all</strong> loop over every folder and set the state. And <strong>indentation</strong> comes purely from <code>aria-level</code>: pad each row by <code>level × 16px</code> so depth is visible, never hard-coded per node.</p>
+        <div class="relative"><pre>function typeahead(ch){
+  const vis = visibleItems(), start = vis.indexOf(current);
+  for (let k = 1; k &lt;= vis.length; k++){
+    const it = vis[(start + k) % vis.length];      // search forward, wrap
+    if (it._node.name.toLowerCase().startsWith(ch.toLowerCase()))
+      return focusItem(it);
+  }
+}
+// indentation is a pure function of depth:
+row.style.paddingLeft = (level * 16) + "px";</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 35 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real file-explorer tree from scratch. The core is <strong>recursion</strong> — a node renders its label and then renders each child the same way, wrapping them in a collapsible <code>role="group"</code>. Expand/collapse is one class plus <code>aria-expanded</code>; keyboard navigation runs over the flat list of <em>visible</em> rows using a single <strong>roving <code>tabindex</code></strong>, with <kbd>→</kbd>/<kbd>←</kbd> opening, closing and hopping to first-child / parent. The <code>tree</code> / <code>treeitem</code> / <code>group</code> roles plus <code>aria-level</code>, <code>aria-expanded</code> and <code>aria-selected</code> make it speak. <strong>👉 Tomorrow — Day 36: Split / Resizable Panes (drag-to-resize split view + keyboard).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== TREE VIEW =====
+const TREE = [
+  { name:"src", type:"folder", open:true, children:[
+    { name:"components", type:"folder", open:true, children:[
+      { name:"Button.jsx",   type:"file" },
+      { name:"Modal.jsx",    type:"file" },
+      { name:"TreeView.jsx", type:"file" },
+    ]},
+    { name:"hooks", type:"folder", open:false, children:[
+      { name:"useTree.js",     type:"file" },
+      { name:"useKeyboard.js", type:"file" },
+    ]},
+    { name:"styles", type:"folder", open:false, children:[
+      { name:"reset.css",  type:"file" },
+      { name:"theme.css",  type:"file" },
+    ]},
+    { name:"index.js", type:"file" },
+    { name:"app.js",   type:"file" },
+  ]},
+  { name:"public", type:"folder", open:false, children:[
+    { name:"favicon.ico", type:"file" },
+    { name:"index.html",  type:"file" },
+    { name:"robots.txt",  type:"file" },
+  ]},
+  { name:"tests", type:"folder", open:false, children:[
+    { name:"tree.test.js", type:"file" },
+  ]},
+  { name:"package.json", type:"file" },
+  { name:"README.md",    type:"file" },
+];
+
+const CHEVRON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5z"></path></svg>';
+const FOLDER  = '<svg viewBox="0 0 24 24" aria-hidden="true" class="ic-folder"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"></path></svg>';
+const FILE    = '<svg viewBox="0 0 24 24" aria-hidden="true" class="ic-file"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5z"></path></svg>';
+
+const tree     = document.getElementById("tree");
+const live     = document.getElementById("live");
+const selName  = document.getElementById("selName");
+const selMeta  = document.getElementById("selMeta");
+const selPath  = document.getElementById("selPath");
+const openCount= document.getElementById("openCount");
+
+let current = null;    // item that owns focus (roving tabindex)
+let selected = null;   // item that is selected
+
+// ---- recursive render ----
+function buildNode(node, level){
+  const item = document.createElement("div");
+  item.className = "tv-item";
+  item.setAttribute("role", "treeitem");
+  item.setAttribute("aria-level", level);
+  item.setAttribute("aria-label", node.name);
+  item.tabIndex = -1;
+  item._node = node;
+
+  const isFolder = node.type === "folder";
+  const row = document.createElement("div");
+  row.className = "tv-row";
+  row.style.paddingLeft = (level * 16) + "px";
+  const chevClass = isFolder ? "tv-chev" + (node.open ? " open" : "") : "tv-chev leaf";
+  row.innerHTML =
+    '<span class="' + chevClass + '">' + CHEVRON + '</span>' +
+    '<span class="tv-icon">' + (isFolder ? FOLDER : FILE) + '</span>' +
+    '<span class="tv-label">' + node.name + '</span>' +
+    (isFolder ? '<span class="tv-count">' + node.children.length + '</span>' : '');
+  item.appendChild(row);
+
+  if (isFolder){
+    item.setAttribute("aria-expanded", node.open ? "true" : "false");
+    const group = document.createElement("div");
+    group.className = "tv-group" + (node.open ? " open" : "");
+    group.setAttribute("role", "group");
+    node.children.forEach(c => group.appendChild(buildNode(c, level + 1)));
+    item.appendChild(group);
+  }
+
+  row.addEventListener("click", () => {
+    if (isFolder) toggle(item);
+    select(item);
+    focusItem(item);
+  });
+  return item;
+}
+
+function render(){
+  tree.innerHTML = "";
+  TREE.forEach(node => tree.appendChild(buildNode(node, 1)));
+  current = allItems()[0];
+  if (current) current.tabIndex = 0;
+  refreshInfo();
+}
+
+// ---- helpers ----
+const allItems = () => [...tree.querySelectorAll('[role="treeitem"]')];
+
+function visibleItems(){
+  return allItems().filter(item => {
+    for (let g = item.parentElement; g && g !== tree; g = g.parentElement)
+      if (g.classList && g.classList.contains("tv-group") && !g.classList.contains("open"))
+        return false;
+    return true;
+  });
+}
+const firstChild = item => item.querySelector(':scope > .tv-group > [role="treeitem"]');
+const parentItem = item => item.parentElement.closest('[role="treeitem"]');
+
+// ---- expand / collapse ----
+function setOpen(item, open){
+  if (item._node.type !== "folder") return;
+  item.setAttribute("aria-expanded", open ? "true" : "false");
+  item.querySelector(":scope > .tv-group").classList.toggle("open", open);
+  item.querySelector(":scope > .tv-row .tv-chev").classList.toggle("open", open);
+  item._node.open = open;
+  live.textContent = item._node.name + (open ? " expanded" : " collapsed");
+  refreshInfo();
+}
+const toggle = item => setOpen(item, item.getAttribute("aria-expanded") !== "true");
+
+// ---- focus (roving tabindex) ----
+function focusItem(item){
+  if (!item) return;
+  allItems().forEach(it => it.tabIndex = -1);
+  item.tabIndex = 0;
+  item.focus();
+  current = item;
+}
+
+// ---- selection ----
+function pathOf(item){
+  const names = [];
+  for (let it = item; it; it = parentItem(it)) names.unshift(it._node.name);
+  return names;
+}
+function select(item){
+  if (selected) selected.setAttribute("aria-selected", "false");
+  selected = item;
+  item.setAttribute("aria-selected", "true");
+  const node = item._node;
+  selName.textContent = node.name;
+  selMeta.textContent = (node.type === "folder" ? "folder" : "file") +
+    " · level " + item.getAttribute("aria-level");
+  const names = pathOf(item);
+  selPath.innerHTML = names.map((n, i) =>
+    (i ? '<span class="sep">/</span>' : '') + '<span>' + n + '</span>').join("");
+  live.textContent = node.name + ", " + (node.type === "folder" ? "folder" : "file") +
+    ", selected, level " + item.getAttribute("aria-level");
+}
+
+function refreshInfo(){
+  openCount.textContent = allItems()
+    .filter(it => it.getAttribute("aria-expanded") === "true").length;
+}
+
+// ---- type-ahead ----
+function typeahead(ch){
+  const vis = visibleItems();
+  const start = Math.max(0, vis.indexOf(current));
+  for (let k = 1; k <= vis.length; k++){
+    const it = vis[(start + k) % vis.length];
+    if (it._node.name.toLowerCase().startsWith(ch.toLowerCase())){ focusItem(it); return; }
+  }
+}
+
+// ---- keyboard (WAI-ARIA tree pattern) ----
+tree.addEventListener("keydown", e => {
+  const item = e.target.closest('[role="treeitem"]');
+  if (!item) return;
+  const vis = visibleItems(), i = vis.indexOf(item);
+  const folder = item._node.type === "folder";
+  const open = item.getAttribute("aria-expanded") === "true";
+  let handled = true;
+  switch (e.key){
+    case "ArrowDown": if (i < vis.length - 1) focusItem(vis[i + 1]); break;
+    case "ArrowUp":   if (i > 0) focusItem(vis[i - 1]); break;
+    case "ArrowRight":
+      if (folder && !open) setOpen(item, true);
+      else if (folder && open) focusItem(firstChild(item));
+      break;
+    case "ArrowLeft":
+      if (folder && open) setOpen(item, false);
+      else focusItem(parentItem(item));
+      break;
+    case "Home": focusItem(vis[0]); break;
+    case "End":  focusItem(vis[vis.length - 1]); break;
+    case "Enter": case " ":
+      if (folder) toggle(item);
+      select(item);
+      break;
+    case "*":  // expand all siblings at this level (bonus ARIA key)
+      vis.forEach(it => { if (it._node.type === "folder" &&
+        it.getAttribute("aria-level") === item.getAttribute("aria-level")) setOpen(it, true); });
+      break;
+    default:
+      if (e.key.length === 1 && /\S/.test(e.key)) typeahead(e.key);
+      else handled = false;
+  }
+  if (handled) e.preventDefault();
+});
+
+// ---- controls ----
+document.getElementById("expandAll").onclick = () => {
+  allItems().forEach(it => setOpen(it, true));
+  live.textContent = "All folders expanded";
+};
+document.getElementById("collapseAll").onclick = () => {
+  allItems().forEach(it => setOpen(it, false));
+  live.textContent = "All folders collapsed";
+  focusItem(allItems()[0]);
+};
+
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a tree view really is", why:"A tree view takes hierarchical data — data where things contain other things — and lets you explore it one level at a time instead of drowning in all of it at once. A file system is the classic example: folders inside folders inside folders. But the same shape is everywhere: a category picker, a threaded comment section, an organisation chart, an outline, a JSON or DOM inspector, a nested-settings menu. The defining feature is progressive disclosure: you see the top level, and you open only the branches you care about, keeping the rest folded away. Because the underlying data nests arbitrarily deep, the widget cannot hard-code 'two levels of list'; it must handle any depth uniformly. That single requirement — treat depth-2 and depth-20 with the exact same code — is why every part of a tree, from rendering to keyboard navigation, is built on recursion and on one flat idea of 'which rows are visible right now'.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">hierarchy, shown one level at a time<br><br>▸ src<br>&nbsp;&nbsp;▾ components<br>&nbsp;&nbsp;&nbsp;&nbsp;• Button.jsx<br>&nbsp;&nbsp;• index.js<br>▸ public<br><br>open only the branches you need</div>`, code:`// hierarchical data → progressive disclosure
+// files, comments, org charts, JSON, the DOM …
+// the rule: handle ANY depth with the SAME code.
+// so: recursion + a "visible rows" list.` },
+ { title:"2. The data model: recursive nodes", why:"Everything starts with the shape of the data, because the UI will mirror it exactly. A node is a small object with a name and a type. A file node stops there. A folder node additionally carries a children array — and crucially, those children are themselves nodes of the very same shape, which is what makes the structure recursive and lets it nest without limit. A folder also keeps an open flag describing whether it starts expanded. Modelling it this way, rather than as a flat list with 'parent id' pointers, means the tree's structure is literally the object's structure: to render the tree you walk the object, and to find a node's children you just read node.children. Get this shape right and the rest of the widget falls out of it; get it wrong (for instance, storing depth as a number on flat rows) and you fight the data at every step.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">file&nbsp;&nbsp;&nbsp;= { name, type:"file" }<br>folder = { name, type:"folder",<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; open, children:[ …nodes… ] }<br><br>children are the SAME shape → nests forever</div>`, code:`const TREE = [
+  { name:"src", type:"folder", open:true, children:[
+    { name:"components", type:"folder", children:[
+      { name:"Button.jsx", type:"file" },
+    ]},
+    { name:"index.js", type:"file" },
+  ]},
+  { name:"package.json", type:"file" },
+];` },
+ { title:"3. Recursive render: the core trick", why:"The render function draws exactly one node and then delegates its children to copies of itself. buildNode(node, level) creates a treeitem element, fills in a label row, and — if the node is a folder — creates a group container and appends buildNode(child, level+1) for each child. That single self-call is the whole mechanism: the function does not know or care how deep it is, so a folder five levels down is rendered by the identical code as a top-level one. The level argument is threaded through purely so each item can record its depth (for aria-level and for indentation). A subtle but important decision is to build the entire tree up front, including the contents of closed folders, and simply hide the closed ones with CSS. That keeps expand and collapse instant and stateful — a folder you open, close, and re-open shows exactly what it did before — at the cost of building nodes the user may never look at, which is fine for typical trees.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">buildNode(src, 1)<br>&nbsp;&nbsp;└ buildNode(components, 2)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ buildNode(Button.jsx, 3)<br><br>same function calls itself → any depth</div>`, code:`function buildNode(node, level){
+  const item = el("div", { role:"treeitem", "aria-level":level });
+  item._node = node; item.tabIndex = -1;
+  item.appendChild(buildRow(node, level));
+  if (node.type === "folder"){
+    item.setAttribute("aria-expanded", !!node.open);
+    const group = el("div", { role:"group", class:"tv-group" });
+    node.children.forEach(c => group.appendChild(buildNode(c, level+1))); // ↻
+    item.appendChild(group);
+  }
+  return item;
+}` },
+ { title:"4. Expand & collapse without rebuilding", why:"Because the children already exist in the DOM, opening or closing a folder is not a re-render — it is a state flip. You toggle a single class on the child group (CSS turns display on or off), set aria-expanded to true or false so assistive technology announces the new state, and rotate the chevron so the visual matches. That is it; no DOM is created or destroyed. Keeping the subtree mounted is deliberate: it preserves any inner state, makes the toggle feel instant, and means the same nodes keep their identity so focus and selection survive a close/open cycle. The only thing you must remember is to flip both the visual (class + chevron) and the semantic (aria-expanded) together — a common bug is animating the arrow but forgetting the attribute, which leaves screen-reader users hearing 'collapsed' on a folder that is visibly open. For very large trees you can switch to lazy rendering (build children on first open), but the mental model stays the same: expanded is a boolean you show three ways at once.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">toggle = flip ONE boolean, shown 3 ways:<br><br>1. .tv-group .open &nbsp;→ CSS shows/hides<br>2. aria-expanded &nbsp;→ screen readers<br>3. chevron rotate &nbsp;→ the eye<br><br>children stay in the DOM (state preserved)</div>`, code:`function setOpen(item, open){
+  if (item._node.type !== "folder") return;
+  item.setAttribute("aria-expanded", open);
+  item.querySelector(":scope > .tv-group").classList.toggle("open", open);
+  item.querySelector(":scope > .tv-row .tv-chev").classList.toggle("open", open);
+  item._node.open = open;
+}
+const toggle = it => setOpen(it, it.getAttribute("aria-expanded") !== "true");` },
+ { title:"5. The visible-nodes list", why:"Keyboard navigation needs one thing the tree structure does not directly give it: a flat, ordered list of the rows the user can actually see at this moment. Up and Down move through that list; a collapsed folder's children must be skipped entirely, no matter how the tree nests. You compute it by taking every treeitem in document order and keeping only those whose every ancestor folder is open — walk upward from each item and reject it the moment you hit a collapsed group. The beauty is that this collapses the two-dimensional tree into a one-dimensional list on demand, so the arrow-key logic never has to reason about depth or recursion; it just asks 'what is the next visible row?'. Recomputing this list fresh on each keypress (rather than caching it) keeps it trivially correct as folders open and close, and the cost is negligible for the sizes real trees reach. This 'visible list' is the quiet backbone that every navigation key in the next steps stands on.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">the 2-D tree → a 1-D list of what's SEEN<br><br>▾ src ▾ components • Button • index ▸ public<br>↑&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑&nbsp;&nbsp;&nbsp;&nbsp;↑<br>(hooks' children are collapsed → skipped)</div>`, code:`function visibleItems(){
+  return allItems().filter(item => {
+    for (let g = item.parentElement; g && g !== tree; g = g.parentElement)
+      if (g.classList.contains("tv-group") && !g.classList.contains("open"))
+        return false;              // an ancestor is collapsed → hidden
+    return true;
+  });
+}` },
+ { title:"6. Roving tabindex: one tab stop", why:"A composite widget must not scatter dozens of tab stops across the page — pressing Tab through a 200-file tree would be miserable and would trap keyboard users. The WAI-ARIA answer is the roving tabindex: at any instant exactly one item has tabindex=0 and every other has tabindex=-1. Tab therefore enters the tree at whichever item is 'current' and the next Tab leaves the whole tree, while the arrow keys do the moving inside it. Moving focus is a three-step move you funnel through one helper: set every item to -1, set the target to 0, and call target.focus(). Centralising it in a single focusItem function means every navigation key stays consistent and you never end up with two tabbable items or none. A tabindex of -1 is important precisely because it keeps the item programmatically focusable (so .focus() works) while removing it from the sequential Tab order — the exact combination a roving model needs. This is the same pattern used by menus, toolbars, radio groups and grids; learn it once and it applies across all of them.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab → enters the tree ONCE<br><br>src&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; tabindex = -1<br>components tabindex = <b>0</b> ← focus roams here<br>index.js&nbsp; tabindex = -1<br><br>arrows move the 0; Tab leaves the tree</div>`, code:`let current = null;
+
+function focusItem(item){
+  if (!item) return;
+  allItems().forEach(it => it.tabIndex = -1);  // everyone out of Tab order
+  item.tabIndex = 0;                           // …except this one
+  item.focus();
+  current = item;
+}` },
+ { title:"7. The keyboard model", why:"Trees have a well-established key contract, and matching it means users already know how to drive yours. Down and Up step to the next and previous visible rows. Right is context-sensitive and this nuance is what makes a tree feel right: on a closed folder it opens the folder (revealing children but not moving focus), on an already-open folder it moves focus to the first child, and on a file it does nothing. Left mirrors that: on an open folder it closes it, and otherwise it moves focus up to the parent folder — so repeatedly pressing Left walks you out of a deep branch to the root. Home and End jump to the first and last visible rows. Enter (and Space) select the current node and toggle a folder. Two details matter: call preventDefault only for keys you actually handle, so browser shortcuts and type-ahead still work; and recompute the visible list at the top of the handler so indices are correct even if the previous keystroke changed what is open. Implementing this exact set is the difference between a widget a keyboard user trusts and one they abandon for the mouse.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">↓ / ↑ &nbsp; next / prev visible row<br>→ &nbsp; closed folder: open · open: 1st child<br>← &nbsp; open folder: close · else: parent<br>Home / End &nbsp; first / last visible<br>Enter / Space &nbsp; select (toggle folder)</div>`, code:`switch (e.key){
+  case "ArrowDown": focusItem(vis[i+1]); break;
+  case "ArrowUp":   focusItem(vis[i-1]); break;
+  case "ArrowRight":
+    if (folder && !open) setOpen(item, true);
+    else if (folder)     focusItem(firstChild(item));
+    break;
+  case "ArrowLeft":
+    if (folder && open)  setOpen(item, false);
+    else                 focusItem(parentItem(item));
+    break;
+  case "Home": focusItem(vis[0]); break;
+  case "End":  focusItem(vis.at(-1)); break;
+  case "Enter": case " ": if (folder) toggle(item); select(item); break;
+}` },
+ { title:"8. Navigating structure: first child & parent", why:"Two of those keys — Right-into and Left-to-parent — need to hop along the tree's real structure rather than the flat visible list, and both reduce to one small DOM query. The first child is simply the first treeitem inside this item's own group, found with a :scope-anchored selector so it matches only a direct child and never a deeper descendant. The parent is found by climbing out of the group that contains this item and asking closest for the nearest enclosing treeitem; at the top level that climb yields null, which is exactly what you want — Left on a root item should gracefully do nothing rather than error. Leaning on the DOM this way, instead of maintaining parent pointers in your data, keeps the navigation logic tiny and impossible to desynchronise: the DOM already encodes the parent/child relationships, so you read them straight from it. It is a good example of a recurring theme in this widget — let the structure you already built answer the structural questions.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">→ into: first treeitem in MY group<br>← out: nearest treeitem ABOVE my group<br><br>▾ src ─┐<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├ index.js &nbsp;(parent = src)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ app.js<br>root item's parent = null → Left no-ops</div>`, code:`const firstChild = item =>
+  item.querySelector(':scope > .tv-group > [role="treeitem"]');
+
+const parentItem = item =>
+  item.parentElement.closest('[role="treeitem"]');  // null at the root` },
+ { title:"9. ARIA: making the tree speak", why:"Sighted users read the hierarchy from indentation and chevrons; everyone else needs it exposed programmatically, and the tree roles do exactly that. Put role=tree on the container, role=treeitem on every node, and role=group on each folder's child list — together they tell a screen reader 'this is a tree, here are its items, these items are nested inside that one'. Every folder carries aria-expanded so its open/closed state is announced and togglable, and every item carries aria-level (1-based depth) so users hear 'level 3' and understand where they are. Selection is a separate concept from focus and is carried by aria-selected, letting you have a focused-but-unselected row as the user arrows around before committing. One practical gotcha: an accessible name is normally computed from an element's text content, but a treeitem contains its children's text too, which would make a folder announce as its whole subtree — so set an explicit aria-label of just the node's own name. Finally, mirror movements into a polite aria-live region so changes are spoken even when focus itself does not move, and never signal state (like selection) with colour alone.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="tree"<br>&nbsp;&nbsp;role="treeitem" aria-level=1 aria-expanded=true<br>&nbsp;&nbsp;&nbsp;&nbsp;role="group"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;role="treeitem" aria-level=2 aria-selected=true<br><br>+ aria-label per node · polite live region</div>`, code:`<div role="tree" aria-label="File explorer">
+  <div role="treeitem" aria-level="1" aria-expanded="true"
+       aria-label="src" tabindex="0"> …
+    <div role="group">
+      <div role="treeitem" aria-level="2"
+           aria-label="index.js" aria-selected="true"
+           tabindex="-1"> … </div>
+    </div>
+  </div>
+</div>` },
+ { title:"10. Edge cases & polish", why:"The gap between a demo and a shippable tree is in the details. Add type-ahead — pressing a printable key jumps to the next visible node starting with that letter and wraps around — because in a long list it is far faster than arrowing, and users expect it from native file explorers. Provide expand-all and collapse-all for quick orientation, remembering to move focus somewhere valid if a collapse hides the currently focused row. Drive indentation from aria-level (level times a fixed step) rather than hard-coding it per node, so depth is always visually honest. Think about huge trees: build-everything is fine to hundreds of nodes, but past that switch to lazy rendering or virtualisation so you are not mounting thousands of hidden elements. Respect reduced-motion by dropping the chevron rotation and any height animation. Consider persistence so the open/closed set survives a reload, guard against empty folders (a folder with no children should still be openable, just empty), and make sure your icons are aria-hidden so the label — not the SVG — is what gets announced. None of these change the core model; they are inputs to the same render, toggle and navigate functions you already built.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">type "p" → jumps to package.json → public …<br>expand-all / collapse-all (re-home focus)<br>indent = aria-level × 16px (never hard-coded)<br>huge tree → lazy render / virtualise<br>reduced-motion · persist open set · icons aria-hidden</div>`, code:`function typeahead(ch){
+  const vis = visibleItems(), start = vis.indexOf(current);
+  for (let k = 1; k <= vis.length; k++){
+    const it = vis[(start + k) % vis.length];    // forward, wrapping
+    if (it._node.name.toLowerCase().startsWith(ch.toLowerCase()))
+      return focusItem(it);
+  }
+}
+row.style.paddingLeft = (level * 16) + "px";     // depth → indent` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
