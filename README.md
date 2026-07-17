@@ -42,6 +42,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 33 — Stepper](https://dev48v.infy.uk/design/day33-stepper.html) — `day33-stepper.html`
 - [DesignFromZero · Day 34 — Rating Stars](https://dev48v.infy.uk/design/day34-rating-stars.html) — `day34-rating-stars.html`
 - [DesignFromZero · Day 35 — Tree View](https://dev48v.infy.uk/design/day35-tree-view.html) — `day35-tree-view.html`
+- [DesignFromZero · Day 36 — Split / Resizable Panes](https://dev48v.infy.uk/design/day36-split-panes.html) — `day36-split-panes.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

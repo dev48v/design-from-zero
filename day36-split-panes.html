@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 36 — Split / Resizable Panes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== split demo surface ===== */
+  .demo-frame { height:380px; background:#e2e8f0; border:1px solid #e2e8f0; border-radius:16px; padding:8px; }
+  .split { display:flex; height:100%; overflow:hidden; border-radius:12px; background:#e2e8f0; }
+  .split.is-row { flex-direction:row; }
+  .split.is-col { flex-direction:column; }
+  .split > .pane { flex:1 1 0; min-width:0; min-height:0; overflow:auto; background:#fff; padding:14px; }
+  /* the PRIMARY pane (first child) is sized by JS via flex-basis */
+  .split > .pane:first-child { flex:0 0 auto; }
+  /* a pane that hosts a nested split gets no padding + hidden overflow */
+  .split > .pane.host { padding:0; overflow:hidden; background:transparent; }
+  .split > .gutter { flex:0 0 10px; background:#eef2ff; display:flex; align-items:center;
+                     justify-content:center; touch-action:none; transition:background .12s; }
+  .is-row > .gutter { cursor:col-resize; }
+  .is-col > .gutter { cursor:row-resize; }
+  .split > .gutter:hover { background:#c7d2fe; }
+  .split > .gutter:focus-visible { outline:none; box-shadow:inset 0 0 0 2px #6366f1; background:#c7d2fe; }
+  .split.dragging > .gutter { background:#a5b4fc; }
+  .split.dragging > .pane { pointer-events:none; user-select:none; }
+  .grip { background:#94a3b8; border-radius:999px; pointer-events:none; }
+  .is-row > .gutter .grip { width:4px; height:30px; }
+  .is-col > .gutter .grip { width:30px; height:4px; }
+
+  .pane-tag { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; text-transform:uppercase;
+              letter-spacing:.05em; color:#6366f1; background:#eef2ff; border-radius:6px; padding:2px 8px; margin-bottom:10px; }
+  .pane-tag.green { color:#059669; background:#d1fae5; }
+  .pane-tag.slate { color:#475569; background:#f1f5f9; }
+  .file-row { display:flex; align-items:center; gap:8px; font-size:13px; color:#334155; padding:3px 0; }
+  .file-row .dot { width:8px; height:8px; border-radius:2px; background:#cbd5e1; flex:0 0 8px; }
+  .prev-box { border:1px dashed #cbd5e1; border-radius:10px; padding:12px; }
+  .prev-bar { height:10px; border-radius:6px; background:linear-gradient(90deg,#6366f1,#a855f7); margin-bottom:8px; }
+  .console { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; color:#334155; line-height:1.7; }
+  .console .ok { color:#059669; } .console .mut { color:#94a3b8; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .meter { height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; display:flex; }
+  .meter i { display:block; height:100%; }
+  .meter .a { background:#6366f1; } .meter .b { background:#c7d2fe; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .seg { display:inline-flex; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:10px; padding:3px; gap:2px; }
+  .seg-btn { border:0; background:transparent; color:#64748b; font-weight:700; font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer; }
+  .seg-btn.seg-on { background:#0f172a; color:#fff; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .split > .gutter { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 36</div>
+      <h1 class="text-xl font-bold">🪟 Split / Resizable Panes — A Draggable Gutter: Pointer-Math Resize, Min/Max Constraints, Keyboard-Resizable &amp; the ARIA <code>separator</code> Pattern</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Grab the divider. Drag it. Or focus it and use the arrow keys.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>split view</strong> built from scratch in vanilla JS — the same widget that splits your code editor from its preview, a mail list from a message, or a file tree from a document. One idea makes it work: a <strong>draggable gutter</strong> sits between two panes, and every drag becomes a single number — <em>what percent of the container does the first pane get?</em> — which you clamp to a min/max and write straight to one <code>flex-basis</code>. Drag the gutter (mouse or touch), <strong>double-click</strong> it to reset, flip the <strong>orientation</strong>, or click the divider and press <kbd>←</kbd> <kbd>→</kbd> / <kbd>↑</kbd> <kbd>↓</kbd> to resize by keyboard. The right pane itself splits again — nesting is free. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <!-- controls -->
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-3 mb-4">
+          <div class="seg" role="group" aria-label="Split orientation">
+            <button id="dirRow" class="seg-btn seg-on" aria-pressed="true">Side by side</button>
+            <button id="dirCol" class="seg-btn" aria-pressed="false">Stacked</button>
+          </div>
+          <button id="resetBtn" class="btn-ghost">Reset (double-click gutter)</button>
+          <span class="text-xs text-slate-400 ms-auto" style="margin-left:auto;">
+            focus the divider &middot; <kbd>←</kbd><kbd>→</kbd>/<kbd>↑</kbd><kbd>↓</kbd> resize &middot; <kbd>Shift</kbd> = big step &middot; <kbd>Home</kbd>/<kbd>End</kbd> &middot; <kbd>Enter</kbd> reset
+          </span>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="demo-frame">
+              <div id="split" class="split is-row" data-min="20" data-max="80" data-pos="45">
+                <div class="pane" id="paneA">
+                  <span class="pane-tag">Explorer</span>
+                  <div class="file-row"><span class="dot" style="background:#f59e0b"></span> src/</div>
+                  <div class="file-row" style="padding-left:16px"><span class="dot"></span> app.js</div>
+                  <div class="file-row" style="padding-left:16px"><span class="dot"></span> split.js</div>
+                  <div class="file-row" style="padding-left:16px"><span class="dot"></span> styles.css</div>
+                  <div class="file-row"><span class="dot" style="background:#f59e0b"></span> public/</div>
+                  <div class="file-row"><span class="dot"></span> package.json</div>
+                  <div class="file-row"><span class="dot"></span> README.md</div>
+                </div>
+
+                <div class="gutter" role="separator" tabindex="0"
+                     aria-label="Resize the two panes"
+                     aria-controls="paneA"
+                     aria-orientation="vertical"
+                     aria-valuemin="20" aria-valuemax="80" aria-valuenow="45"
+                     aria-valuetext="45% / 55%"><span class="grip"></span></div>
+
+                <div class="pane host">
+                  <div id="nested" class="split is-col" data-min="25" data-max="80" data-pos="55">
+                    <div class="pane" id="nestTop">
+                      <span class="pane-tag green">Preview</span>
+                      <div class="prev-box">
+                        <div class="prev-bar" style="width:70%"></div>
+                        <div class="prev-bar" style="width:100%;background:#e2e8f0"></div>
+                        <div class="prev-bar" style="width:45%;background:#e2e8f0;margin-bottom:0"></div>
+                      </div>
+                    </div>
+                    <div class="gutter" role="separator" tabindex="0"
+                         aria-label="Resize preview and console"
+                         aria-controls="nestTop"
+                         aria-orientation="horizontal"
+                         aria-valuemin="25" aria-valuemax="80" aria-valuenow="55"
+                         aria-valuetext="55% / 45%"><span class="grip"></span></div>
+                    <div class="pane">
+                      <span class="pane-tag slate">Console</span>
+                      <div class="console">
+                        <div><span class="mut">$</span> build --watch</div>
+                        <div class="ok">✓ compiled in 84ms</div>
+                        <div class="mut">watching for changes…</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Split (outer)</div>
+              <div class="flex items-baseline justify-between">
+                <div><span id="rpA" class="text-2xl font-bold text-indigo-600">45%</span><span class="text-xs text-slate-400 font-semibold"> pane A</span></div>
+                <div class="text-slate-300 font-bold">/</div>
+                <div class="text-right"><span id="rpB" class="text-2xl font-bold text-slate-400">55%</span><span class="text-xs text-slate-400 font-semibold"> pane B</span></div>
+              </div>
+              <div class="meter mt-2"><i class="a" id="mA" style="width:45%"></i><i class="b" id="mB" style="width:55%"></i></div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-valuenow</span><span id="rNow" class="pill">45</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-orientation</span><span id="rOrient" class="pill">vertical</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">min / max</span><span class="font-bold text-slate-600">20% / 80%</span></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">One number drives everything: the primary pane's percent. The gutter mirrors it into <code>aria-valuenow</code> so it is announced too.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every split view you have used — VS Code's editor/terminal, a mail app's list/message, a diff viewer, a dashboard's resizable widgets — is this same shape: a flex container, one pane pinned to a <code>flex-basis</code> percent, a gutter in the middle, and the other pane taking the rest. Dragging is just arithmetic (pointer position → percent → clamp), the keyboard is the WAI-ARIA <code>separator</code> pattern, and nesting a split inside a pane needs no new code at all.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a split view works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A split pane looks physical — you grab a bar and shove it — but underneath it is one number and a little arithmetic. Two panes sit in a <code>flex</code> container with a <em>gutter</em> between them; the first pane is pinned to a <code>flex-basis</code> percentage and the second one soaks up the rest. Dragging turns a pointer position into that percentage, clamped to a min and max. One <code>pointer</code>-event handler covers mouse, touch and pen at once; the same <em>apply(percent)</em> function is driven by the keyboard for the accessible <code>separator</code> pattern; and because every rule is scoped to a single <code>.split</code>, dropping a split <em>inside</em> a pane just works. ~90 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup: two panes with a separator between them</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The structure is three boxes in a row: a pane, a <code>gutter</code>, another pane. The gutter is the interactive part, so it carries the accessibility contract up front — <code>role="separator"</code>, <code>tabindex="0"</code> so it can be focused, and the <code>aria-value*</code> trio that describes its position as a number from min to max. That is the entire DOM; everything after this just moves one boundary.</p>
+        <div class="relative"><pre>&lt;div class="split is-row"&gt;
+  &lt;div class="pane" id="paneA"&gt; … &lt;/div&gt;
+
+  &lt;div class="gutter" role="separator" tabindex="0"
+       aria-orientation="vertical" aria-controls="paneA"
+       aria-valuemin="20" aria-valuemax="80" aria-valuenow="45"&gt;&lt;/div&gt;
+
+  &lt;div class="pane"&gt; … &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The layout: one pane gets a basis, the other fills</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Flexbox does the heavy lifting. The container is a flex row (or column). The <strong>primary</strong> pane — the first child — is fixed to a <code>flex-basis</code> that JavaScript will keep rewriting; the second pane is <code>flex:1 1 0</code> so it always absorbs whatever is left after the primary and the gutter. Resizing therefore never touches the second pane at all: you only ever write one number, the primary's basis, and flex re-flows the rest. <code>min-width:0</code> stops long content from refusing to shrink.</p>
+        <div class="relative"><pre>.split           { display:flex; height:100%; }
+.split.is-row    { flex-direction:row; }
+.split.is-col    { flex-direction:column; }
+
+.split &gt; .pane   { flex:1 1 0; min-width:0; overflow:auto; }  /* fills */
+.split &gt; .pane:first-child { flex:0 0 auto; }  /* JS writes flex-basis here */
+
+.split &gt; .gutter { flex:0 0 10px; cursor:col-resize; touch-action:none; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Pointer math: a drag position becomes a percent</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the whole trick. Take the pointer's coordinate, subtract the container's start edge, divide by the container's size, and you have "how far along, 0–100%". For a side-by-side split that is <code>(clientX − left) / width</code>; for a stacked split it is <code>(clientY − top) / height</code>. Using percent (not pixels) means the split keeps its proportions when the window resizes, and it is exactly the number <code>aria-valuenow</code> wants.</p>
+        <div class="relative"><pre>function positionToPercent(split, clientX, clientY){
+  const r = split.getBoundingClientRect();
+  return split.classList.contains("is-row")
+    ? (clientX - r.left) / r.width  * 100     // horizontal split
+    : (clientY - r.top)  / r.height * 100;    // vertical split
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Constraints: clamp, then write one style</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A raw percent can go negative or past 100 when the pointer leaves the container, so every value passes through one <code>apply()</code> gate that clamps it to <code>[min, max]</code> and does two things: sets the primary pane's <code>flex-basis</code> (the visual), and mirrors the same number into <code>aria-valuenow</code> (the semantic). Funnelling <em>every</em> change — drag, keyboard, reset — through this single function is what keeps the picture and the accessibility state impossible to desynchronise.</p>
+        <div class="relative"><pre>const min = 20, max = 80;
+let pos = 45;
+
+function apply(p){
+  pos = Math.min(max, Math.max(min, p));       // clamp to [min, max]
+  primary.style.flexBasis = pos + "%";         // the ONLY style we write
+  gutter.setAttribute("aria-valuenow", Math.round(pos));
+  gutter.setAttribute("aria-valuetext", Math.round(pos) + "%");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">One code path for mouse + touch: Pointer Events</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rather than writing separate mouse and touch handlers, use <strong>Pointer Events</strong>, which unify mouse, touch and pen. On <code>pointerdown</code>, call <code>setPointerCapture</code> so every later move and up event is delivered to the gutter <em>even when the pointer wanders off it</em> — no document-level listeners, no "lost the drag" bugs. <code>pointermove</code> then just runs the math, and <code>touch-action:none</code> on the gutter stops the browser from scrolling instead of dragging.</p>
+        <div class="relative"><pre>gutter.addEventListener("pointerdown", e =&gt; {
+  gutter.setPointerCapture(e.pointerId);        // mouse OR touch OR pen
+  split.classList.add("dragging");
+  e.preventDefault();
+});
+gutter.addEventListener("pointermove", e =&gt; {
+  if (!gutter.hasPointerCapture(e.pointerId)) return;   // only while dragging
+  apply(positionToPercent(split, e.clientX, e.clientY));
+});
+gutter.addEventListener("pointerup", e =&gt; {
+  gutter.releasePointerCapture(e.pointerId);
+  split.classList.remove("dragging");
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Double-click to reset</h3></div>
+        <p class="text-sm text-slate-600 mb-3">People expect a divider to snap back to its default when double-clicked — it is the universal "undo my fiddling" gesture in editors and terminals. Because resetting is just "apply the default percent", it is a one-liner on top of the machinery you already have. Keep the default in a constant so the same value can seed the initial layout, the double-click, and the keyboard <kbd>Enter</kbd> reset.</p>
+        <div class="relative"><pre>const DEFAULT = 45;
+
+gutter.addEventListener("dblclick", () =&gt; apply(DEFAULT));   // snap back
+apply(DEFAULT);                                              // seed on load</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Orientation toggle: swap the axis + the ARIA</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Horizontal vs vertical is a one-class change: flip <code>flex-direction</code> between row and column and the same panes now stack. The only care point is ARIA — <code>aria-orientation</code> describes the <em>separator line</em>, so a side-by-side split has a <em>vertical</em> divider (<code>aria-orientation="vertical"</code>) and a stacked split has a <em>horizontal</em> one. After flipping, re-apply the current percent so it is measured against the new axis.</p>
+        <div class="relative"><pre>function setDir(row){
+  split.classList.toggle("is-row", row);
+  split.classList.toggle("is-col", !row);
+  // the divider LINE is vertical when panes sit side-by-side:
+  gutter.setAttribute("aria-orientation", row ? "vertical" : "horizontal");
+  apply(pos);                                   // re-measure on the new axis
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard: the WAI-ARIA window-splitter keys</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A mouse-only resizer is inaccessible, so the focused separator must move by keyboard. The splitter contract: arrow keys nudge it (Left/Up shrink the primary, Right/Down grow it), <kbd>Shift</kbd> takes bigger jumps, <kbd>Home</kbd>/<kbd>End</kbd> jump to min/max, and <kbd>Enter</kbd> resets. Every branch calls the very same <code>apply()</code>, so keyboard resizing is automatically clamped and mirrored into <code>aria-valuenow</code> just like dragging. Only <code>preventDefault</code> the keys you actually handle.</p>
+        <div class="relative"><pre>gutter.addEventListener("keydown", e =&gt; {
+  const step = e.shiftKey ? 10 : 2;             // Shift = bigger jumps
+  switch (e.key){
+    case "ArrowLeft": case "ArrowUp":    apply(pos - step); break;
+    case "ArrowRight": case "ArrowDown": apply(pos + step); break;
+    case "Home":  apply(min); break;            // collapse primary
+    case "End":   apply(max); break;            // expand primary
+    case "Enter": apply(DEFAULT); break;        // reset
+    default: return;                            // let other keys through
+  }
+  e.preventDefault();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Generalise + nest: <code>initSplit</code> on every <code>.split</code></h3></div>
+        <p class="text-sm text-slate-600 mb-3">Wrap all of the above in one <code>initSplit(splitEl)</code> that reads its <code>min</code>/<code>max</code>/default from data attributes and scopes every query with <code>:scope &gt;</code> so it only ever touches its <em>own</em> panes and gutter. Now nesting is free: put a second <code>.split</code> inside a pane, run <code>initSplit</code> on both, and the child resizes independently of the parent — no special case, no shared state. That single, self-contained instance is the whole widget.</p>
+        <div class="relative"><pre>function initSplit(split){
+  const primary = split.querySelector(':scope &gt; .pane');
+  const gutter  = split.querySelector(':scope &gt; .gutter');
+  const min = +split.dataset.min, max = +split.dataset.max;
+  let pos = +split.dataset.pos;
+  /* … apply(), pointer, dblclick, keydown, setDir — all scoped to `split` … */
+}
+
+document.querySelectorAll('.split').forEach(initSplit);   // outer + nested</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 36 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real resizable split view from scratch. The core is <strong>one number</strong> — the primary pane's percent — written to a single <code>flex-basis</code> while the other pane fills the rest. Dragging is <strong>pointer math</strong> (position → percent → clamp), unified across mouse/touch by <strong>Pointer Events</strong> + <code>setPointerCapture</code>; double-click and <kbd>Enter</kbd> reset to a default; the orientation toggle flips <code>flex-direction</code> plus <code>aria-orientation</code>; and the keyboard follows the WAI-ARIA <code>separator</code> pattern with <code>aria-valuenow/min/max</code>. Because every rule is scoped to one <code>.split</code>, <strong>nesting a split inside a pane is free</strong>. <strong>👉 Tomorrow — Day 37: Tinder swipe card (drag, rotate on release, fling-to-dismiss).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SPLIT / RESIZABLE PANES =====
+// One self-contained instance per .split element. Everything is scoped with
+// ":scope >" so a nested split never touches its parent's panes or gutter.
+function initSplit(split, onChange){
+  const primary = split.querySelector(':scope > .pane');    // first pane = primary
+  const gutter  = split.querySelector(':scope > .gutter');
+  const min = +split.dataset.min || 15;
+  const max = +split.dataset.max || 85;
+  const def = +split.dataset.pos || 50;
+  let pos = def;
+
+  const isRow = () => split.classList.contains("is-row");
+
+  // the ONE gate every change passes through: clamp, paint, mirror into ARIA
+  function apply(p){
+    pos = Math.min(max, Math.max(min, p));
+    primary.style.flexBasis = pos + "%";
+    const now = Math.round(pos);
+    gutter.setAttribute("aria-valuenow", now);
+    gutter.setAttribute("aria-valuetext", now + "% / " + (100 - now) + "%");
+    if (onChange) onChange(pos, isRow());
+  }
+
+  // pointer position (mouse/touch/pen) → percent along the active axis
+  function positionToPercent(clientX, clientY){
+    const r = split.getBoundingClientRect();
+    return isRow()
+      ? (clientX - r.left) / r.width  * 100
+      : (clientY - r.top)  / r.height * 100;
+  }
+
+  // ---- drag (Pointer Events unify mouse + touch) ----
+  gutter.addEventListener("pointerdown", e => {
+    gutter.setPointerCapture(e.pointerId);   // route all moves here till release
+    split.classList.add("dragging");
+    e.preventDefault();
+  });
+  gutter.addEventListener("pointermove", e => {
+    if (!gutter.hasPointerCapture(e.pointerId)) return;
+    apply(positionToPercent(e.clientX, e.clientY));
+  });
+  const end = e => {
+    if (gutter.hasPointerCapture(e.pointerId)) gutter.releasePointerCapture(e.pointerId);
+    split.classList.remove("dragging");
+  };
+  gutter.addEventListener("pointerup", end);
+  gutter.addEventListener("pointercancel", end);
+
+  // ---- double-click resets to default ----
+  gutter.addEventListener("dblclick", () => apply(def));
+
+  // ---- keyboard (WAI-ARIA window-splitter pattern) ----
+  gutter.addEventListener("keydown", e => {
+    const step = e.shiftKey ? 10 : 2;
+    let handled = true;
+    switch (e.key){
+      case "ArrowLeft": case "ArrowUp":    apply(pos - step); break;
+      case "ArrowRight": case "ArrowDown": apply(pos + step); break;
+      case "Home":  apply(min); break;
+      case "End":   apply(max); break;
+      case "Enter": case " ": apply(def); break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
+  });
+
+  // ---- orientation ----
+  function setDir(row){
+    split.classList.toggle("is-row", row);
+    split.classList.toggle("is-col", !row);
+    // aria-orientation describes the divider LINE, not the pane arrangement
+    gutter.setAttribute("aria-orientation", row ? "vertical" : "horizontal");
+    apply(pos);
+  }
+
+  apply(pos);
+  return { apply, reset: () => apply(def), setDir };
+}
+
+// ---- read-out wiring (outer split only) ----
+const rpA = document.getElementById("rpA"), rpB = document.getElementById("rpB");
+const mA  = document.getElementById("mA"),  mB  = document.getElementById("mB");
+const rNow = document.getElementById("rNow"), rOrient = document.getElementById("rOrient");
+
+const outer = initSplit(document.getElementById("split"), (p, row) => {
+  const a = Math.round(p), b = 100 - a;
+  rpA.textContent = a + "%";  rpB.textContent = b + "%";
+  mA.style.width = a + "%";   mB.style.width = b + "%";
+  rNow.textContent = a;
+  rOrient.textContent = row ? "vertical" : "horizontal";
+});
+const nested = initSplit(document.getElementById("nested"));   // nesting is free
+
+// ---- controls ----
+const dirRow = document.getElementById("dirRow"), dirCol = document.getElementById("dirCol");
+function pickDir(row){
+  outer.setDir(row);
+  dirRow.classList.toggle("seg-on", row);  dirCol.classList.toggle("seg-on", !row);
+  dirRow.setAttribute("aria-pressed", row);  dirCol.setAttribute("aria-pressed", !row);
+}
+dirRow.onclick = () => pickDir(true);
+dirCol.onclick = () => pickDir(false);
+document.getElementById("resetBtn").onclick = () => outer.reset();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a split view really is", why:"A split view divides one region into two (or more) resizable areas separated by a draggable bar, so the user — not the designer — decides how to spend the available space. You see it everywhere serious tools live: a code editor beside its live preview, a mail list above an open message, a file tree next to a document, a diff's before and after, a dashboard of widgets you can stretch. The defining feature is that the boundary is under the user's direct, continuous control: they grab the divider and the two sides trade space in real time. Because the split can be nested — a pane can itself be split — the widget must be written so one instance never assumes it is the only one on the page. That single requirement, plus the fact that the whole interaction reduces to moving one boundary, is why the entire thing is built on one number and a scrap of arithmetic rather than anything heavier.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">two areas · one draggable divider<br><br>┌───────┬──────────┐<br>│ list &nbsp;│ &nbsp;message &nbsp;│<br>│ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│ ‖ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>└───────┴──────────┘<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↕ drag ‖ to trade space</div>`, code:`// editor|preview · list|message · tree|doc · diff
+// the user owns the boundary, live.
+// splits can nest → write ONE self-contained instance.
+// the whole thing = one number (a percent) + math.` },
+ { title:"2. The layout: flex-basis + fill", why:"Everything rests on a flexbox decision that never changes at runtime. The container is display:flex. The primary pane — the first child — is given flex:0 0 auto and a flex-basis expressed as a percentage; that basis is the single value JavaScript rewrites. The second pane is flex:1 1 0, which means 'take all remaining space', so it automatically absorbs whatever is left after the primary and the fixed-width gutter. The consequence is powerful: to resize, you only ever write ONE property on ONE element — the primary's flex-basis — and the browser re-flows the gutter and second pane for you. Add min-width:0 (or min-height:0) to the panes so that content which does not want to shrink can still be squeezed; without it a long line or a wide image will silently refuse to let the pane get smaller and your drag will feel stuck. Using a percentage rather than pixels means the proportions survive a window resize.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">container: display:flex<br><br>[ primary ]‖[ &nbsp;&nbsp;&nbsp;fills the rest &nbsp;&nbsp;&nbsp;]<br>flex:0 0 auto &nbsp;&nbsp;&nbsp;flex:1 1 0<br>basis = 45% &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(auto)<br><br>JS writes ONE thing: primary's flex-basis</div>`, code:`.split         { display:flex; height:100%; }
+.split.is-row  { flex-direction:row; }
+.split.is-col  { flex-direction:column; }
+
+.split > .pane { flex:1 1 0; min-width:0; overflow:auto; }
+.split > .pane:first-child { flex:0 0 auto; }  /* JS sets basis */
+.split > .gutter { flex:0 0 10px; touch-action:none; }` },
+ { title:"3. Pointer math: position → percent", why:"The heart of a split view is a two-line calculation that converts where the pointer is into what percentage the primary pane should occupy. You ask the container for its bounding rectangle, subtract its starting edge from the pointer coordinate to get the offset into the container, then divide by the container's size to normalise it to 0–1, and multiply by 100. For a side-by-side (row) split you use the X axis: (clientX − rect.left) / rect.width. For a stacked (column) split you use the Y axis: (clientY − rect.top) / rect.height. That is the only geometry in the whole widget. Choosing percent over raw pixels is deliberate and important: it makes the split proportional, so if the window or a parent pane changes size the boundary keeps its relative position instead of drifting, and the very same number is exactly what the ARIA valuenow attribute expects. Recomputing it fresh from getBoundingClientRect on every move keeps it correct even as layouts shift, at negligible cost.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointer at clientX<br>│←── offset ──→│<br>├──────────────┼──────────────┤<br>rect.left &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; rect.width<br><br>percent = offset / rect.width × 100</div>`, code:`function positionToPercent(split, clientX, clientY){
+  const r = split.getBoundingClientRect();
+  return split.classList.contains("is-row")
+    ? (clientX - r.left) / r.width  * 100    // row: X axis
+    : (clientY - r.top)  / r.height * 100;   // col: Y axis
+}` },
+ { title:"4. Constraints: clamp, then apply", why:"Left unchecked, a drag can produce a percentage below zero or above one hundred — the pointer leaves the container, or the user flings it — which would collapse a pane to nothing or push it off-screen. So every candidate value passes through a single apply() function that first clamps it into the allowed band, Math.min(max, Math.max(min, p)), and only then writes it out. Min and max are not decoration: a minimum keeps a pane usable (a sidebar that can't shrink below its icons), and a maximum stops one pane from swallowing the other entirely. Crucially, apply() does two writes together — it sets the primary's flex-basis (what the eye sees) and mirrors the identical rounded number into aria-valuenow (what a screen reader hears). Routing drag, keyboard, double-click and programmatic resets all through this one gate is the design decision that makes the visual state and the accessible state impossible to drift apart; there is simply no other place a size can change.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">raw p = -8%  or  118%  😱<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓ clamp to [min, max]<br>pos = 20% … 80% &nbsp;✓<br><br>then, together:<br>flex-basis ← pos &nbsp;(eye)<br>aria-valuenow ← pos &nbsp;(screen reader)</div>`, code:`const min = 20, max = 80;
+let pos = 45;
+
+function apply(p){
+  pos = Math.min(max, Math.max(min, p));    // clamp
+  primary.style.flexBasis = pos + "%";      // visual
+  gutter.setAttribute("aria-valuenow", Math.round(pos));   // semantic
+}` },
+ { title:"5. Mouse + touch in one path: Pointer Events", why:"Historically you needed one set of handlers for the mouse (mousedown/mousemove/mouseup on the document) and another for touch (touchstart/touchmove with passive:false), plus code to reconcile them. Pointer Events collapse all of that: a single stream of pointerdown / pointermove / pointerup / pointercancel covers mouse, touch and pen with one code path. The star of the show is setPointerCapture(e.pointerId), called on pointerdown: it 'captures' that pointer to the gutter, so every subsequent move and the eventual up are delivered to the gutter even when the pointer travels far outside it — which is exactly what happens during a fast drag. This removes the classic bug where a quick mouse movement outruns the element and the drag 'sticks', and it means you do NOT need to attach and later remove document-level listeners. Pair it with touch-action:none in CSS so the browser does not try to scroll or pinch-zoom instead of letting you drag, and guard pointermove with hasPointerCapture so hovering (no button down) does nothing.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointerdown → setPointerCapture(id)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓<br>ALL moves routed to the gutter,<br>even off-element, till release<br><br>one path = 🖱 mouse · 👆 touch · ✏️ pen</div>`, code:`gutter.addEventListener("pointerdown", e => {
+  gutter.setPointerCapture(e.pointerId);   // route moves here
+  e.preventDefault();
+});
+gutter.addEventListener("pointermove", e => {
+  if (!gutter.hasPointerCapture(e.pointerId)) return;  // dragging only
+  apply(positionToPercent(split, e.clientX, e.clientY));
+});
+gutter.addEventListener("pointerup", e =>
+  gutter.releasePointerCapture(e.pointerId));
+/* CSS: .gutter { touch-action:none; } */` },
+ { title:"6. Reset: the double-click gesture", why:"After nudging a divider around, users expect a fast way back to the sensible default, and the near-universal convention — in editors, terminals, and window managers — is to double-click the divider itself. Because you have already funnelled all sizing through apply(), 'reset' is nothing more than apply(DEFAULT); there is no separate code path or stored history to manage. Keep that default in one named constant and reuse it three ways: to seed the layout on first load, to answer a double-click, and to answer the keyboard's reset key. That single source of truth avoids the subtle bug where the load position and the reset position quietly disagree. It is a small feature, but its presence is a large part of why a split view feels finished rather than like a raw prototype — discoverable recovery from experimentation is exactly the kind of polish users notice only when it is missing.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">dragged to 22% … then:<br><br>double-click ‖ &nbsp;→ &nbsp;apply(DEFAULT)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;snaps to 45%<br><br>ONE constant seeds load + dblclick + Enter</div>`, code:`const DEFAULT = 45;
+
+gutter.addEventListener("dblclick", () => apply(DEFAULT));  // snap back
+apply(DEFAULT);                                            // seed on load` },
+ { title:"7. Orientation: swap the axis + the ARIA", why:"Turning a side-by-side split into a stacked one is almost entirely a CSS concern: toggle flex-direction between row and column and the identical panes now sit top-and-bottom instead of left-and-right, with the same basis percentage now meaning height instead of width. Two details keep it correct. First, the pointer math must read the matching axis — X for a row, Y for a column — which is why positionToPercent branches on the current orientation. Second, and easy to get wrong, aria-orientation describes the SEPARATOR LINE, not how the panes are arranged: when panes are side-by-side the divider is a vertical line, so aria-orientation is 'vertical'; when panes are stacked the divider is horizontal, so it is 'horizontal'. This is the opposite of many people's first guess, and getting it backwards makes screen readers announce the wrong resize direction. After flipping direction, call apply(pos) once so the current percentage is re-expressed against the new axis.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">side-by-side → divider is a │ line<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-orientation="vertical"<br><br>stacked ⇅ → divider is a ─ line<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;aria-orientation="horizontal"<br><br>(it describes the LINE, not the panes)</div>`, code:`function setDir(row){
+  split.classList.toggle("is-row", row);
+  split.classList.toggle("is-col", !row);
+  // divider line is vertical when panes are side-by-side:
+  gutter.setAttribute("aria-orientation", row ? "vertical" : "horizontal");
+  apply(pos);          // re-measure against the new axis
+}` },
+ { title:"8. Keyboard: the window-splitter pattern", why:"A resizer that only responds to a mouse is unusable for anyone navigating by keyboard, so the WAI-ARIA Authoring Practices define a precise 'window splitter' contract, and matching it means people already know how to drive yours. Give the separator tabindex=0 so Tab can reach it. Then, on keydown: the arrow keys nudge the boundary — Left and Up shrink the primary pane, Right and Down grow it (handling both pairs means the same code works in either orientation) — while holding Shift takes larger jumps for coarse adjustment. Home collapses the primary to its minimum and End expands it to its maximum. Enter (and optionally Space) resets to the default. The elegant part is that every branch calls the same apply() used by dragging, so keyboard moves are clamped and mirrored into aria-valuenow with zero extra code. Finally, only call preventDefault for keys you actually handled, so unrelated shortcuts and scrolling keep working when the separator happens to hold focus.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab → focus the divider ‖<br><br>← ↑ &nbsp;shrink primary &nbsp;&nbsp;(Shift = big)<br>→ ↓ &nbsp;grow primary<br>Home / End &nbsp;min / max<br>Enter &nbsp;reset to default<br><br>every key → the same apply() → clamped + ARIA</div>`, code:`gutter.addEventListener("keydown", e => {
+  const step = e.shiftKey ? 10 : 2;
+  switch (e.key){
+    case "ArrowLeft": case "ArrowUp":    apply(pos - step); break;
+    case "ArrowRight": case "ArrowDown": apply(pos + step); break;
+    case "Home":  apply(min); break;
+    case "End":   apply(max); break;
+    case "Enter": apply(DEFAULT); break;
+    default: return;               // let other keys through
+  }
+  e.preventDefault();
+});` },
+ { title:"9. ARIA: the separator contract", why:"To a sighted user the divider's meaning is obvious; for everyone else it must be spelled out with roles and states. The gutter gets role='separator', which — when it is focusable (tabindex=0) — tells assistive technology it is an adjustable splitter rather than a mere decorative line. Its position is a number, so it carries the value trio: aria-valuemin and aria-valuemax define the range (mirroring your clamp bounds) and aria-valuenow reports the current percent, updated in lockstep by apply(). aria-orientation states which way it splits, and aria-controls points at the pane whose size it governs so the relationship is programmatically discoverable. Give it an aria-label like 'Resize panes' so it announces with a name, and optionally set aria-valuetext to a friendlier string such as '45% / 55%'. Together these make the splitter fully operable and understandable without sight — the same information the read-out panel shows visually, exposed to the accessibility tree.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="separator" &nbsp;tabindex="0"<br>aria-orientation="vertical"<br>aria-controls="paneA"<br>aria-valuemin="20"<br>aria-valuenow="45" &nbsp;← apply() keeps this live<br>aria-valuemax="80"<br>aria-label="Resize panes"</div>`, code:`<div class="gutter" role="separator" tabindex="0"
+     aria-label="Resize panes" aria-controls="paneA"
+     aria-orientation="vertical"
+     aria-valuemin="20" aria-valuemax="80"
+     aria-valuenow="45" aria-valuetext="45% / 55%"></div>` },
+ { title:"10. Generalise, nest & polish", why:"The step from demo to reusable widget is to wrap everything in one initSplit(splitEl) that reads its min, max and default from data-* attributes and scopes every DOM query with ':scope >' so an instance only ever touches its own direct pane and gutter, never a descendant's. With that isolation in place, nesting comes for free: drop a second .split inside a pane, run initSplit on both, and the child resizes independently — there is no shared state to collide, which is why the demo's right pane splits again with no special case. From there the polish is familiar: add a 'dragging' class that disables pointer events and text selection inside the panes so a fast drag never selects text or hijacks an iframe; respect prefers-reduced-motion by dropping transitions; persist the last position to localStorage so a layout survives reload; consider collapse-to-zero with a snap threshold and a restore button; and for many panes generalise from two children to N gutters. None of these change the core — they are all just more inputs to the same apply() you already built.", concept:`<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">initSplit(el): reads data-min/max/pos<br>queries scoped with ":scope >"<br><br>┌────┬─────────┐<br>│ &nbsp;&nbsp;&nbsp;│ preview │  ← a pane that<br>│ &nbsp;&nbsp;&nbsp;├─────────┤ &nbsp;&nbsp;splits AGAIN<br>│ &nbsp;&nbsp;&nbsp;│ console │<br>└────┴─────────┘<br>+ persist · reduced-motion · N panes</div>`, code:`function initSplit(split){
+  const primary = split.querySelector(':scope > .pane');
+  const gutter  = split.querySelector(':scope > .gutter');
+  const min = +split.dataset.min, max = +split.dataset.max;
+  let pos = +split.dataset.pos;
+  /* apply(), pointer, dblclick, keydown, setDir — all scoped to split */
+}
+document.querySelectorAll('.split').forEach(initSplit);  // outer + nested` }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3000); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
