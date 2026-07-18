@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 37 — Swipe Cards</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== swipe deck surface ===== */
+  .demo-frame { min-height:520px; background:#eef2f7; border:1px solid #e2e8f0; border-radius:16px;
+                padding:24px; display:flex; align-items:center; justify-content:center; }
+  .deck-wrap { display:flex; flex-direction:column; align-items:center; gap:20px; }
+  .deck { position:relative; width:300px; height:420px; touch-action:none; }
+
+  .card { position:absolute; inset:0; border-radius:20px; overflow:hidden; background:#fff;
+          box-shadow:0 12px 34px rgba(15,23,42,.16); border:1px solid #e2e8f0;
+          touch-action:none; user-select:none; -webkit-user-select:none; will-change:transform; }
+  .card.top { cursor:grab; }
+  .card.top:active { cursor:grabbing; }
+  .card.animate { transition: transform .45s cubic-bezier(.22,.85,.28,1), opacity .45s ease; }
+
+  .card-photo { position:relative; height:64%; display:flex; align-items:center; justify-content:center; }
+  .avatar { width:104px; height:104px; border-radius:50%; background:rgba(255,255,255,.22);
+            border:3px solid rgba(255,255,255,.65); display:flex; align-items:center; justify-content:center;
+            color:#fff; font-size:2.1rem; font-weight:800; letter-spacing:.05em; text-shadow:0 1px 4px rgba(0,0,0,.15); }
+  .stamp { position:absolute; top:22px; padding:5px 16px; font-size:1.5rem; font-weight:900; letter-spacing:.08em;
+           border-radius:10px; border:4px solid; opacity:0; pointer-events:none; background:rgba(255,255,255,.72); }
+  .stamp.like { left:18px; color:#16a34a; border-color:#16a34a; transform:rotate(-16deg); }
+  .stamp.nope { right:18px; color:#e11d48; border-color:#e11d48; transform:rotate(16deg); }
+
+  .card-info { padding:16px 18px; }
+  .card-name { font-size:1.35rem; font-weight:800; color:#0f172a; }
+  .card-name span { font-weight:500; color:#64748b; }
+  .card-role { color:#64748b; font-size:.9rem; margin-top:2px; }
+  .card-tags { margin-top:12px; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { background:#f1f5f9; color:#475569; font-size:.72rem; font-weight:700; padding:4px 10px; border-radius:999px; }
+
+  .empty-state { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
+                 text-align:center; color:#94a3b8; border:2px dashed #cbd5e1; border-radius:20px; padding:24px; gap:6px; }
+  .empty-state.show { display:flex; }
+
+  .swipe-row { display:flex; align-items:center; gap:16px; }
+  .swipe-btn { border-radius:50%; border:1px solid #e2e8f0; background:#fff; display:flex; align-items:center;
+               justify-content:center; cursor:pointer; box-shadow:0 4px 14px rgba(15,23,42,.10);
+               transition: transform .12s, box-shadow .12s; color:#64748b; }
+  .swipe-btn:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(15,23,42,.14); }
+  .swipe-btn:active { transform:translateY(0) scale(.94); }
+  .swipe-btn.big { width:60px; height:60px; }
+  .swipe-btn.sm  { width:46px; height:46px; }
+  .swipe-btn.nope { color:#e11d48; } .swipe-btn.like { color:#16a34a; } .swipe-btn.undo { color:#f59e0b; }
+  .swipe-btn svg { width:26px; height:26px; }
+  .swipe-btn.sm svg { width:20px; height:20px; }
+  .swipe-btn:disabled { opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .dmeter { position:relative; height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+  .dmeter i { position:absolute; top:0; bottom:0; left:50%; width:0; transition:width .05s linear, left .05s linear; }
+  .dmeter .mid { position:absolute; left:50%; top:-3px; bottom:-3px; width:2px; background:#cbd5e1; transform:translateX(-1px); }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .card.animate { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 37</div>
+      <h1 class="text-xl font-bold">🃏 Swipe Cards — A Tinder-Style Deck: Drag &amp; Rotate a Card, a Threshold + Velocity Fling-to-Dismiss, an Undo Stack &amp; a Keyboard-and-Screen-Reader-Accessible Gesture</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Grab the top card. Drag it. Fling it left or right — or use the buttons and the arrow keys.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>swipe deck</strong> built from scratch in vanilla JS — the gesture that made Tinder, and now lives in every "yes / no / skip" flow. One idea makes it work: the top card <strong>follows your pointer</strong>, and its whole personality — how far it slides, how much it <em>rotates</em>, whether a green <span class="text-green-600 font-bold">LIKE</span> or red <span class="text-rose-600 font-bold">NOPE</span> stamp fades in — is just arithmetic on <em>how far you have dragged from where you grabbed it</em>. Let go past a <strong>threshold</strong> (or with enough <strong>velocity</strong>) and it flings off-screen and the next card is promoted; let go short and it <strong>springs back</strong>. Drag it (mouse or touch), tap <strong>Nope / Like</strong>, press <kbd>&larr;</kbd> <kbd>&rarr;</kbd> to swipe or <kbd>U</kbd> to undo. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="demo-frame">
+              <div class="deck-wrap">
+                <div id="deck" class="deck" role="group" aria-label="Swipe deck. Drag the top card, or press Left arrow to pass, Right arrow to like, U to undo." tabindex="0">
+                  <div class="empty-state" id="empty">
+                    <div class="text-3xl font-black text-slate-300">Done</div>
+                    <div class="text-sm">You're all caught up.</div>
+                    <button id="restart" class="btn-ghost mt-2">Reshuffle the deck</button>
+                  </div>
+                </div>
+
+                <!-- controls -->
+                <div class="swipe-row">
+                  <button id="btnNope" class="swipe-btn big nope" aria-label="Pass (swipe left)" title="Pass — swipe left / ←">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                  </button>
+                  <button id="btnUndo" class="swipe-btn sm undo" aria-label="Undo last swipe" title="Undo — U">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
+                  </button>
+                  <button id="btnLike" class="swipe-btn big like" aria-label="Like (swipe right)" title="Like — swipe right / →">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.4C-0.3 8 1.3 4 5 4c2.1 0 3.4 1.2 4 2.2C9.6 5.2 10.9 4 13 4c3.7 0 5.3 4 3.2 7.6C19.5 16.1 12 21 12 21z"/></svg>
+                  </button>
+                </div>
+                <p class="text-xs text-slate-400">drag &middot; or <kbd>&larr;</kbd> pass &middot; <kbd>&rarr;</kbd> like &middot; <kbd>U</kbd> undo</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Top card</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roName" class="text-lg font-bold text-slate-800">—</span>
+                <span class="text-xs text-slate-400 font-semibold"><span id="roLeft">0</span> left</span>
+              </div>
+
+              <div class="mt-3">
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-rose-500 font-bold">NOPE</span>
+                  <span class="text-slate-400 font-semibold">drag &rarr; decision</span>
+                  <span class="text-green-600 font-bold">LIKE</span>
+                </div>
+                <div class="dmeter"><span class="mid"></span><i id="dfill"></i></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">drag x</span><span id="roDx" class="pill">0px</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">rotation</span><span id="roRot" class="pill">0.0&deg;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">intent</span><span id="roDec" class="pill">undecided</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">threshold</span><span class="font-bold text-slate-600">100px</span></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 flex justify-between text-center">
+                <div><div id="roLike" class="text-2xl font-bold text-green-600">0</div><div class="text-xs text-slate-400 font-semibold">liked</div></div>
+                <div><div id="roNope" class="text-2xl font-bold text-rose-500">0</div><div class="text-xs text-slate-400 font-semibold">passed</div></div>
+                <div><div id="roUndo" class="text-2xl font-bold text-amber-500">0</div><div class="text-xs text-slate-400 font-semibold">undone</div></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">One number drives it all: <code>dx</code>, how far you have dragged. It sets the slide, the rotation, the stamp opacity, and — past the threshold — the decision.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every swipe UI you have used — Tinder, Bumble, a Reels "not interested", flash-card apps like Anki, a triage inbox — is this same shape: a stack of absolutely-positioned cards, a top one that tracks the pointer, a <code>translate</code> + <code>rotate</code> derived from the drag, a threshold-plus-velocity decision, and a history stack so nothing is lost to a fat-thumb. The gesture is delightful; underneath it is a dozen lines of arithmetic and one <code>transitionend</code>.</p>
+
+      <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a swipe card works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A swipe card feels physical — you grab it, it tilts, it flies away — but underneath it is one number and a scrap of arithmetic. A <em>stack</em> of absolutely-positioned cards sits in a small box; only the top one listens to the pointer. Every move records <code>dx</code> = how far you have dragged sideways, and that single value drives the slide (<code>translateX</code>), the tilt (<code>rotate</code>), and how strongly a <span class="text-green-600 font-semibold">LIKE</span> or <span class="text-rose-600 font-semibold">NOPE</span> stamp shows. On release you make one decision — past a distance <em>threshold</em> or thrown with enough <em>velocity</em> it flings off and the next card is promoted; otherwise it springs back. One <code>pointer</code> handler covers mouse, touch and pen; buttons and the keyboard call the exact same code; and a history stack makes <strong>undo</strong> free. ~110 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup: a deck of stacked cards</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The deck is one positioned box; each card is <code>position:absolute; inset:0</code> so they all pile up in the same spot. The top card carries the LIKE and NOPE <em>stamps</em> that will fade in during a drag. The whole deck is a focusable <code>role="group"</code> with an <code>aria-label</code> spelling out the gesture, and a visually-hidden <code>aria-live</code> region will announce each decision to a screen reader.</p>
+        <div class="relative"><pre>&lt;div id="deck" role="group" tabindex="0"
+     aria-label="Swipe deck. ←/→ to pass/like, U to undo."&gt;
+  &lt;!-- cards are injected here, top card last-painted / highest z --&gt;
+  &lt;div class="card top"&gt;
+    &lt;div class="card-photo"&gt;
+      &lt;span class="stamp like"&gt;LIKE&lt;/span&gt;
+      &lt;span class="stamp nope"&gt;NOPE&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class="card-info"&gt; … name · role · tags … &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="sr-only" role="status" aria-live="polite"&gt;&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The stack: absolute cards + depth transforms</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because every card is <code>inset:0</code>, they overlap perfectly. To make the <em>deck</em> read as a deck, the cards behind the top one are pushed down and scaled down a touch — depth 1 gets a small <code>translateY</code> + <code>scale(.95)</code>, depth 2 a bit more — and anything deeper than a few is hidden for performance. <code>touch-action:none</code> tells the browser "I'll handle the gesture, don't scroll", and <code>will-change:transform</code> hints the compositor.</p>
+        <div class="relative"><pre>.deck  { position:relative; width:300px; height:420px; touch-action:none; }
+.card  { position:absolute; inset:0; border-radius:20px;
+         touch-action:none; user-select:none; will-change:transform; }
+.card.animate { transition: transform .45s cubic-bezier(.22,.85,.28,1),
+                            opacity .45s ease; }
+
+/* set per-card in JS from its depth in the stack */
+function stackStyle(el, depth){
+  el.style.zIndex    = 100 - depth;
+  el.style.transform = `translateY(${depth*14}px) scale(${1 - depth*0.05})`;
+  el.style.opacity   = depth > 3 ? 0 : 1;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Track the drag: pointerdown / move with capture</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On <code>pointerdown</code> over the top card, remember where the grab started and call <code>setPointerCapture</code> so every later move and the release are delivered here <em>even if the pointer leaves the card</em> — which it will, mid-fling. Drop the <code>animate</code> class while dragging so the card tracks the finger with zero lag. Each <code>pointermove</code> computes <code>dx / dy</code> — the delta from the grab point — which is the only geometry the whole widget needs.</p>
+        <div class="relative"><pre>let drag = null;
+deck.addEventListener("pointerdown", e =&gt; {
+  const el = topCard(); if (!el || !el.contains(e.target)) return;
+  el.classList.remove("animate");          // follow the finger, no easing
+  el.setPointerCapture(e.pointerId);
+  drag = { x0:e.clientX, y0:e.clientY, id:e.pointerId,
+           lastX:e.clientX, lastT:performance.now(), vx:0 };
+});
+deck.addEventListener("pointermove", e =&gt; {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  const now = performance.now(), dt = now - drag.lastT;
+  if (dt) drag.vx = (e.clientX - drag.lastX) / dt;   // px per ms
+  drag.lastX = e.clientX; drag.lastT = now;
+  render(dx, dy);
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The live transform: translate + rotate from dx</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the trick that sells it. The card is translated by the raw drag delta, and it <em>rotates</em> in proportion to how far it has moved sideways — a small factor like <code>dx * 0.05</code>, clamped so it never spins past ~18°. That tiny coupling of horizontal distance to tilt is the entire "physical card" illusion; drag right and it leans right, drag left and it leans left, exactly like a real card pinched at one corner.</p>
+        <div class="relative"><pre>function render(dx, dy){
+  const el = topCard();
+  const rot = clamp(dx * 0.05, -18, 18);     // tilt ∝ horizontal drag
+  el.style.transform =
+    `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+  setStamps(el, dx);                         // step 5
+}
+const clamp = (v, lo, hi) =&gt; Math.max(lo, Math.min(hi, v));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Direction feedback: fade the LIKE / NOPE stamps</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The user needs to know which way counts as yes <em>before</em> they commit. Map the same <code>dx</code> to stamp opacity: drag right reveals LIKE (<code>dx / threshold</code>, clamped 0–1), drag left reveals NOPE (<code>-dx / threshold</code>). At the threshold the stamp is fully opaque, so "the stamp is solid" and "letting go will commit" become the same visual signal — the interface teaches its own rule.</p>
+        <div class="relative"><pre>const THRESHOLD = 100;   // px to count as a decision
+function setStamps(el, dx){
+  el.querySelector(".stamp.like").style.opacity =
+    clamp(dx / THRESHOLD, 0, 1);
+  el.querySelector(".stamp.nope").style.opacity =
+    clamp(-dx / THRESHOLD, 0, 1);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Release: threshold + velocity decide</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On <code>pointerup</code>, put the <code>animate</code> class back so whatever happens next eases smoothly, then make <em>one</em> decision. Commit if the card was dragged past the distance threshold <strong>or</strong> flicked with enough speed — a fast flick should count even if it did not travel far, which is what makes the gesture feel snappy rather than laborious. The sign of the drag (falling back to the sign of the velocity for a pure flick) picks like vs nope.</p>
+        <div class="relative"><pre>deck.addEventListener("pointerup", e =&gt; {
+  if (!drag || e.pointerId !== drag.id) return;
+  const el = topCard();
+  el.classList.add("animate");
+  const dx = e.clientX - drag.x0, vx = drag.vx;
+  drag = null;
+  const dir = dx !== 0 ? Math.sign(dx) : Math.sign(vx);
+  if (Math.abs(dx) &gt; THRESHOLD || Math.abs(vx) &gt; 0.6)
+    commit(dir &gt; 0 ? "like" : "nope");     // step 7
+  else
+    springBack(el);                        // step 8
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Fling it off + promote the next card</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Committing pops the top card out of the model, then transitions it fully off-screen (well past the deck width, with a bit of extra rotation) and fades it out. Push a record onto a <em>history</em> stack for undo. Re-laying the remaining cards is what promotes the next one to the top — and because those cards carry the <code>animate</code> class, they glide up into place for free. Clean up the flung node on <code>transitionend</code>, with a timeout fallback.</p>
+        <div class="relative"><pre>function commit(decision){
+  const card = cards.shift();               // remove from the model
+  const el = card.el, dir = decision === "like" ? 1 : -1;
+  history.push({ data: card.data, decision });   // for undo
+  el.style.transform =
+    `translate(${dir*(deck.offsetWidth+220)}px,-40px) rotate(${dir*22}deg)`;
+  el.style.opacity = 0;
+  const done = () =&gt; el.remove();
+  el.addEventListener("transitionend", done, { once:true });
+  setTimeout(done, 500);                    // fallback if no transition
+  relayStack();                             // next card becomes top
+  announce(`${decision==="like"?"Liked":"Passed on"} ${card.data.name}.`);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Spring back under threshold</h3></div>
+        <p class="text-sm text-slate-600 mb-3">If the release did not qualify, the card is <em>not</em> a decision — it must return to dead-centre. With the <code>animate</code> class on, that is a one-liner: set the transform back to zero and clear the stamps, and the CSS transition eases it home. This "no harm done" recovery is a huge part of why the gesture feels safe to try — a tentative half-drag costs nothing.</p>
+        <div class="relative"><pre>function springBack(el){
+  el.style.transform = "translate(0,0) rotate(0deg)";
+  setStamps(el, 0);          // fade both stamps out as it returns
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Buttons + keyboard: the same code path</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A drag-only card is unusable by keyboard and hostile on desktop, so the Nope / Like buttons and the arrow keys must drive the identical <code>commit()</code> the gesture uses — <kbd>&larr;</kbd> passes, <kbd>&rarr;</kbd> likes, <kbd>U</kbd> undoes. Routing every input through one function means the animation, the history push and the announcement are automatic for buttons and keys, with no duplicated logic. Only <code>preventDefault</code> the keys you actually handle.</p>
+        <div class="relative"><pre>btnNope.onclick = () =&gt; topCard() &amp;&amp; commit("nope");
+btnLike.onclick = () =&gt; topCard() &amp;&amp; commit("like");
+btnUndo.onclick = undo;
+
+document.addEventListener("keydown", e =&gt; {
+  if (look.classList.contains("hidden")) return;   // only on this tab
+  if (e.key === "ArrowLeft")  topCard() &amp;&amp; commit("nope");
+  else if (e.key === "ArrowRight") topCard() &amp;&amp; commit("like");
+  else if (e.key.toLowerCase() === "u") undo();
+  else return;
+  e.preventDefault();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Undo with a history stack + live-region a11y</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because every commit pushed <code>{ data, decision }</code>, undo is just "pop and put it back": rebuild the card, start it off-screen on the side it left from, unshift it as the new top, then relay the stack so it slides home. Finally, accessibility is not an afterthought — each decision and undo writes a sentence to the <code>aria-live="polite"</code> region so a screen-reader user hears "Liked Aria." or "Brought back Marco." exactly when a sighted user sees the card move.</p>
+        <div class="relative"><pre>function undo(){
+  if (!history.length) return;
+  const { data, decision } = history.pop();
+  const el = makeCard(data), dir = decision === "like" ? 1 : -1;
+  el.classList.add("animate");
+  el.style.transform =
+    `translate(${dir*(deck.offsetWidth+220)}px,-40px) rotate(${dir*22}deg)`;
+  el.style.opacity = 0;
+  deck.appendChild(el);
+  cards.unshift({ el, data });
+  requestAnimationFrame(() =&gt; requestAnimationFrame(relayStack)); // paint, then glide in
+  announce(`Brought back ${data.name}.`);
+}
+function announce(msg){ live.textContent = msg; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 37 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real Tinder-style swipe deck from scratch. The core is <strong>one number</strong> — <code>dx</code>, how far the top card has been dragged — written into a single <code>translate</code> + <code>rotate</code>, with the LIKE/NOPE stamps fading by the same value. Releasing makes <strong>one decision</strong> from a distance <strong>threshold</strong> or a <strong>velocity</strong> flick: fling off and promote the next card, or spring back. <strong>Pointer Events</strong> + <code>setPointerCapture</code> unify mouse and touch; buttons and the keyboard call the very same <code>commit()</code>; and because each swipe pushes onto a <strong>history stack</strong>, <strong>undo</strong> and a screen-reader <strong>live region</strong> come almost for free. <strong>👉 Tomorrow — Day 38: X / Twitter feed (reverse-chronological timeline + action buttons).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SWIPE DECK =====
+const PROFILES = [
+  { name:"Aria Chen",   age:27, role:"Product designer", place:"San Francisco", tags:["Coffee","Hiking","Film"],     grad:"linear-gradient(135deg,#6366f1,#a855f7)", ini:"AC" },
+  { name:"Marco Silva", age:31, role:"Guitarist",        place:"Lisbon",        tags:["Music","Travel","Dogs"],       grad:"linear-gradient(135deg,#f43f5e,#ec4899)", ini:"MS" },
+  { name:"Nadia Khan",  age:25, role:"Data scientist",   place:"Toronto",       tags:["Chess","Books","Ramen"],       grad:"linear-gradient(135deg,#0ea5e9,#3b82f6)", ini:"NK" },
+  { name:"Leo Meyer",   age:29, role:"Chef",             place:"Berlin",        tags:["Cooking","Cycling","Jazz"],    grad:"linear-gradient(135deg,#10b981,#14b8a6)", ini:"LM" },
+  { name:"Priya Rao",   age:28, role:"Architect",        place:"Mumbai",        tags:["Sketching","Yoga","Tea"],      grad:"linear-gradient(135deg,#f59e0b,#f97316)", ini:"PR" },
+  { name:"Sam Okafor",  age:30, role:"Photographer",     place:"Lagos",         tags:["Cameras","Surf","Vinyl"],      grad:"linear-gradient(135deg,#8b5cf6,#6366f1)", ini:"SO" }
+];
+const THRESHOLD = 100;            // px of horizontal drag to count as a decision
+const VELOCITY  = 0.6;            // px/ms flick speed that also commits
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+const look   = document.getElementById("look");
+const deck   = document.getElementById("deck");
+const empty  = document.getElementById("empty");
+const live   = document.getElementById("live");
+// read-out els
+const roName = document.getElementById("roName"), roLeft = document.getElementById("roLeft");
+const roDx = document.getElementById("roDx"), roRot = document.getElementById("roRot"), roDec = document.getElementById("roDec");
+const roLike = document.getElementById("roLike"), roNope = document.getElementById("roNope"), roUndo = document.getElementById("roUndo");
+const dfill = document.getElementById("dfill");
+// buttons
+const btnNope = document.getElementById("btnNope"), btnLike = document.getElementById("btnLike"), btnUndo = document.getElementById("btnUndo");
+
+let cards = [];                   // [{ el, data }] still in the deck; index 0 = top
+let history = [];                 // [{ data, decision }] swiped, for undo
+let stats = { like:0, nope:0, undo:0 };
+let drag = null;
+
+const topCard = () => cards[0] && cards[0].el;
+
+// build one card element from a profile
+function makeCard(data){
+  const el = document.createElement("div");
+  el.className = "card animate";
+  el.innerHTML =
+    '<div class="card-photo" style="background:' + data.grad + '">' +
+      '<span class="stamp like">LIKE</span>' +
+      '<span class="stamp nope">NOPE</span>' +
+      '<span class="avatar">' + data.ini + '</span>' +
+    '</div>' +
+    '<div class="card-info">' +
+      '<div class="card-name">' + data.name + ' <span>' + data.age + '</span></div>' +
+      '<div class="card-role">' + data.role + ' &middot; ' + data.place + '</div>' +
+      '<div class="card-tags">' + data.tags.map(t => '<span class="chip">' + t + '</span>').join('') + '</div>' +
+    '</div>';
+  return el;
+}
+
+// (re)position every card by its depth; index 0 becomes the interactive top
+function relayStack(){
+  cards.forEach((c, i) => {
+    const el = c.el;
+    if (i === 0){
+      el.classList.add("top");
+      el.style.zIndex = 100;
+      el.style.transform = "translate(0,0) rotate(0deg)";
+      el.style.opacity = 1;
+      setStamps(el, 0);
+    } else {
+      el.classList.remove("top");
+      const depth = Math.min(i, 3);
+      el.style.zIndex = 100 - i;
+      el.style.transform = "translateY(" + (depth*14) + "px) scale(" + (1 - depth*0.05) + ")";
+      el.style.opacity = i > 3 ? 0 : 1;
+    }
+  });
+  empty.classList.toggle("show", cards.length === 0);
+  btnNope.disabled = btnLike.disabled = cards.length === 0;
+  btnUndo.disabled = history.length === 0;
+  render(0, 0);
+}
+
+// LIKE / NOPE stamp opacity from the horizontal drag
+function setStamps(el, dx){
+  el.querySelector(".stamp.like").style.opacity = clamp(dx / THRESHOLD, 0, 1);
+  el.querySelector(".stamp.nope").style.opacity = clamp(-dx / THRESHOLD, 0, 1);
+}
+
+// the ONE render: dx drives slide, tilt, stamps and the read-out
+function render(dx, dy){
+  const el = topCard();
+  let rot = 0;
+  if (el){
+    rot = clamp(dx * 0.05, -18, 18);
+    el.style.transform = "translate(" + dx + "px," + dy + "px) rotate(" + rot + "deg)";
+    setStamps(el, dx);
+  }
+  // read-out
+  roName.textContent = cards[0] ? cards[0].data.name : "—";
+  roLeft.textContent = cards.length;
+  roDx.textContent = Math.round(dx) + "px";
+  roRot.textContent = rot.toFixed(1) + "°";
+  const past = dx >= THRESHOLD ? "like" : dx <= -THRESHOLD ? "nope" : "";
+  roDec.textContent = past === "like" ? "LIKE" : past === "nope" ? "NOPE" : "undecided";
+  roDec.className = "pill" + (past === "like" ? " g" : past === "nope" ? " r" : "");
+  // decision meter: fill from centre
+  const p = clamp(dx / THRESHOLD, -1, 1);
+  if (p >= 0){ dfill.style.left = "50%"; dfill.style.width = (p*50) + "%"; dfill.style.background = "#16a34a"; }
+  else       { dfill.style.width = (-p*50) + "%"; dfill.style.left = (50 - (-p*50)) + "%"; dfill.style.background = "#e11d48"; }
+}
+
+function updateStats(){
+  roLike.textContent = stats.like; roNope.textContent = stats.nope; roUndo.textContent = stats.undo;
+}
+function announce(msg){ live.textContent = msg; }
+
+// ---- drag (Pointer Events unify mouse + touch + pen) ----
+deck.addEventListener("pointerdown", e => {
+  const el = topCard();
+  if (!el || !el.contains(e.target)) return;
+  el.classList.remove("animate");                 // track the finger with no easing
+  el.setPointerCapture(e.pointerId);
+  drag = { x0:e.clientX, y0:e.clientY, id:e.pointerId, lastX:e.clientX, lastT:performance.now(), vx:0 };
+});
+deck.addEventListener("pointermove", e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  const now = performance.now(), dt = now - drag.lastT;
+  if (dt) drag.vx = (e.clientX - drag.lastX) / dt;
+  drag.lastX = e.clientX; drag.lastT = now;
+  render(dx, dy);
+});
+function endDrag(e){
+  if (!drag || e.pointerId !== drag.id) return;
+  const el = topCard();
+  el.classList.add("animate");
+  const dx = e.clientX - drag.x0, vx = drag.vx;
+  drag = null;
+  const dir = dx !== 0 ? Math.sign(dx) : Math.sign(vx);
+  if ((Math.abs(dx) > THRESHOLD || Math.abs(vx) > VELOCITY) && dir !== 0)
+    commit(dir > 0 ? "like" : "nope");
+  else
+    springBack(el);
+}
+deck.addEventListener("pointerup", endDrag);
+deck.addEventListener("pointercancel", endDrag);
+
+// under threshold: return the card to centre
+function springBack(el){
+  el.style.transform = "translate(0,0) rotate(0deg)";
+  setStamps(el, 0);
+  render(0, 0);
+}
+
+// commit a decision: fling the top card off, promote the next
+function commit(decision){
+  if (!cards.length) return;
+  const card = cards.shift();
+  const el = card.el, dir = decision === "like" ? 1 : -1;
+  el.classList.add("animate", "top");
+  el.style.zIndex = 200;
+  el.querySelector(".stamp." + decision).style.opacity = 1;
+  requestAnimationFrame(() => {
+    el.style.transform = "translate(" + (dir*(deck.offsetWidth + 220)) + "px,-40px) rotate(" + (dir*22) + "deg)";
+    el.style.opacity = 0;
+  });
+  const done = () => el.remove();
+  el.addEventListener("transitionend", done, { once:true });
+  setTimeout(done, 550);
+  history.push({ data:card.data, decision });
+  stats[decision]++;
+  updateStats();
+  relayStack();
+  announce((decision === "like" ? "Liked " : "Passed on ") + card.data.name + ". " + cards.length + " left.");
+}
+
+// undo: pop history, rebuild the card, slide it back to the top
+function undo(){
+  if (!history.length) return;
+  const { data, decision } = history.pop();
+  stats[decision]--; stats.undo++;
+  const el = makeCard(data), dir = decision === "like" ? 1 : -1;
+  el.style.zIndex = 200;
+  el.style.transform = "translate(" + (dir*(deck.offsetWidth + 220)) + "px,-40px) rotate(" + (dir*22) + "deg)";
+  el.style.opacity = 0;
+  deck.appendChild(el);
+  cards.unshift({ el, data });
+  requestAnimationFrame(() => requestAnimationFrame(relayStack));  // paint off-screen, then glide in
+  updateStats();
+  announce("Brought back " + data.name + ".");
+}
+
+// ---- buttons ----
+btnNope.onclick = () => { if (topCard()) commit("nope"); };
+btnLike.onclick = () => { if (topCard()) commit("like"); };
+btnUndo.onclick = undo;
+document.getElementById("restart").onclick = start;
+
+// ---- keyboard (only while the LOOK tab is visible) ----
+document.addEventListener("keydown", e => {
+  if (look.classList.contains("hidden")) return;
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea") return;
+  if (e.key === "ArrowLeft")       { if (topCard()) commit("nope"); }
+  else if (e.key === "ArrowRight") { if (topCard()) commit("like"); }
+  else if (e.key.toLowerCase() === "u") { undo(); }
+  else return;
+  e.preventDefault();
+});
+
+// ---- seed / reshuffle ----
+function start(){
+  cards.forEach(c => c.el.remove());
+  cards = []; history = []; stats = { like:0, nope:0, undo:0 };
+  PROFILES.forEach(data => { const el = makeCard(data); deck.appendChild(el); cards.push({ el, data }); });
+  updateStats();
+  relayStack();
+  announce("Deck ready. " + cards.length + " cards.");
+}
+start();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a swipe card really is", why:"A swipe card is a single decision made physical: one item is presented on a card, and a fling of the wrist to the right means yes and to the left means no. Tinder made it famous, but the same gesture now triages email, dismisses recommendations in Reels and TikTok, drives flash-card apps like Anki, and powers any 'rate these one at a time' flow. What makes it a distinct UI pattern rather than just two buttons is direct manipulation: the card literally follows your finger, tilts as you push it, and shows a growing LIKE or NOPE stamp, so the outcome is visible and reversible the whole way through the gesture. Under the hood the item you see is only ever the top of a stack of cards piled in the same spot; deciding on it reveals the next. Because a real thumb is imprecise, the pattern also needs a safety net — a spring-back when you do not push far enough, and an undo when you push the wrong way — which is why the model is a little richer than 'remove an element'.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">a deck · one interactive top card<br><br>&nbsp;&nbsp;&nbsp;&nbsp;&#8598; NOPE &nbsp;&nbsp;&nbsp; LIKE &#8599;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9474;&nbsp;top card follows&nbsp;&#9474;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9474;&nbsp;&nbsp;&nbsp;the pointer&nbsp;&nbsp;&nbsp;&#9474;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;<br>&nbsp;&nbsp;&nbsp;&nbsp;fling past a threshold &#8594; decide</div>', code:"// yes / no, made physical:\n// Tinder · Reels 'not interested' · Anki · triage inbox\n// only the TOP of a stack is interactive\n// needs a safety net: spring-back + undo\n// the whole thing = one number (dx) + a decision" },
+ { title:"2. The stack: absolute cards + depth", why:"Every card in the deck is positioned absolutely with inset:0, so they all occupy exactly the same rectangle, stacked on the z-axis like a real pile. The one the user acts on is simply the front of that pile, given the highest z-index. To make it read as a deck rather than a single card, the ones behind are nudged down a few pixels and scaled down a hair — depth 1 gets translateY(14px) scale(.95), depth 2 a little more — so you glimpse their edges peeking out below. Cards deeper than three are set to opacity 0 (or not rendered) because nobody can see them and painting them is wasted work. Crucially, resizing the stack — after a swipe or an undo — is just re-running this depth styling over the remaining cards, which automatically promotes whatever is now at index 0 to the interactive top. touch-action:none on the deck and cards tells the browser you will handle the gesture yourself, so it does not try to scroll the page when a drag begins.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">all cards: position:absolute; inset:0<br><br>&nbsp;&nbsp;&#9581;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9583;&nbsp;&#8592; depth 2 · scale .90<br>&nbsp;&#9581;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9583;&nbsp;&nbsp;&#8592; depth 1 · scale .95<br>&#9581;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9583;&nbsp;&nbsp;&nbsp;&#8592; TOP · z:100 · interactive<br><br>relay = restyle by depth &#8594; promotes next</div>', code:"function stackStyle(el, depth){\n  el.style.zIndex    = 100 - depth;\n  el.style.transform = `translateY(${depth*14}px) scale(${1-depth*0.05})`;\n  el.style.opacity   = depth > 3 ? 0 : 1;\n}\n/* .deck, .card { touch-action:none } — we own the gesture */" },
+ { title:"3. The drag delta: dx and dy", why:"The entire interaction is driven by one measurement: how far the pointer has moved since it grabbed the card. On pointerdown you record the start coordinates (x0, y0); on every pointermove you subtract them from the current pointer position to get dx and dy. That delta — not the absolute pointer position — is what you feed into the card's transform, because a card should move by how far you dragged, regardless of where on the card you first touched. Recomputing from the stored origin each move (rather than accumulating deltas) keeps it drift-free. While measuring dx you also sample velocity: keep the previous pointer x and timestamp, and vx = (x - lastX) / (now - lastT) gives pixels-per-millisecond, the flick speed you will use at release. This is deliberately simple arithmetic done on every move; there is no physics engine, just subtraction.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">grab point (x0,y0) &#8594; current (x,y)<br><br>dx = x &#8722; x0 &nbsp;&nbsp;(horizontal drag)<br>dy = y &#8722; y0 &nbsp;&nbsp;(vertical drift)<br><br>vx = (x &#8722; lastX) / (now &#8722; lastT)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>px per ms &#8594; the flick speed</div>', code:"deck.addEventListener('pointerdown', e => {\n  drag = { x0:e.clientX, y0:e.clientY,\n           lastX:e.clientX, lastT:performance.now(), vx:0 };\n});\ndeck.addEventListener('pointermove', e => {\n  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;\n  const dt = performance.now() - drag.lastT;\n  if (dt) drag.vx = (e.clientX - drag.lastX) / dt;\n  drag.lastX = e.clientX; drag.lastT = performance.now();\n  render(dx, dy);\n});" },
+ { title:"4. Transform: translate + rotate ∝ dx", why:"Here is the illusion that makes a rectangle feel like a physical card. You translate the card by the raw drag delta so it stays glued to the finger, and — the key move — you rotate it in proportion to how far it has travelled horizontally. A small factor works: rotate by dx * 0.05 degrees, clamped to roughly ±18° so a big drag does not spin it absurdly. Because rotation is tied to horizontal distance, dragging right leans the card right and dragging left leans it left, mimicking a real card pinched at its bottom corner. You write both into a single transform string — translate(dx, dy) rotate(rot) — so the browser composites one cheap GPU transform per frame. Vertical movement (dy) is usually passed through untouched or damped; the decision only ever cares about the horizontal axis. Keeping this to one clamped formula is what makes the motion feel tuned rather than jittery.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drag right &#8594; lean right<br><br>dx = &#8722;90 &nbsp;&nbsp;&nbsp;&nbsp;dx = 0 &nbsp;&nbsp;&nbsp;&nbsp;dx = +90<br>&nbsp;&#9585;&#9585;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9474;&#9474;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9586;&#9586;<br>&#8722;4.5&#176; &nbsp;&nbsp;&nbsp;&nbsp;0&#176; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+4.5&#176;<br><br>rot = clamp(dx &#215; 0.05, &#8722;18, 18)</div>', code:"function render(dx, dy){\n  const rot = clamp(dx * 0.05, -18, 18);   // tilt ∝ horizontal drag\n  card.style.transform =\n    `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;\n}\nconst clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));" },
+ { title:"5. Direction feedback: LIKE / NOPE stamps", why:"A swipe is a commitment, so the interface must tell the user which way counts as yes before they let go. The classic solution is two stamps pinned to the card — a green LIKE at the top-left, a red NOPE at the top-right — whose opacity is driven by the same dx. Drag right and LIKE fades in as dx/threshold clamped to 0–1; drag left and NOPE fades in as -dx/threshold. The elegant part is that the stamp reaches full opacity exactly at the threshold, so 'the stamp is now solid' and 'releasing now will commit' are the same moment made visible — the UI teaches its own rule without a tooltip. This live, proportional feedback is what separates a swipe deck that feels confident from one where users are unsure whether their gesture registered. It costs two more lines inside the same render pass you already run.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">opacity tracks dx, same as the tilt<br><br>dx=+50 &#8594; LIKE @ 0.5 &nbsp;&nbsp;(half)<br>dx=+100 &#8594; LIKE @ 1.0 &nbsp;(solid = will commit)<br>dx=&#8722;100 &#8594; NOPE @ 1.0<br><br>stamp solid == threshold reached</div>', code:"const THRESHOLD = 100;\nfunction setStamps(el, dx){\n  el.querySelector('.stamp.like').style.opacity = clamp( dx/THRESHOLD, 0, 1);\n  el.querySelector('.stamp.nope').style.opacity = clamp(-dx/THRESHOLD, 0, 1);\n}" },
+ { title:"6. The decision: threshold + velocity", why:"When the user lets go, you must classify the gesture as commit-or-cancel, and doing it well needs two signals, not one. The first is distance: if the card was dragged past a threshold (say 100px) it clearly means to leave. But distance alone makes fast, short flicks feel broken — you throw the card and it snaps back because it only moved 60px. So the second signal is velocity: if the pointer was moving faster than roughly 0.6px/ms at release, commit even though the distance was small, because a quick flick is unmistakably intentional. Combine them with OR: commit if past the threshold OR fast enough. The direction is the sign of dx (or, for a pure flick that barely moved, the sign of vx). Anything that fails both tests is not a decision and must return the card to centre. This threshold-plus-velocity pairing is the single most important tuning decision in the whole widget; get it wrong and the deck feels either sticky or trigger-happy.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">commit if EITHER is true:<br><br>&nbsp;|dx| &gt; 100px &nbsp;&nbsp;(dragged far)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;OR<br>&nbsp;|vx| &gt; 0.6 &nbsp;&nbsp;&nbsp;&nbsp;(flicked fast)<br><br>direction = sign(dx) &#8776; sign(vx)<br>else &#8594; spring back</div>', code:"function endDrag(e){\n  const dx = e.clientX - drag.x0, vx = drag.vx;\n  const dir = dx !== 0 ? Math.sign(dx) : Math.sign(vx);\n  if (Math.abs(dx) > THRESHOLD || Math.abs(vx) > 0.6)\n    commit(dir > 0 ? 'like' : 'nope');\n  else\n    springBack(card);\n}" },
+ { title:"7. Fling off + promote the next", why:"A committed card should not just vanish — it should complete its arc off the screen so the motion reads as cause and effect. First remove it from the model (shift it out of the cards array) and push a record of what happened onto a history stack for undo. Then, with the animate transition class on, set its transform to well past the deck's edge — the deck width plus a couple hundred pixels — with a little extra rotation and opacity 0, and the CSS eases it away. Re-laying the remaining stack now promotes index 0 to the new top, and because those cards also carry the transition, they slide up into their new depth positions for free, which is exactly the satisfying 'next card rises' effect. Clean up the flung DOM node on its transitionend event, with a setTimeout fallback in case the transition is interrupted or reduced-motion cancels it, so nodes never leak.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">1&#41; cards.shift() &#8594; out of the model<br>2&#41; history.push({data, decision})<br>3&#41; transform off-screen + fade<br>4&#41; relayStack() &#8594; next card rises<br>5&#41; remove node on transitionend<br><br>&nbsp;&nbsp;&nbsp;&nbsp;[top] &#8594;&#8594;&#8594;&#8594;&#8594;  &nbsp;flung away &#8594;</div>', code:"function commit(decision){\n  const card = cards.shift();\n  const dir = decision === 'like' ? 1 : -1;\n  history.push({ data: card.data, decision });\n  card.el.style.transform =\n    `translate(${dir*(deck.offsetWidth+220)}px,-40px) rotate(${dir*22}deg)`;\n  card.el.style.opacity = 0;\n  const done = () => card.el.remove();\n  card.el.addEventListener('transitionend', done, { once:true });\n  setTimeout(done, 550);\n  relayStack();               // promote the next card\n}" },
+ { title:"8. Spring back under threshold", why:"Not every drag is a decision. A tentative half-push, a mis-grab, a change of mind mid-gesture — all of these should leave the deck exactly as it was. When the release fails both the distance and velocity tests, you simply set the top card's transform back to translate(0,0) rotate(0deg) and fade its stamps out; with the animate transition class present, the card eases smoothly home instead of snapping. This 'no harm done' recovery is doing quiet but important work: it is what makes the gesture feel safe to explore. Users learn the threshold by testing it — pushing a little, seeing the stamp appear, pulling back — and spring-back is what lets them do that without consequence. A deck without it feels brittle and punishing, because every accidental nudge becomes an irreversible choice.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">released short of the threshold?<br><br>&nbsp;&nbsp;dx = 40px &nbsp;(&lt; 100, slow)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595;&nbsp;animate<br>&nbsp;&nbsp;transform &#8594; translate(0,0) rotate(0)<br>&nbsp;&nbsp;stamps &#8594; fade out<br><br>&#8220;no harm done&#8221; &#8594; safe to explore</div>', code:"function springBack(el){\n  el.style.transform = 'translate(0,0) rotate(0deg)';\n  setStamps(el, 0);          // fade both stamps out\n}\n// the .animate transition eases it home" },
+ { title:"9. Pointer capture unifies mouse + touch", why:"You do not want one code path for mouse and another for touch, so use Pointer Events, which fold mouse, touch and pen into a single pointerdown/move/up/cancel stream. The linchpin is setPointerCapture(e.pointerId), called on pointerdown: it binds that pointer to the card so every subsequent move and the release are delivered to the card even when the pointer races far outside its bounds — which is guaranteed during a fling. Without capture, a fast drag outruns the element and the interaction 'sticks' halfway; with it, you never need document-level listeners and there is no lost-pointer bug. Guard pointermove by checking the captured pointer id so hovering does nothing, drop the transition class during the drag so tracking is lag-free, and set touch-action:none in CSS so the browser does not steal the gesture to scroll or pinch-zoom. Also handle pointercancel (the OS can revoke a pointer, e.g. an incoming call) the same way as pointerup so the card never gets stranded.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointerdown &#8594; setPointerCapture(id)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>ALL moves routed to the card,<br>even off-element, until release<br><br>one path = &#128433; mouse &#183; &#128070; touch &#183; &#9999; pen</div>', code:"deck.addEventListener('pointerdown', e => {\n  const el = topCard(); if (!el || !el.contains(e.target)) return;\n  el.classList.remove('animate');       // lag-free tracking\n  el.setPointerCapture(e.pointerId);    // mouse OR touch OR pen\n});\ndeck.addEventListener('pointerup',     endDrag);\ndeck.addEventListener('pointercancel', endDrag);  // OS revoked the pointer\n/* CSS: .deck, .card { touch-action:none } */" },
+ { title:"10. Accessibility: buttons, keys, live region", why:"A gesture that only works by dragging excludes keyboard users, many motor-impaired users, and anyone on a desktop without a touchpad flick — so the swipe must not be the only way in. Provide explicit Nope and Like buttons and wire the arrow keys (Left = pass, Right = like, U = undo), and have all of them call the exact same commit() the drag uses, so there is one source of truth and buttons animate identically. Make the deck a focusable role='group' with an aria-label that states the controls. Then close the loop for screen readers with a visually-hidden aria-live='polite' region: every decision and undo writes a sentence into it — 'Liked Aria. 5 left.', 'Brought back Marco.' — so a non-sighted user hears the outcome at the same instant a sighted user sees the card fly. Respect prefers-reduced-motion by dropping the fling transition (the setTimeout fallback still cleans up), and keep an undo so a mistaken swipe is never final. Accessibility here is not a bolt-on; it falls out naturally because every input already funnels through one commit() and one announce().", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">every input &#8594; one commit()<br><br>&#128070; drag &nbsp;&#183;&nbsp; &#10005;/&#9825; buttons &nbsp;&#183;&nbsp; &#8592;/&#8594;/U keys<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>aria-live: &#8220;Liked Aria. 5 left.&#8221;<br><br>role=group &#183; label &#183; reduced-motion &#183; undo</div>', code:"btnNope.onclick = () => topCard() && commit('nope');\nbtnLike.onclick = () => topCard() && commit('like');\nbtnUndo.onclick = undo;\ndocument.addEventListener('keydown', e => {\n  if (e.key === 'ArrowLeft')  topCard() && commit('nope');\n  else if (e.key === 'ArrowRight') topCard() && commit('like');\n  else if (e.key.toLowerCase() === 'u') undo();\n  else return;\n  e.preventDefault();\n});\nfunction announce(msg){ live.textContent = msg; }  // aria-live region" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3500); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
