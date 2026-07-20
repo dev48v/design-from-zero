@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 39 — LinkedIn Profile Header</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:520px; background:#eef2f7; border:1px solid #e2e8f0; border-radius:16px;
+                padding:24px; display:flex; align-items:flex-start; justify-content:center; }
+
+  /* ---- the profile card: the whole point of today ---- */
+  .pcard { width:100%; max-width:560px; background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+           overflow:hidden; box-shadow:0 12px 34px rgba(15,23,42,.10);
+           transition:max-width .35s cubic-bezier(.22,1,.36,1); position:relative; }
+
+  /* banner: full-bleed cover photo, object-fit keeps it undistorted */
+  .banner { position:relative; height:140px; overflow:hidden;
+            background:linear-gradient(120deg,#0a66c2 0%,#378fe9 45%,#14b8a6 100%); }
+  .banner img { width:100%; height:100%; object-fit:cover; display:block; }
+  .banner-cam { position:absolute; top:12px; right:12px; }
+
+  /* the overlap: the avatar is pulled UP over the banner's bottom edge */
+  .pbody { padding:0 24px 20px; }
+  .avatar-wrap { position:relative; width:128px; height:128px; margin-top:-72px; z-index:2; }
+  .avatar { width:100%; height:100%; border-radius:50%; object-fit:cover; display:block;
+            border:4px solid #fff;                 /* the white RING that separates avatar from banner */
+            box-shadow:0 2px 8px rgba(15,23,42,.18); background:#e2e8f0; }
+  .avatar-fallback { width:100%; height:100%; border-radius:50%; border:4px solid #fff;
+            box-shadow:0 2px 8px rgba(15,23,42,.18); display:flex; align-items:center; justify-content:center;
+            color:#fff; font-weight:800; font-size:2.6rem; letter-spacing:.02em;
+            background:linear-gradient(135deg,#6366f1,#a855f7); }
+  .avatar-cam { position:absolute; inset:0; border-radius:50%; display:none;
+                align-items:center; justify-content:center; background:rgba(15,23,42,.42);
+                color:#fff; cursor:pointer; border:4px solid #fff; }
+  .avatar-cam svg { width:30px; height:30px; }
+
+  /* #OPEN TO WORK — LinkedIn's green ring + pill */
+  .avatar-wrap.otw .avatar, .avatar-wrap.otw .avatar-fallback { border-color:#01754f; }
+  .otw-pill { position:absolute; left:50%; bottom:-6px; transform:translateX(-50%);
+              background:#01754f; color:#fff; font-size:.6rem; font-weight:800; letter-spacing:.04em;
+              padding:3px 8px; border-radius:999px; white-space:nowrap; display:none;
+              box-shadow:0 2px 6px rgba(1,117,79,.35); }
+  .avatar-wrap.otw .otw-pill { display:block; }
+
+  /* identity block */
+  .pname { font-size:1.5rem; font-weight:800; color:#0f172a; margin-top:12px; line-height:1.2; outline:none; }
+  .pheadline { font-size:.98rem; color:#0f172a; margin-top:4px; line-height:1.4; outline:none; }
+  .pmeta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin-top:8px;
+           font-size:.85rem; color:#64748b; }
+  .ploc { outline:none; }
+  .pmeta .company { color:#0f172a; font-weight:600; }
+  .pconn { color:#0a66c2; font-weight:700; }
+  .pmutual { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:.82rem; color:#64748b; }
+  .mfaces { display:flex; }
+  .mfaces span { width:22px; height:22px; border-radius:50%; border:2px solid #fff; margin-left:-7px;
+                 display:inline-block; }
+  .mfaces span:first-child { margin-left:0; }
+
+  /* action buttons */
+  .pactions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .pbtn { border:0; border-radius:999px; padding:7px 18px; font-weight:700; font-size:.9rem; cursor:pointer;
+          transition:background .12s, box-shadow .12s, color .12s; display:inline-flex; align-items:center; gap:6px; }
+  .pbtn.primary { background:#0a66c2; color:#fff; }
+  .pbtn.primary:hover { background:#004182; }
+  .pbtn.primary.on { background:#01754f; }
+  .pbtn.ghost { background:#fff; color:#0a66c2; border:1.5px solid #0a66c2; }
+  .pbtn.ghost:hover { background:#eaf3fc; box-shadow:inset 0 0 0 1px #0a66c2; }
+  .pbtn.subtle { background:#fff; color:#64748b; border:1.5px solid #94a3b8; }
+  .pbtn.subtle:hover { background:#f1f5f9; box-shadow:inset 0 0 0 1px #64748b; }
+
+  /* EDIT mode affordances */
+  .pcard.editing [contenteditable="true"] { outline:2px dashed #0a66c2; outline-offset:3px; border-radius:4px;
+            background:#f0f7ff; padding:1px 4px; margin-left:-4px; }
+  .pcard.editing .avatar-cam { display:flex; }
+  .pcard.editing .banner-cam { display:inline-flex; }
+  .banner-cam { display:none; }
+  .cam-chip { background:rgba(15,23,42,.55); color:#fff; border:0; border-radius:999px; cursor:pointer;
+              padding:6px 12px; font-size:.78rem; font-weight:700; display:inline-flex; align-items:center; gap:6px; }
+  .cam-chip svg { width:15px; height:15px; }
+  .cam-chip:hover { background:rgba(15,23,42,.75); }
+
+  /* ---- MOBILE reflow: shared by the toggle (.is-mobile) AND real @media ---- */
+  .pcard.is-mobile { max-width:340px; }
+  .pcard.is-mobile .banner { height:100px; }
+  .pcard.is-mobile .avatar-wrap { width:88px; height:88px; margin-top:-48px; }
+  .pcard.is-mobile .avatar-fallback { font-size:1.7rem; }
+  .pcard.is-mobile .pname { font-size:1.2rem; }
+  .pcard.is-mobile .pheadline { font-size:.9rem; }
+  .pcard.is-mobile .pactions { flex-direction:column; align-items:stretch; }
+  .pcard.is-mobile .pbtn { justify-content:center; width:100%; }
+  @media (max-width:560px){
+    .pcard .banner { height:100px; }
+    .pcard .avatar-wrap { width:88px; height:88px; margin-top:-48px; }
+    .pcard .avatar-fallback { font-size:1.7rem; }
+    .pcard .pname { font-size:1.2rem; }
+    .pcard .pactions { flex-direction:column; align-items:stretch; }
+    .pcard .pbtn { justify-content:center; width:100%; }
+  }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost.on { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .pcard { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 39</div>
+      <h1 class="text-xl font-bold">💼 LinkedIn Profile Header — The Signature Banner-and-Avatar Overlap: A Full-Bleed Cover Photo, a Circular Avatar Pulled Up Over Its Bottom Edge With a White Ring and z-index, an Editable Name / Headline / Location, Photos You Swap From Disk via Object URLs, an #OPEN&nbsp;TO&nbsp;WORK Ring, and a Header That Restacks on Mobile</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Edit your name and headline in place, drop in a cover photo and an avatar, flip to a phone width — the header that fronts every profile on the web.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">The <strong>profile header</strong> is one of the most copied layouts online — LinkedIn, X, Facebook, GitHub, Notion all wear the same hat: a <strong>full-bleed banner</strong> with a <strong>circular avatar pulled up over its bottom edge</strong>. The whole trick is one negative margin plus a <code>z-index</code>, and a <strong>white ring</strong> (a 4px border) that cuts the avatar cleanly out of the photo behind it. Both images use <code>object-fit:&nbsp;cover</code> so any picture fills its frame without stretching. Hit <strong>Edit</strong> to change the name, headline and location right on the card (they are <code>contenteditable</code>), tap the camera chips to <strong>swap the banner and avatar</strong> from your own files (read straight into an <em>object URL</em>), toggle <strong>Open to</strong> for the green <span style="color:#01754f;font-weight:700">#OPEN&nbsp;TO&nbsp;WORK</span> ring, and press <strong>Mobile</strong> to watch the header <strong>restack</strong>. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <!-- controls -->
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <button id="editBtn" class="btn-ghost">✎ Edit profile</button>
+              <span class="text-slate-300">|</span>
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">View</span>
+              <button id="vpDesktop" class="btn-ghost on" data-vp="desktop">🖥 Desktop</button>
+              <button id="vpMobile"  class="btn-ghost" data-vp="mobile">📱 Mobile</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="pcard" id="pcard" role="region" aria-label="Profile header">
+                <!-- banner -->
+                <div class="banner" id="banner">
+                  <img id="bannerImg" alt="Profile banner" style="display:none" />
+                  <div class="banner-cam">
+                    <button class="cam-chip" id="bannerCam" type="button">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      Change banner
+                    </button>
+                  </div>
+                </div>
+
+                <div class="pbody">
+                  <!-- avatar: pulled up over the banner -->
+                  <div class="avatar-wrap" id="avatarWrap">
+                    <div class="avatar-fallback" id="avatarFallback">AR</div>
+                    <img class="avatar" id="avatarImg" alt="Profile photo" style="display:none" />
+                    <button class="avatar-cam" id="avatarCam" type="button" aria-label="Change profile photo">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </button>
+                    <span class="otw-pill">#OPEN TO WORK</span>
+                  </div>
+
+                  <!-- identity -->
+                  <h3 class="pname" id="pname" contenteditable="false" spellcheck="false">Alex Rivera</h3>
+                  <p class="pheadline" id="pheadline" contenteditable="false" spellcheck="false">Senior Product Designer · Design systems, prototyping &amp; delightful micro-interactions</p>
+                  <div class="pmeta">
+                    <span class="company">Northwind Studio</span><span>·</span>
+                    <span class="ploc" id="ploc" contenteditable="false" spellcheck="false">San Francisco Bay Area</span><span>·</span>
+                    <a href="#" onclick="return false" style="color:#0a66c2;font-weight:600;text-decoration:none">Contact info</a>
+                  </div>
+                  <div class="pmeta"><span class="pconn" id="pconn">500+ connections</span></div>
+
+                  <div class="pmutual">
+                    <span class="mfaces">
+                      <span style="background:linear-gradient(135deg,#f43f5e,#ec4899)"></span>
+                      <span style="background:linear-gradient(135deg,#0ea5e9,#3b82f6)"></span>
+                      <span style="background:linear-gradient(135deg,#10b981,#14b8a6)"></span>
+                    </span>
+                    <span>Priya, Marcus &amp; <strong>10 other mutual connections</strong></span>
+                  </div>
+
+                  <!-- actions -->
+                  <div class="pactions">
+                    <button class="pbtn primary" id="openBtn" aria-pressed="false">Open to</button>
+                    <button class="pbtn ghost" id="addBtn">Add profile section</button>
+                    <button class="pbtn subtle" id="moreBtn">More</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- hidden file inputs -->
+            <input type="file" id="bannerFile" accept="image/*" class="sr-only" aria-hidden="true" tabindex="-1" />
+            <input type="file" id="avatarFile" accept="image/*" class="sr-only" aria-hidden="true" tabindex="-1" />
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Header state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roMode" class="text-2xl font-bold text-slate-800">Viewing</span>
+                <span class="text-xs text-slate-400 font-semibold">tap Edit</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">name length</span><span id="roName" class="pill">11</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">headline length</span><span id="roHead" class="pill">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">location</span><span id="roLoc" class="pill">set</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">open to work</span><span id="roOtw" class="pill">off</span></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 flex justify-between text-center">
+                <div><div id="roBanner" class="text-lg font-bold text-slate-700">default</div><div class="text-xs text-slate-400 font-semibold">banner</div></div>
+                <div><div id="roAvatar" class="text-lg font-bold text-slate-700">initials</div><div class="text-xs text-slate-400 font-semibold">avatar</div></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200">
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-slate-400 font-semibold">viewport</span>
+                  <span id="roVp" class="pill">desktop</span>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-slate-400 font-semibold">avatar pull-up</span>
+                  <span id="roPull" class="pill">-72px</span>
+                </div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">The overlap is <strong>one negative margin</strong> on the avatar (<code id="roPull2">-72px</code>) plus a <strong>z-index</strong> to sit it over the banner, and a <strong>4px white border</strong> for the ring. Nothing is positioned by hand.</p>
+              <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every profile you have ever opened wears this exact header: a wide <strong>cover image</strong>, a <strong>round avatar overlapping its lower edge</strong>, then a name, a one-line headline, a place, and a row of actions. The magic is deliberately small — a banner box, an avatar with a <strong>negative top margin</strong> and a <strong>white ring</strong>, and <code>object-fit: cover</code> so real photos never stretch. Make the text <code>contenteditable</code> and it edits in place; read a chosen file into an <strong>object URL</strong> and the photo swaps instantly; let the row of buttons <strong>wrap</strong> and shrink the avatar and the whole thing folds down to a phone. That is the entire pattern.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a profile header works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A profile header looks like a lot — a cover photo, a floating round avatar with a crisp white ring, editable text, swappable images, a green open-to-work badge, a layout that folds onto a phone — but underneath it is a handful of honest CSS tricks and about a hundred lines of vanilla JS. The overlap that makes the whole thing recognisable is <strong>one negative margin plus a <code>z-index</code></strong>; the clean edge is a <strong>4px white border</strong>; photos never stretch because of <strong><code>object-fit: cover</code></strong>. Editing is <code>contenteditable</code> text synced to a read-out; swapping a photo is a hidden <code>&lt;input type="file"&gt;</code> read into a <strong>object URL</strong>; and going mobile is a flex row that <strong>wraps</strong> plus a couple of shrunk sizes. No framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup: a banner, then a body with the avatar first</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The structure mirrors what you see: a <code>.banner</code> box holding a cover <code>&lt;img&gt;</code>, then a <code>.pbody</code> that starts with the <code>.avatar-wrap</code> and continues with the name, headline, meta and action buttons. The avatar lives <em>inside the body</em>, not the banner — that is what lets a negative margin pull it up while everything below flows normally underneath it. The whole card is a labelled <code>role="region"</code>.</p>
+        <div class="relative"><pre>&lt;div class="pcard" role="region" aria-label="Profile header"&gt;
+  &lt;div class="banner"&gt;&lt;img id="bannerImg" alt="Profile banner"&gt;&lt;/div&gt;
+  &lt;div class="pbody"&gt;
+    &lt;div class="avatar-wrap"&gt;
+      &lt;img class="avatar" id="avatarImg" alt="Profile photo"&gt;
+    &lt;/div&gt;
+    &lt;h3 class="pname"&gt;Alex Rivera&lt;/h3&gt;
+    &lt;p  class="pheadline"&gt;Senior Product Designer…&lt;/p&gt;
+    &lt;div class="pactions"&gt;…Open to · Add section · More…&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The overlap: one negative margin + a z-index</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the signature move. Give the avatar a fixed size (say 128px) and a <strong>negative <code>margin-top</code></strong> a little more than half its height — <code>-72px</code> — so it climbs up and straddles the banner's bottom edge, roughly half over the photo and half over the white body. A <code>z-index</code> guarantees it paints <em>above</em> the banner. Because the avatar sits in normal flow, the name and everything after it simply start below where the avatar ends — no absolute positioning, no magic numbers to keep two layers in sync. (Absolute positioning is the alternative, but the negative-margin version reflows for free.)</p>
+        <div class="relative"><pre>.banner      { height:140px; }              /* the photo strip   */
+.avatar-wrap { width:128px; height:128px;   /* fixed circle      */
+               margin-top:-72px;            /* &lt;- pull UP over it */
+               position:relative; z-index:2;/* &lt;- paint on top    */ }
+/* half the avatar (64px) + a little = 72px of overlap */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">The white ring: a border cuts the avatar out of the photo</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Sitting a round photo directly on a busy banner looks muddy. A <strong>4px white border</strong> on the avatar (plus a soft shadow) reads as a clean ring that lifts the face off whatever is behind it — the same device Twitter and GitHub use. Because <code>border-radius:50%</code> makes the element a circle, the border becomes a ring automatically. Swap the ring colour to green and you have LinkedIn's <em>#OPEN TO WORK</em> state for free.</p>
+        <div class="relative"><pre>.avatar {
+  border-radius:50%;
+  border:4px solid #fff;                 /* the ring */
+  box-shadow:0 2px 8px rgba(15,23,42,.18);
+  object-fit:cover;                       /* see step 4 */
+}
+.avatar-wrap.otw .avatar { border-color:#01754f; }  /* open to work */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">object-fit: cover — real photos, no stretch</h3></div>
+        <p class="text-sm text-slate-600 mb-3">People upload photos of every shape. If you let an <code>&lt;img&gt;</code> fill a fixed box it will squash. <code>object-fit: cover</code> tells the image to fill its frame while <em>keeping its aspect ratio</em>, cropping the overflow — exactly like <code>background-size: cover</code> but on a real <code>&lt;img&gt;</code> (so it stays accessible and has <code>alt</code> text). Set it on both the banner and the avatar and any picture, portrait or landscape, looks intentional.</p>
+        <div class="relative"><pre>.banner img { width:100%; height:100%; object-fit:cover; }
+.avatar     { width:100%; height:100%; object-fit:cover; }
+/* fill the frame, keep aspect ratio, crop the excess —
+   a tall selfie and a wide landscape both look right */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Edit in place: contenteditable behind a toggle</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rather than a separate form, the name, headline and location are the <em>same</em> elements you read — they just become editable. One <strong>Edit</strong> button flips a boolean, toggles <code>contenteditable</code> on those three nodes, and adds an <code>.editing</code> class to the card so CSS can reveal a dashed outline and the camera chips. Press it again and the outlines vanish. The text you see is the text you edit; there is no second copy to keep in sync.</p>
+        <div class="relative"><pre>let editing = false;
+const fields = [pname, pheadline, ploc];
+
+editBtn.addEventListener("click", () => {
+  editing = !editing;
+  pcard.classList.toggle("editing", editing);
+  fields.forEach(el => el.contentEditable = editing);   // same nodes, now editable
+  editBtn.textContent = editing ? "✓ Done" : "✎ Edit profile";
+  if (editing) pname.focus();
+  render();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Live sync: type → read-out updates instantly</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because the fields are real DOM nodes, an <code>input</code> listener fires on every keystroke. Read their <code>textContent</code>, and update the side panel — name length, headline length, whether a location is set. This is the same "the screen is a function of state" idea as any live form: one <code>render()</code> derives every displayed number from the current text, so nothing can drift out of date.</p>
+        <div class="relative"><pre>[pname, pheadline, ploc].forEach(el =>
+  el.addEventListener("input", render));
+
+function render(){
+  roName.textContent = pname.textContent.trim().length;
+  roHead.textContent = pheadline.textContent.trim().length;
+  roLoc.textContent  = ploc.textContent.trim() ? "set" : "empty";
+  roMode.textContent = editing ? "Editing" : "Viewing";
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Swap a photo: a file input → an object URL</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A camera chip is just a button that clicks a hidden <code>&lt;input type="file" accept="image/*"&gt;</code>. When a file is chosen, <code>URL.createObjectURL(file)</code> hands you a tiny <code>blob:</code> URL that points straight at the picked file in memory — no upload, no base64 — and you drop it into the <code>&lt;img&gt;</code>'s <code>src</code>. Always <code>revokeObjectURL</code> the previous one so the browser can free it. (<code>FileReader.readAsDataURL</code> is the other route; it gives a self-contained data URL but a much larger string.)</p>
+        <div class="relative"><pre>bannerCam.addEventListener("click", () => bannerFile.click());
+
+let lastBanner = null;
+bannerFile.addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (lastBanner) URL.revokeObjectURL(lastBanner);   // free the old blob
+  lastBanner = URL.createObjectURL(file);            // blob:… object URL
+  bannerImg.src = lastBanner;
+  bannerImg.style.display = "block";
+  render();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Responsive: let the buttons wrap, shrink the avatar</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Going mobile needs no new markup. The action row is a <code>flex</code> container, so on a narrow card it <strong>wraps</strong>; a <code>@media</code> query (mirrored here by an <code>.is-mobile</code> class so you can preview it with a button) shrinks the banner and avatar, drops the negative margin to match, scales the name down, and switches the buttons to a full-width vertical stack. Same DOM, two layouts — the header just folds.</p>
+        <div class="relative"><pre>.pactions { display:flex; flex-wrap:wrap; gap:8px; }   /* wraps when tight */
+
+@media (max-width:560px){
+  .banner       { height:100px; }
+  .avatar-wrap  { width:88px; height:88px; margin-top:-48px; } /* smaller + less pull */
+  .pname        { font-size:1.2rem; }
+  .pactions     { flex-direction:column; align-items:stretch; }
+  .pbtn         { width:100%; justify-content:center; }        /* full-width stack */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">The green ring + accessibility finish</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The <strong>Open to</strong> button toggles an <code>.otw</code> class that turns the ring green and reveals a <code>#OPEN TO WORK</code> pill, mirrored to <code>aria-pressed</code>. Every image carries real <code>alt</code> text; the camera controls are focusable buttons with labels; and a visually-hidden <code>aria-live</code> region announces each change ("Banner updated.", "Open to work: on.") so a screen-reader user follows along. That is the whole header — a negative margin, a white ring, <code>object-fit</code>, editable text, an object URL, and a flex row that wraps.</p>
+        <div class="relative"><pre>openBtn.addEventListener("click", () => {
+  const on = avatarWrap.classList.toggle("otw");
+  openBtn.setAttribute("aria-pressed", on);
+  openBtn.classList.toggle("on", on);
+  announce("Open to work: " + (on ? "on" : "off") + ".");
+  render();
+});
+function announce(msg){ live.textContent = msg; }   // aria-live region</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 39 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built the profile header that fronts LinkedIn, X, Facebook and GitHub. The whole thing rests on a few honest tricks: the avatar's <strong>negative margin + <code>z-index</code></strong> to straddle the banner, a <strong>4px white ring</strong> to cut it out cleanly, and <strong><code>object-fit: cover</code></strong> so any photo fits. Then it comes alive — <code>contenteditable</code> text synced to a read-out, a hidden file input read into an <strong>object URL</strong> to swap photos with no upload, an <em>#OPEN TO WORK</em> ring, and a flex row that <strong>wraps</strong> to fold the header onto a phone. <strong>👉 Tomorrow — Day 40: Spotify playlist (a track table with hover-reveal row buttons).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== LINKEDIN PROFILE HEADER =====
+const pcard      = document.getElementById("pcard");
+const banner     = document.getElementById("banner");
+const bannerImg  = document.getElementById("bannerImg");
+const avatarWrap = document.getElementById("avatarWrap");
+const avatarImg  = document.getElementById("avatarImg");
+const avatarFallback = document.getElementById("avatarFallback");
+const pname      = document.getElementById("pname");
+const pheadline  = document.getElementById("pheadline");
+const ploc       = document.getElementById("ploc");
+const editBtn    = document.getElementById("editBtn");
+const openBtn    = document.getElementById("openBtn");
+const addBtn     = document.getElementById("addBtn");
+const moreBtn    = document.getElementById("moreBtn");
+const bannerCam  = document.getElementById("bannerCam");
+const avatarCam  = document.getElementById("avatarCam");
+const bannerFile = document.getElementById("bannerFile");
+const avatarFile = document.getElementById("avatarFile");
+const vpDesktop  = document.getElementById("vpDesktop");
+const vpMobile   = document.getElementById("vpMobile");
+const live       = document.getElementById("live");
+// read-out
+const roMode = document.getElementById("roMode"), roName = document.getElementById("roName");
+const roHead = document.getElementById("roHead"), roLoc = document.getElementById("roLoc");
+const roOtw  = document.getElementById("roOtw"), roBanner = document.getElementById("roBanner");
+const roAvatar = document.getElementById("roAvatar"), roVp = document.getElementById("roVp");
+const roPull = document.getElementById("roPull"), roPull2 = document.getElementById("roPull2");
+
+let editing = false;
+let bannerCustom = false, avatarCustom = false;
+let lastBannerUrl = null, lastAvatarUrl = null;
+const fields = [pname, pheadline, ploc];
+
+function announce(msg){ live.textContent = msg; }
+
+// derive the avatar initials from the name (fallback when no photo)
+function initials(name){
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
+// the read-out is a pure function of the current header state
+function render(){
+  roMode.textContent = editing ? "Editing" : "Viewing";
+  roMode.style.color = editing ? "#0a66c2" : "#0f172a";
+  roName.textContent = pname.textContent.trim().length;
+  roHead.textContent = pheadline.textContent.trim().length;
+  const hasLoc = ploc.textContent.trim().length > 0;
+  roLoc.textContent = hasLoc ? "set" : "empty";
+  roLoc.className = "pill" + (hasLoc ? " g" : " r");
+  const otw = avatarWrap.classList.contains("otw");
+  roOtw.textContent = otw ? "on" : "off";
+  roOtw.className = "pill" + (otw ? " g" : "");
+  roBanner.textContent = bannerCustom ? "custom" : "default";
+  roAvatar.textContent = avatarCustom ? "photo" : "initials";
+  if (!avatarCustom) avatarFallback.textContent = initials(pname.textContent);
+  const mobile = pcard.classList.contains("is-mobile");
+  roVp.textContent = mobile ? "mobile" : "desktop";
+  const pull = mobile ? "-48px" : "-72px";
+  roPull.textContent = pull; roPull2.textContent = pull;
+}
+
+// ---- edit toggle: same nodes become contenteditable ----
+editBtn.addEventListener("click", () => {
+  editing = !editing;
+  pcard.classList.toggle("editing", editing);
+  fields.forEach(el => el.contentEditable = editing ? "true" : "false");
+  editBtn.textContent = editing ? "✓ Done" : "✎ Edit profile";
+  editBtn.classList.toggle("on", editing);
+  if (editing){ pname.focus(); announce("Editing your profile header."); }
+  else announce("Saved. Viewing your profile.");
+  render();
+});
+
+// keep the read-out honest on every keystroke
+fields.forEach(el => el.addEventListener("input", render));
+// Enter in the single-line fields should not insert a newline
+[pname, ploc].forEach(el => el.addEventListener("keydown", e => {
+  if (e.key === "Enter"){ e.preventDefault(); el.blur(); }
+}));
+
+// ---- swap the banner: hidden file input -> object URL ----
+bannerCam.addEventListener("click", () => bannerFile.click());
+bannerFile.addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (lastBannerUrl) URL.revokeObjectURL(lastBannerUrl);   // free the previous blob
+  lastBannerUrl = URL.createObjectURL(file);               // blob: object URL
+  bannerImg.src = lastBannerUrl;
+  bannerImg.style.display = "block";
+  bannerCustom = true;
+  announce("Banner updated.");
+  render();
+});
+
+// ---- swap the avatar ----
+avatarCam.addEventListener("click", () => avatarFile.click());
+avatarFile.addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (lastAvatarUrl) URL.revokeObjectURL(lastAvatarUrl);
+  lastAvatarUrl = URL.createObjectURL(file);
+  avatarImg.src = lastAvatarUrl;
+  avatarImg.style.display = "block";
+  avatarFallback.style.display = "none";
+  avatarCustom = true;
+  announce("Profile photo updated.");
+  render();
+});
+
+// ---- Open to work: green ring + pill ----
+openBtn.addEventListener("click", () => {
+  const on = avatarWrap.classList.toggle("otw");
+  openBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  openBtn.classList.toggle("on", on);
+  openBtn.textContent = on ? "Open to ✓" : "Open to";
+  announce("Open to work: " + (on ? "on" : "off") + ".");
+  render();
+});
+
+// the two ghost buttons: light demonstrative feedback
+addBtn.addEventListener("click", () => announce("Add profile section menu would open here."));
+moreBtn.addEventListener("click", () => announce("More actions menu would open here."));
+
+// ---- viewport toggle: preview the mobile reflow without resizing ----
+function setViewport(mobile){
+  pcard.classList.toggle("is-mobile", mobile);
+  vpMobile.classList.toggle("on", mobile);
+  vpDesktop.classList.toggle("on", !mobile);
+  announce(mobile ? "Mobile layout — header restacked." : "Desktop layout.");
+  render();
+}
+vpDesktop.addEventListener("click", () => setViewport(false));
+vpMobile.addEventListener("click", () => setViewport(true));
+
+// ---- init ----
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a profile header really is",
+   why:"Strip the branding off LinkedIn, X, Facebook, GitHub or Notion and the top of every profile is the same object: a wide cover image with a round avatar sitting over its lower edge, followed by a name, a one-line headline, a place, and a row of actions. It is one of the most reused layouts on the web because it does one job perfectly — it identifies a person or page at a glance. Everything that looks bespoke about a given site is skin: the shapes, spacing and colours change, but the skeleton is a banner box, an overlapping circular avatar, and a stacked identity block. Learn this one pattern and you can rebuild the header of almost any social product. The rest of these steps are the small, honest techniques that make it work.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">the header = banner + overlap avatar + identity<br><br>&#9484;&#9472;&#9472;&#9472; banner (cover photo) &#9472;&#9472;&#9488;<br>&#9474;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9474;<br>&#9492;&#9472;&#9472;&#9472;(&#9679;)&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9679; &#8592; avatar straddles the edge<br>&nbsp;&nbsp;&nbsp;&nbsp;Name<br>&nbsp;&nbsp;&nbsp;&nbsp;Headline · Location<br>&nbsp;&nbsp;&nbsp;&nbsp;[Open to] [Add] [More]</div>',
+   code:"// LinkedIn · X · Facebook · GitHub · Notion — same skeleton\n// banner  (wide cover image)\n// avatar  (circle overlapping the banner's bottom)\n// identity (name, headline, location)\n// actions (a row of buttons)\n// change the skin, keep the bones" },
+ { title:"2. The overlap: negative margin + z-index",
+   why:"The move that makes the header recognisable is the avatar straddling the banner's bottom edge. The cleanest way to do it is to keep the avatar in normal document flow and give it a negative top margin a bit larger than half its height. A 128px avatar with margin-top:-72px climbs up so roughly its top half sits over the photo and its bottom half over the white body. A z-index makes sure it paints above the banner rather than being covered by it. The big win over absolute positioning is that everything below the avatar — the name, the buttons — simply flows underneath it automatically, so the layout stays correct at any width with no coordinates to maintain. Absolute positioning also works, but then you must reserve space by hand and re-tune it for every breakpoint.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">avatar 128px, margin-top:-72px<br><br>banner bottom ───────────<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9688; 64px over the photo &#8593;<br>&nbsp;&nbsp;&nbsp;&nbsp;&#9689; 64px over the body &#8595;<br><br>z-index:2 &#8594; paints ON TOP<br>flow keeps the name below it</div>',
+   code:".banner      { height:140px; }\n.avatar-wrap {\n  width:128px; height:128px;\n  margin-top:-72px;        // pull up over the banner\n  position:relative;\n  z-index:2;               // paint above the banner\n}\n// half of 128 = 64, +8 for a nice straddle = 72" },
+ { title:"3. The white ring: a border that separates",
+   why:"Placing a round photo straight onto a colourful banner looks muddy where the two meet. The universal fix is a thick border in the page's background colour — usually white — so the avatar reads as a disc punched cleanly out of the banner. Because the element already has border-radius:50% to be a circle, a solid border becomes a ring with zero extra work; a soft drop shadow adds just enough lift. This is not decoration for its own sake, it is contrast: the ring guarantees the avatar's edge is legible over any photo behind it. And because the ring is just a border colour, states like LinkedIn's green #OPEN TO WORK are a one-line change — swap white for green and the same ring signals availability.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">border = the ring<br><br>border-radius:50% &#8594; circle<br>border:4px solid #fff &#8594; ring<br>box-shadow &#8594; subtle lift<br><br>white ring &#8594; normal<br><span style="color:#01754f">green ring &#8594; #OPEN TO WORK</span></div>',
+   code:".avatar {\n  border-radius:50%;\n  border:4px solid #fff;                 // the ring\n  box-shadow:0 2px 8px rgba(15,23,42,.18);\n}\n.avatar-wrap.otw .avatar {\n  border-color:#01754f;                  // open to work\n}" },
+ { title:"4. object-fit: cover — fit any photo",
+   why:"Users upload photos of every aspect ratio: tall selfies, wide landscapes, square crops. If you drop such an image into a fixed-size box with plain width and height, the browser stretches it to fit and faces distort. object-fit:cover solves this at the CSS layer: the image scales to completely fill its frame while preserving its own aspect ratio, and whatever spills past the edges is cropped. It behaves like background-size:cover but on a real <img> element, which matters because a real image keeps its alt text and stays accessible and printable. Apply it to both the banner and the avatar and every uploaded picture — no matter its shape — looks deliberately framed instead of squashed. Pair it with object-position if you want to control which part survives the crop.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">fill the frame · keep ratio · crop excess<br><br>tall photo&nbsp;&nbsp;&#9633;&#8942;&#8594; &#9635; (centre crop)<br>wide photo &#9647;&#8594; &#9635; (centre crop)<br><br>object-fit:cover<br>(like background-size:cover,<br>&nbsp;but on a real &lt;img&gt; with alt)</div>',
+   code:".banner img { width:100%; height:100%; object-fit:cover; }\n.avatar     { width:100%; height:100%; object-fit:cover; }\n// optional: object-position:center; // choose the crop focus" },
+ { title:"5. Edit in place with contenteditable",
+   why:"Modern profile UIs let you edit text where it lives instead of opening a separate form. The lightweight way to do that with no framework is the contenteditable attribute: set it to true on an element and the user can type directly into it. The trick that keeps this clean is that the name, headline and location you read are the very same nodes you edit — one Edit button flips a boolean, sets contentEditable on those three elements, and adds an .editing class to the card so CSS can show dashed outlines and reveal the photo-swap controls. Toggling it off removes the outlines. There is no hidden mirror of the data and no re-render of the text, because the DOM node is the single source of truth for what it says.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one Edit button flips a boolean<br><br>editing=false &#8594; plain text<br>editing=true&nbsp;&#8594; contenteditable + dashed outline<br><br>same node = read AND edit<br>no second copy to sync</div>',
+   code:"let editing = false;\nconst fields = [pname, pheadline, ploc];\neditBtn.onclick = () => {\n  editing = !editing;\n  pcard.classList.toggle('editing', editing);\n  fields.forEach(el => el.contentEditable = editing);\n  editBtn.textContent = editing ? '✓ Done' : '✎ Edit';\n};" },
+ { title:"6. Live sync: the read-out is a function of state",
+   why:"Once the fields are editable, an input event fires on every keystroke, which is the hook for keeping anything derived from the text up to date. Here a small render() reads textContent from each field and writes the length of the name, the length of the headline, and whether a location is present into the side panel. This is the same discipline you would use for a character counter or a form-completeness meter: never store a computed value, derive it from the source on each change so it can never be stale. Because one render() owns all the derived numbers, adding another readout later — a completeness percentage, a warning when the headline is empty — is just one more line inside that single function.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">keystroke &#8594; input event &#8594; render()<br><br>name.textContent.length &#8594; 11<br>headline.textContent.length &#8594; 62<br>location set? &#8594; yes / no<br><br>derive, never store</div>',
+   code:"[pname, pheadline, ploc].forEach(el =>\n  el.addEventListener('input', render));\n\nfunction render(){\n  roName.textContent = pname.textContent.trim().length;\n  roHead.textContent = pheadline.textContent.trim().length;\n  roLoc.textContent  = ploc.textContent.trim() ? 'set' : 'empty';\n}" },
+ { title:"7. Swapping photos with an object URL",
+   why:"To let someone change the banner or avatar you do not need a server. A camera button clicks a hidden <input type='file' accept='image/*'>; when a file is chosen, URL.createObjectURL(file) returns a short blob: URL that points at the selected file already sitting in the browser's memory. Assign it to the <img>'s src and the photo appears instantly — no upload, no base64 string. The one responsibility this hands you is cleanup: each object URL holds a reference to the file, so before creating a new one you should revokeObjectURL the previous URL to let the browser release that memory. The alternative, FileReader.readAsDataURL, produces a self-contained data: URL you could save anywhere, but it is far larger and slower for simply previewing an image.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">hidden file input &#8594; object URL<br><br>button &#8594; input.click()<br>change &#8594; file = files[0]<br>URL.createObjectURL(file) &#8594; blob:&#8230;<br>img.src = that url<br><br>revokeObjectURL(old) &#8594; free memory</div>',
+   code:"cam.onclick = () => fileInput.click();\nlet last = null;\nfileInput.onchange = e => {\n  const file = e.target.files[0]; if (!file) return;\n  if (last) URL.revokeObjectURL(last);   // free the old blob\n  last = URL.createObjectURL(file);      // blob: object URL\n  img.src = last;                        // instant, no upload\n};" },
+ { title:"8. Responsive: the header folds onto a phone",
+   why:"A profile header must survive from a wide desktop column down to a narrow phone, and it can do so with no change to the markup. The action buttons live in a flex container with flex-wrap, so the instant there is not enough room they wrap to a second line on their own. A media query then handles the deliberate shrink: the banner gets shorter, the avatar gets smaller and its negative margin is reduced to match its new size, the name scales down, and the button row switches to a full-width vertical stack for easy thumb targets. The same DOM produces two layouts — desktop and mobile — purely from CSS reacting to width. Previewing it with a class toggle (as this demo does) is handy, but the real driver in production is the @media breakpoint.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">same DOM &#8594; two layouts<br><br>desktop: [Open to][Add][More] (row)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595; &lt; 560px<br>mobile:&nbsp;&nbsp;[ Open to ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[ Add ]&nbsp;&nbsp;&nbsp;(full-width stack)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ smaller banner & avatar</div>',
+   code:".pactions { display:flex; flex-wrap:wrap; }  // wraps when tight\n\n@media (max-width:560px){\n  .banner      { height:100px; }\n  .avatar-wrap { width:88px; height:88px; margin-top:-48px; }\n  .pname       { font-size:1.2rem; }\n  .pactions    { flex-direction:column; }\n  .pbtn        { width:100%; }        // full-width stack\n}" },
+ { title:"9. Accessibility: alt text, labels, a live region",
+   why:"A header that only works with a mouse and perfect eyesight is half-built. Every image needs real alt text so the banner and avatar are described, not skipped. The camera controls are genuine <button> elements with aria-labels, so they are reachable by keyboard and announced by a screen reader. The Open to button carries aria-pressed that mirrors its on/off state, so assistive tech announces the toggle correctly. Finally, a visually-hidden element with role='status' and aria-live='polite' receives a short sentence on every change — 'Banner updated.', 'Open to work: on.', 'Editing your profile.' — so a non-sighted user hears exactly what a sighted user sees change. None of this is bolted on afterwards; because every action already funnels through one handler, dropping in an announce() call is a single line each.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">every action &#8594; one announce()<br><br>&lt;img alt="Profile banner"&gt;<br>button aria-label="Change photo"<br>Open to &#8594; aria-pressed=true/false<br><br>aria-live: "Banner updated."<br>aria-live: "Open to work: on."</div>',
+   code:"// images describe themselves\n'<img class=\"avatar\" alt=\"Profile photo\">'\n// toggles announce their state\nopenBtn.setAttribute('aria-pressed', on);\n// one live region speaks every change\nfunction announce(msg){ live.textContent = msg; }\n// <div role=\"status\" aria-live=\"polite\" class=\"sr-only\">" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3500); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
