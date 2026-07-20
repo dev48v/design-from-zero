@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 38 — X / Twitter Feed</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== feed surface ===== */
+  .demo-frame { min-height:520px; background:#eef2f7; border:1px solid #e2e8f0; border-radius:16px;
+                padding:24px; display:flex; align-items:flex-start; justify-content:center; }
+  .feed { width:100%; max-width:440px; background:#fff; border:1px solid #e2e8f0; border-radius:18px;
+          overflow:hidden; box-shadow:0 12px 34px rgba(15,23,42,.10); }
+  .feed-head { padding:12px 16px; border-bottom:1px solid #eef2f7; font-weight:800; color:#0f172a;
+               display:flex; align-items:center; justify-content:space-between; }
+  .feed-head .n { font-size:.78rem; font-weight:600; color:#94a3b8; }
+
+  .avatar { width:44px; height:44px; border-radius:50%; flex-shrink:0; display:flex; align-items:center;
+            justify-content:center; color:#fff; font-weight:800; font-size:.9rem; letter-spacing:.03em; }
+
+  /* compose */
+  .compose { display:flex; gap:12px; padding:14px 16px; border-bottom:8px solid #f1f5f9; }
+  .compose-main { flex:1; min-width:0; }
+  .composer { width:100%; border:0; resize:none; font:inherit; font-size:1.08rem; color:#0f172a;
+              outline:none; background:transparent; line-height:1.4; }
+  .composer::placeholder { color:#94a3b8; }
+  .compose-bar { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:8px;
+                 padding-top:8px; border-top:1px solid #f1f5f9; }
+  .ring { transform:rotate(-90deg); }
+  .ring .track { stroke:#e2e8f0; }
+  .ring .prog  { stroke:#1d9bf0; transition:stroke-dashoffset .12s linear, stroke .12s; }
+  .ring-num { font-size:.78rem; font-weight:800; color:#64748b; min-width:30px; text-align:right; }
+  .post-btn { background:#1d9bf0; color:#fff; border:0; border-radius:999px; padding:8px 20px;
+              font-weight:800; font-size:.9rem; cursor:pointer; transition:background .12s; }
+  .post-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .post-btn:not(:disabled):hover { background:#1a8cd8; }
+
+  /* posts */
+  .post { display:flex; gap:12px; padding:14px 16px; border-bottom:1px solid #f1f5f9; animation:fadeIn .35s ease-out; }
+  .post:last-child { border-bottom:0; }
+  .post-main { flex:1; min-width:0; }
+  .post-head { display:flex; align-items:center; gap:5px; font-size:.92rem; flex-wrap:wrap; }
+  .post-name { font-weight:800; color:#0f172a; }
+  .post-handle, .post-dot, .post-time { color:#64748b; font-weight:500; }
+  .post-text { color:#0f172a; margin-top:2px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
+  .post-actions { display:flex; align-items:center; justify-content:space-between; max-width:300px; margin-top:10px; }
+  .act { display:inline-flex; align-items:center; gap:6px; background:none; border:0; cursor:pointer;
+         color:#64748b; font-size:.82rem; font-weight:600; padding:5px; border-radius:999px;
+         transition:color .12s, background .12s; }
+  .act svg { width:18px; height:18px; }
+  .act.reply:hover  { color:#1d9bf0; background:#e8f5fd; }
+  .act.repost:hover { color:#00ba7c; background:#e6f9f1; }
+  .act.like:hover   { color:#f91880; background:#fdeaf3; }
+  .act.reply.on  { color:#1d9bf0; }
+  .act.repost.on { color:#00ba7c; }
+  .act.like.on   { color:#f91880; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .cmeter { position:relative; height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+  .cmeter i { position:absolute; inset:0 auto 0 0; width:0; background:#1d9bf0; border-radius:999px;
+              transition:width .12s linear, background .12s; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .post { animation:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 38</div>
+      <h1 class="text-xl font-bold">🐦 X / Twitter Feed — A Reverse-Chronological Timeline: Seeded Posts Newest-First, a Compose Box That Prepends a New Post Behind a 280-Character Ring, Optimistic Like / Repost / Reply Counts That Toggle Instantly, and Relative Timestamps Derived From One Number</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Write a post and watch it jump to the top. Like it, repost it, reply — the counts flip the instant you click.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">A working <strong>X / Twitter feed</strong> built from scratch in vanilla JS — the timeline that every social app copies. One idea makes it work: the feed is <strong>just an array of post objects</strong>, and what you see on screen is a <em>pure function</em> of that array. Sort it <strong>newest-first</strong> and it is a reverse-chronological timeline; <strong>unshift</strong> a new post and it appears at the top; flip a <code>liked</code> boolean and nudge its count by one and the heart fills <strong>optimistically</strong> — no round-trip, no reload. Even the "<span class="text-slate-700 font-semibold">5m</span>" and "<span class="text-slate-700 font-semibold">2h</span>" timestamps are just arithmetic on one number: <code>now − posted-at</code>. Type in the box (the <span class="text-sky-600 font-bold">280</span> ring fills, then turns amber, then red), hit <strong>Post</strong> or <kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd>, and tap the action buttons. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="demo-frame">
+              <div class="feed" role="region" aria-label="Home timeline">
+                <div class="feed-head"><span>Home</span><span class="n">latest first</span></div>
+
+                <!-- compose -->
+                <div class="compose">
+                  <div class="avatar" style="background:linear-gradient(135deg,#6366f1,#a855f7)">YO</div>
+                  <div class="compose-main">
+                    <textarea id="composer" class="composer" rows="2" placeholder="What's happening?" aria-label="Post text" aria-describedby="ringNum"></textarea>
+                    <div class="compose-bar">
+                      <span class="ring-num" id="ringNum" aria-live="off"></span>
+                      <svg class="ring" id="ring" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+                        <circle class="track" cx="14" cy="14" r="11" fill="none" stroke-width="3"></circle>
+                        <circle class="prog" id="ringProg" cx="14" cy="14" r="11" fill="none" stroke-width="3" stroke-linecap="round"></circle>
+                      </svg>
+                      <button id="postBtn" class="post-btn" disabled>Post</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- timeline injected here -->
+                <div id="feed"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Compose budget</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roRemain" class="text-2xl font-bold text-slate-800">280</span>
+                <span class="text-xs text-slate-400 font-semibold">of <span class="font-bold">280</span> left</span>
+              </div>
+
+              <div class="mt-3">
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-slate-400 font-semibold">characters typed</span>
+                  <span class="text-slate-400 font-semibold">280</span>
+                </div>
+                <div class="cmeter"><i id="cfill"></i></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">characters</span><span id="roChars" class="pill">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">remaining</span><span id="roRem" class="pill">280</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">status</span><span id="roState" class="pill">empty</span></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 flex justify-between text-center">
+                <div><div id="roPosts" class="text-2xl font-bold text-sky-500">0</div><div class="text-xs text-slate-400 font-semibold">posts</div></div>
+                <div><div id="roLikes" class="text-2xl font-bold" style="color:#f91880">0</div><div class="text-xs text-slate-400 font-semibold">liked</div></div>
+                <div><div id="roReposts" class="text-2xl font-bold" style="color:#00ba7c">0</div><div class="text-xs text-slate-400 font-semibold">reposted</div></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 text-xs">
+                <div class="text-slate-400 font-semibold mb-1">newest at the top</div>
+                <div id="roNewest" class="font-bold text-slate-600">—</div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">The screen is a <code>render(state)</code>. Change the array — post, like, repost — and re-draw. Nothing on screen is edited in place.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Every timeline you scroll — X, Bluesky, Mastodon, a comments thread, a chat log, an activity feed — is this same shape: a list of records held in memory, <strong>sorted by time</strong>, rendered to a column of rows, with each row's little counters and its "3m ago" label <em>computed from the record</em> rather than stored as text. Interactions are <strong>optimistic</strong> — the UI trusts the click and updates instantly, reconciling with the server later — which is why liking feels weightless. The whole thing is a dozen lines: an array, a sort, a template, and one function that flips a flag and re-draws.</p>
+
+      <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How an X / Twitter feed works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A feed looks like a lot of moving parts — timestamps ticking, hearts filling, new posts sliding in — but underneath it is one array of plain objects and a single <code>render()</code> that draws whatever the array currently says. Keep the posts <strong>sorted newest-first</strong> and you have a reverse-chronological timeline; <code>unshift</code> a new object and it lands at the top; flip a <code>liked</code> boolean and adjust its count and re-draw, and the like registers <strong>optimistically</strong> with zero latency. Relative time is not stored, it is <em>derived</em> — <code>now − postedAt</code> turned into "now / 5m / 2h / 1d". The compose box counts toward <strong>280</strong> and disables Post when empty or over. One <code>toggle()</code> serves like, repost and reply; buttons and the keyboard share it; and labelled buttons plus a live region make it usable by everyone. ~120 lines of vanilla JS, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup: a compose box + an empty feed</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two regions and nothing more: a <code>.compose</code> box with a growing <code>&lt;textarea&gt;</code>, a character ring and a Post button; and an empty <code>#feed</code> column that JS fills. The whole thing is a labelled <code>role="region"</code>, and a visually-hidden <code>aria-live</code> region will speak each action ("Posted.", "Liked …") to a screen reader. Note there is no post markup here at all — every row is generated from the data.</p>
+        <div class="relative"><pre>&lt;div class="feed" role="region" aria-label="Home timeline"&gt;
+  &lt;div class="compose"&gt;
+    &lt;div class="avatar"&gt;YO&lt;/div&gt;
+    &lt;textarea id="composer" placeholder="What's happening?"&gt;&lt;/textarea&gt;
+    &lt;svg id="ring"&gt;…character ring…&lt;/svg&gt;
+    &lt;button id="postBtn" disabled&gt;Post&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;div id="feed"&gt;&lt;!-- posts injected here --&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="sr-only" role="status" aria-live="polite"&gt;&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The data model: one post object</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Everything the UI needs lives in a plain object. The identity fields (<code>name</code>, <code>handle</code>, avatar) render the header; <code>text</code> is the body; <code>time</code> is a millisecond timestamp that will become the relative label; and each action carries <em>both</em> a count and a boolean — <code>likes</code>/<code>liked</code>, <code>reposts</code>/<code>reposted</code>, <code>replies</code>/<code>replied</code> — because the button needs to show a number <em>and</em> whether <em>you</em> have toggled it. The <code>id</code> lets a click find its post again.</p>
+        <div class="relative"><pre>let uid = 1;
+const posts = [
+  { id: uid++, name:"Sarah Drasner", handle:"@sarah_edo", ini:"SD",
+    grad:"linear-gradient(135deg,#6366f1,#a855f7)",
+    text:"a timeline is just a sorted array.",
+    time: Date.now() - 8_000,        // 8 seconds ago
+    replies:12,  replied:false,
+    reposts:48,  reposted:false,
+    likes:302,   liked:false },
+  // …more, oldest last
+];</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Relative time: one number → "now / 5m / 2h"</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A feed never stores "3 minutes ago" as text — it stores a timestamp and <em>derives</em> the label every time it draws, so it is always correct even minutes later. Subtract the post's <code>time</code> from <code>Date.now()</code>, then walk the units: under 5s is "now", under a minute is seconds, then minutes, then hours, then days, and past a week you fall back to an actual date. Keep the real timestamp in a <code>title</code> so hovering shows the exact moment.</p>
+        <div class="relative"><pre>function relTime(ts){
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s &lt; 5)   return "now";
+  if (s &lt; 60)  return s + "s";
+  const m = Math.floor(s / 60); if (m &lt; 60) return m + "m";
+  const h = Math.floor(m / 60); if (h &lt; 24) return h + "h";
+  const d = Math.floor(h / 24); if (d &lt; 7)  return d + "d";
+  return new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Render the feed, newest-first</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the heart of it: <code>render</code> is a <em>pure function of the array</em>. Sort a copy by <code>time</code> descending so the newest post is first — that single line <em>is</em> "reverse-chronological" — then map each post to a row of HTML and drop it into <code>#feed</code>. Because we redraw the whole list from state, there is never any stale DOM to reconcile by hand: change the data, call <code>render</code>, done. User text is escaped (step 5) before it touches <code>innerHTML</code>.</p>
+        <div class="relative"><pre>const feed = document.getElementById("feed");
+
+function renderFeed(){
+  const ordered = [...posts].sort((a, b) =&gt; b.time - a.time); // newest first
+  feed.innerHTML = ordered.map(postHTML).join("");
+  updateReadout();
+}
+
+function postHTML(p){
+  return `&lt;article class="post" data-id="${p.id}"&gt;
+    &lt;div class="avatar" style="background:${p.grad}"&gt;${p.ini}&lt;/div&gt;
+    &lt;div class="post-main"&gt;
+      &lt;div class="post-head"&gt;
+        &lt;span class="post-name"&gt;${esc(p.name)}&lt;/span&gt;
+        &lt;span class="post-handle"&gt;${esc(p.handle)}&lt;/span&gt; &lt;span&gt;·&lt;/span&gt;
+        &lt;span class="post-time" data-time="${p.time}"&gt;${relTime(p.time)}&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class="post-text"&gt;${esc(p.text)}&lt;/div&gt;
+      ${actionsHTML(p)}
+    &lt;/div&gt;
+  &lt;/article&gt;`;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Escape the text — the post is user input</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The compose box lets anyone type <code>&lt;script&gt;</code> or <code>&amp;</code>, and we build rows with <code>innerHTML</code>, so every user-supplied string must be escaped first or the feed becomes an XSS hole. A tiny replacer swaps the five HTML-significant characters for entities. It costs one function and it is non-negotiable the moment real people can post — a lesson every social product learns early.</p>
+        <div class="relative"><pre>function esc(s){
+  return s.replace(/[&amp;&lt;&gt;"']/g, c =&gt; ({
+    "&amp;":"&amp;amp;", "&lt;":"&amp;lt;", "&gt;":"&amp;gt;",
+    '"':"&amp;quot;", "'":"&amp;#39;"
+  })[c]);
+}
+// esc("&lt;b&gt;hi&lt;/b&gt; &amp; bye")  →  "&amp;lt;b&amp;gt;hi&amp;lt;/b&amp;gt; &amp;amp; bye"</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The 280 counter: a ring that goes amber then red</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On every <code>input</code>, read the length, compute <code>remaining = 280 − length</code>, and drive an SVG progress ring by <code>length / 280</code> via <code>stroke-dashoffset</code>. Colour is a signal: blue while there is room, amber in the last 20 characters, red once you are over. Crucially we do <em>not</em> hard-cap the textarea — letting people run over (Post disabled, count negative) tells them exactly how much to trim, which feels better than a wall.</p>
+        <div class="relative"><pre>const MAX = 280, C = 2 * Math.PI * 11;   // ring circumference
+function updateComposer(){
+  const len = composer.value.length, remaining = MAX - len, over = len &gt; MAX;
+  ringProg.style.strokeDashoffset = C * (1 - Math.min(len, MAX) / MAX);
+  ringProg.style.stroke = over ? "#f4212e" : remaining &lt;= 20 ? "#f59e0b" : "#1d9bf0";
+  ringNum.textContent  = remaining &lt;= 20 ? remaining : "";   // show only near limit
+  postBtn.disabled = len === 0 || over;                      // empty or over → blocked
+  updateReadout();
+}
+composer.addEventListener("input", updateComposer);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Post: prepend a new object, re-draw</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Publishing is pure data work: build a fresh post object stamped with <code>Date.now()</code> and zeroed counters, then <code>unshift</code> it onto the array. Because <code>render</code> sorts by time, the new post — being the newest — lands at the very top; the <code>.post</code> fade-in animation makes it slide in. Clear the box, reset the counter, re-render, and announce it. That is the entire "reverse-chronological insert": add the newest item, sort, draw.</p>
+        <div class="relative"><pre>function publish(){
+  const text = composer.value.trim();
+  if (!text || text.length &gt; MAX) return;
+  posts.unshift({                       // newest → front of the array
+    id: uid++, name:"You", handle:"@you", ini:"YO", grad:MY_GRAD,
+    text, time: Date.now(),
+    replies:0, replied:false, reposts:0, reposted:false, likes:0, liked:false
+  });
+  composer.value = ""; updateComposer();
+  renderFeed();
+  announce("Posted. " + posts.length + " posts in the timeline.");
+  composer.focus();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Optimistic toggle: flip a flag, nudge a count</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Liking should feel free, so we update the model <em>immediately</em> and trust it — that is what "optimistic" means. Find the post by id, flip its boolean, and move its count by exactly ±1 in the same direction; re-render and the heart fills or empties with the new number. A real app would fire a request in the background and only roll this back if the server rejected it, but the instant local update is what makes the interaction feel weightless.</p>
+        <div class="relative"><pre>const FIELD = { like:["liked","likes"], repost:["reposted","reposts"], reply:["replied","replies"] };
+
+function toggle(id, kind){
+  const p = posts.find(x =&gt; x.id === id); if (!p) return;
+  const [flag, count] = FIELD[kind];
+  p[flag]   = !p[flag];                 // flip the boolean
+  p[count] += p[flag] ? 1 : -1;         // optimistic ±1
+  renderFeed();
+  announce((p[flag] ? "Toggled on " : "Toggled off ") + kind + " on " + p.name + "'s post.");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">One click handler + the keyboard, same path</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rather than wire a listener onto every button in every row — which breaks the moment you re-render — attach <em>one</em> click listener to <code>#feed</code> and let it <strong>delegate</strong>: find the clicked <code>.act</code>, read its <code>data-act</code> and the row's id, and call the shared <code>toggle()</code>. The compose Post button and a <kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> shortcut both call <code>publish()</code>. Every input funnels through one of two functions, so behaviour, animation and announcements are automatic and never duplicated.</p>
+        <div class="relative"><pre>feed.addEventListener("click", e =&gt; {
+  const btn = e.target.closest(".act"); if (!btn) return;
+  const id = +btn.closest(".post").dataset.id;
+  toggle(id, btn.dataset.act);          // one handler for all rows + actions
+});
+
+postBtn.addEventListener("click", publish);
+composer.addEventListener("keydown", e =&gt; {
+  if ((e.metaKey || e.ctrlKey) &amp;&amp; e.key === "Enter"){ e.preventDefault(); publish(); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Accessibility + keeping the clock live</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each action button gets a spoken label and an <code>aria-pressed</code> that mirrors its boolean, so a screen-reader user hears "Like, pressed" the moment you toggle it; every post and toggle also writes a sentence to the <code>aria-live</code> region. Finally, relative time drifts, so a small <code>setInterval</code> re-derives every visible "<em>Nm</em>" label every 10 seconds without touching the rest of the DOM — cheap, and it keeps "now" from lying. That is the whole feed.</p>
+        <div class="relative"><pre>function actionsHTML(p){
+  return `&lt;div class="post-actions"&gt;
+    &lt;button class="act like ${p.liked?'on':''}" data-act="like"
+            aria-pressed="${p.liked}" aria-label="Like, ${p.likes} likes"&gt;
+      ${heart(p.liked)}&lt;span&gt;${p.likes}&lt;/span&gt;
+    &lt;/button&gt; …repost, reply… &lt;/div&gt;`;
+}
+// keep timestamps honest
+setInterval(() =&gt; {
+  feed.querySelectorAll(".post-time").forEach(el =&gt;
+    el.textContent = relTime(+el.dataset.time));
+}, 10_000);
+function announce(msg){ live.textContent = msg; }   // aria-live region</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 38 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real X / Twitter feed from scratch. The core is <strong>one array of post objects</strong> and a <code>render()</code> that is a <strong>pure function</strong> of it: sort by time for a <strong>reverse-chronological</strong> timeline, <code>unshift</code> to insert the newest at the top, and flip a boolean + nudge a count for an <strong>optimistic</strong> like / repost / reply. Timestamps are <strong>derived</strong> from one number, not stored; the compose box counts toward <strong>280</strong> with a ring that warns then blocks; and because every input funnels through one <code>toggle()</code> or <code>publish()</code>, delegation, the keyboard, and a screen-reader <strong>live region</strong> come almost for free. <strong>👉 Tomorrow — Day 39: LinkedIn profile (banner + avatar overlap, the classic profile header).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== X / TWITTER FEED =====
+const MAX = 280;
+const MY_GRAD = "linear-gradient(135deg,#6366f1,#a855f7)";
+const C = 2 * Math.PI * 11;                 // character-ring circumference
+
+let uid = 1;
+const t0 = Date.now();
+let posts = [   // newest first; render re-sorts to guarantee reverse-chron
+  { id:uid++, name:"Sarah Drasner", handle:"@sarah_edo", ini:"SD", grad:"linear-gradient(135deg,#6366f1,#a855f7)",
+    text:"reminder: a timeline is just a sorted array. everything else is rendering.", time:t0 - 8*1000,
+    replies:14, replied:false, reposts:63, reposted:false, likes:412, liked:false },
+  { id:uid++, name:"Dan Abramov", handle:"@dan_dev", ini:"DA", grad:"linear-gradient(135deg,#0ea5e9,#3b82f6)",
+    text:"optimistic UI = trust the click. update state now, reconcile with the server later. the interaction feels instant because it is.", time:t0 - 47*1000,
+    replies:33, replied:false, reposts:128, reposted:false, likes:1204, liked:false },
+  { id:uid++, name:"Sara Soueidan", handle:"@sarasoueidan", ini:"SS", grad:"linear-gradient(135deg,#f43f5e,#ec4899)",
+    text:"an SVG ring is one <circle>, a stroke-dasharray, and a stroke-dashoffset you animate. that's the whole progress widget.", time:t0 - 4*60*1000,
+    replies:9, replied:false, reposts:41, reposted:false, likes:288, liked:false },
+  { id:uid++, name:"Josh Comeau", handle:"@joshwcomeau", ini:"JC", grad:"linear-gradient(135deg,#10b981,#14b8a6)",
+    text:"the trick to timestamps: never store the label. store the moment, derive \"5m ago\" at render. it stays correct forever.", time:t0 - 22*60*1000,
+    replies:21, replied:false, reposts:77, reposted:false, likes:640, liked:false },
+  { id:uid++, name:"Cassidy Williams", handle:"@cassidoo", ini:"CW", grad:"linear-gradient(135deg,#f59e0b,#f97316)",
+    text:"event delegation saved my feed. one listener on the parent instead of one per row that dies on every re-render.", time:t0 - 60*60*1000,
+    replies:18, replied:false, reposts:52, reposted:false, likes:503, liked:false },
+  { id:uid++, name:"Addy Osmani", handle:"@addyosmani", ini:"AO", grad:"linear-gradient(135deg,#8b5cf6,#6366f1)",
+    text:"escape user input before it hits innerHTML. five characters, one replacer. this is how a comment box stops being an XSS hole.", time:t0 - 3*60*60*1000,
+    replies:12, replied:false, reposts:96, reposted:false, likes:812, liked:false },
+  { id:uid++, name:"Lea Verou", handle:"@leaverou", ini:"LV", grad:"linear-gradient(135deg,#d946ef,#c026d3)",
+    text:"the whole feed is render(state). change the array, re-draw. no manual DOM surgery, no stale nodes.", time:t0 - 20*60*60*1000,
+    replies:7, replied:false, reposts:38, reposted:false, likes:274, liked:false },
+  { id:uid++, name:"Wes Bos", handle:"@wesbos", ini:"WB", grad:"linear-gradient(135deg,#64748b,#334155)",
+    text:"built a twitter clone in ~120 lines of vanilla JS today. array, sort, template, one toggle(). that's it. no framework.", time:t0 - 2*24*60*60*1000,
+    replies:41, replied:false, reposts:210, reposted:false, likes:1890, liked:false }
+];
+
+// ---- elements ----
+const feed      = document.getElementById("feed");
+const composer  = document.getElementById("composer");
+const postBtn   = document.getElementById("postBtn");
+const ringProg  = document.getElementById("ringProg");
+const ringNum   = document.getElementById("ringNum");
+const live      = document.getElementById("live");
+// read-out
+const roRemain = document.getElementById("roRemain"), roChars = document.getElementById("roChars");
+const roRem = document.getElementById("roRem"), roState = document.getElementById("roState");
+const roPosts = document.getElementById("roPosts"), roLikes = document.getElementById("roLikes"), roReposts = document.getElementById("roReposts");
+const roNewest = document.getElementById("roNewest"), cfill = document.getElementById("cfill");
+
+// set the ring dash geometry once
+ringProg.setAttribute("stroke-dasharray", C.toFixed(3));
+
+// escape user-supplied text before it reaches innerHTML
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
+}
+
+// one number → a relative label
+function relTime(ts){
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 5)  return "now";
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60); if (m < 60) return m + "m";
+  const h = Math.floor(m / 60); if (h < 24) return h + "h";
+  const d = Math.floor(h / 24); if (d < 7)  return d + "d";
+  return new Date(ts).toLocaleDateString(undefined, { month:"short", day:"numeric" });
+}
+const fmt = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 >= 100 ? 1 : 0) + "K" : "" + n;
+
+// icons
+function heart(on){
+  return '<svg viewBox="0 0 24 24" fill="' + (on ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.9-10.2-9.4C-0.3 8 1.3 4 5 4c2.1 0 3.4 1.2 4 2.2C9.6 5.2 10.9 4 13 4c3.7 0 5.3 4 3.2 7.6C19.5 16.1 12 21 12 21z"/></svg>';
+}
+const ICON_REPLY  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5.6A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>';
+const ICON_REPOST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+
+// build one post's action bar
+function actionsHTML(p){
+  return '<div class="post-actions">' +
+    '<button class="act reply ' + (p.replied ? "on" : "") + '" data-act="reply" aria-pressed="' + p.replied + '" aria-label="Reply, ' + p.replies + ' replies">' +
+      ICON_REPLY + '<span class="count">' + fmt(p.replies) + '</span></button>' +
+    '<button class="act repost ' + (p.reposted ? "on" : "") + '" data-act="repost" aria-pressed="' + p.reposted + '" aria-label="Repost, ' + p.reposts + ' reposts">' +
+      ICON_REPOST + '<span class="count">' + fmt(p.reposts) + '</span></button>' +
+    '<button class="act like ' + (p.liked ? "on" : "") + '" data-act="like" aria-pressed="' + p.liked + '" aria-label="Like, ' + p.likes + ' likes">' +
+      heart(p.liked) + '<span class="count">' + fmt(p.likes) + '</span></button>' +
+  '</div>';
+}
+
+// build one post row
+function postHTML(p){
+  return '<article class="post" data-id="' + p.id + '">' +
+    '<div class="avatar" style="background:' + p.grad + '">' + p.ini + '</div>' +
+    '<div class="post-main">' +
+      '<div class="post-head">' +
+        '<span class="post-name">' + esc(p.name) + '</span>' +
+        '<span class="post-handle">' + esc(p.handle) + '</span>' +
+        '<span class="post-dot">·</span>' +
+        '<span class="post-time" data-time="' + p.time + '" title="' + esc(new Date(p.time).toLocaleString()) + '">' + relTime(p.time) + '</span>' +
+      '</div>' +
+      '<div class="post-text">' + esc(p.text) + '</div>' +
+      actionsHTML(p) +
+    '</div>' +
+  '</article>';
+}
+
+// render is a pure function of the array: sort newest-first, draw
+function renderFeed(){
+  const ordered = [...posts].sort((a, b) => b.time - a.time);
+  feed.innerHTML = ordered.map(postHTML).join("");
+  updateReadout();
+}
+
+// optimistic toggle — one function for like / repost / reply
+const FIELD = { like:["liked","likes"], repost:["reposted","reposts"], reply:["replied","replies"] };
+const VERB  = { like:"Liked", repost:"Reposted", reply:"Replied to" };
+function toggle(id, kind){
+  const p = posts.find(x => x.id === id); if (!p) return;
+  const [flag, count] = FIELD[kind];
+  p[flag]   = !p[flag];
+  p[count] += p[flag] ? 1 : -1;
+  renderFeed();
+  announce(p[flag] ? (VERB[kind] + " " + p.name + "'s post.") : ("Undid " + kind + " on " + p.name + "'s post."));
+}
+
+// one delegated click handler for the whole feed
+feed.addEventListener("click", e => {
+  const btn = e.target.closest(".act"); if (!btn) return;
+  const art = btn.closest(".post"); if (!art) return;
+  toggle(+art.dataset.id, btn.dataset.act);
+});
+
+// ---- compose ----
+function updateComposer(){
+  const len = composer.value.length, remaining = MAX - len, over = len > MAX;
+  ringProg.style.strokeDashoffset = (C * (1 - Math.min(len, MAX) / MAX)).toFixed(3);
+  ringProg.style.stroke = over ? "#f4212e" : remaining <= 20 ? "#f59e0b" : "#1d9bf0";
+  ringNum.textContent = remaining <= 20 ? remaining : "";
+  ringNum.style.color = over ? "#f4212e" : "#64748b";
+  postBtn.disabled = len === 0 || over;
+  updateReadout();
+}
+composer.addEventListener("input", updateComposer);
+
+// publish: prepend the newest post, then re-draw
+function publish(){
+  const text = composer.value.trim();
+  if (!text || text.length > MAX) return;
+  posts.unshift({
+    id: uid++, name:"You", handle:"@you_dev", ini:"YO", grad: MY_GRAD,
+    text, time: Date.now(),
+    replies:0, replied:false, reposts:0, reposted:false, likes:0, liked:false, mine:true
+  });
+  composer.value = "";
+  updateComposer();
+  renderFeed();
+  announce("Posted. " + posts.length + " posts in the timeline.");
+  composer.focus();
+}
+postBtn.addEventListener("click", publish);
+composer.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter"){ e.preventDefault(); publish(); }
+});
+
+// ---- read-out panel ----
+function updateReadout(){
+  const len = composer.value.length, remaining = MAX - len, over = len > MAX;
+  roRemain.textContent = remaining;
+  roRemain.style.color = over ? "#f4212e" : remaining <= 20 ? "#f59e0b" : "#0f172a";
+  roChars.textContent = len;
+  roRem.textContent = remaining;
+  roState.textContent = over ? "OVER" : len === 0 ? "empty" : remaining <= 20 ? "near" : "ok";
+  roState.className = "pill" + (over ? " r" : remaining <= 20 ? " a" : len ? " g" : "");
+  const frac = Math.min(len, MAX) / MAX;
+  cfill.style.width = (frac * 100) + "%";
+  cfill.style.background = over ? "#f4212e" : remaining <= 20 ? "#f59e0b" : "#1d9bf0";
+  roPosts.textContent = posts.length;
+  roLikes.textContent = posts.filter(p => p.liked).length;
+  roReposts.textContent = posts.filter(p => p.reposted).length;
+  const newest = [...posts].sort((a, b) => b.time - a.time)[0];
+  roNewest.textContent = newest ? newest.name + " · " + relTime(newest.time) : "—";
+}
+
+function announce(msg){ live.textContent = msg; }
+
+// keep the relative timestamps honest as time passes
+setInterval(() => {
+  feed.querySelectorAll(".post-time").forEach(el => { el.textContent = relTime(+el.dataset.time); });
+  const newest = [...posts].sort((a, b) => b.time - a.time)[0];
+  if (newest) roNewest.textContent = newest.name + " · " + relTime(newest.time);
+}, 10000);
+
+// ---- init ----
+renderFeed();
+updateComposer();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What an X / Twitter feed really is", why:"Strip away the branding and a feed is one of the most reused patterns on the web: a list of records, held in memory, shown newest-first as a scrolling column of rows. X, Bluesky, Mastodon, a comments thread, a chat log, an activity stream, a notifications panel — all the same shape. What makes it feel alive is not complexity but a single discipline: the screen is a pure function of an array of post objects. You never edit a row in place; you change the underlying data and re-draw. That one rule is why a like can register instantly, a new post can appear at the top, and a timestamp can quietly update from '4m' to '5m' — each is just the array changing and the view following. Everything in the rest of these steps is a small, honest consequence of that idea.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">the feed = render(posts)<br><br>&#9484;&#9472; compose &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;<br>&#9474; what\'s happening? &#9474;<br>&#9500;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;<br>&#9474; newest post &#8593;<br>&#9474; older&#8230; &#8593;<br>&#9474; oldest&#8230; &#8593;<br>&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;<br><br>change the array &#8594; re-draw</div>', code:"// a timeline is a rendered array. that's the whole idea.\n// X · Bluesky · Mastodon · comments · chat · activity feed\n// screen = pure function of posts[]\n// never edit a row in place — change data, re-render" },
+ { title:"2. The data model: one post object", why:"Before any pixels, decide what a post IS. Everything the row needs must live on one plain object so the view can be generated from it with zero guesswork. Identity fields — display name, @handle, avatar — render the header line. The text is the body. A millisecond time (not a pre-formatted string) is stored so the relative label can be re-derived at any moment. Each of the three actions carries a pair: a count and a boolean — likes/liked, reposts/reposted, replies/replied — because the button must show a number AND remember whether you personally toggled it, and those are two different facts. A stable id lets a click later find exactly which post it belongs to. Get this object right and the rest of the widget is almost mechanical.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one post = one object<br><br>{ id, name, handle, ini, grad,<br>&nbsp;&nbsp;text,<br>&nbsp;&nbsp;time: 1721&#8230;  &#8592; ms, not "5m"<br>&nbsp;&nbsp;likes / liked,<br>&nbsp;&nbsp;reposts / reposted,<br>&nbsp;&nbsp;replies / replied }<br><br>count + boolean per action</div>', code:"const post = {\n  id: 7,\n  name: 'Sarah Drasner', handle: '@sarah_edo', ini: 'SD',\n  text: 'a timeline is just a sorted array.',\n  time: Date.now() - 8_000,   // store the MOMENT\n  likes: 412,  liked: false,  // count + did-I-toggle-it\n  reposts: 63, reposted: false,\n  replies: 14, replied: false\n};" },
+ { title:"3. Reverse-chronological order: sort by time", why:"'Reverse chronological' sounds like a feature; in code it is a single sort. Hold the posts in an array and, at render time, sort a copy by the time field in descending order so the largest (most recent) timestamp comes first. That one comparator, (a,b) => b.time - a.time, IS the timeline's defining behaviour — it is the difference between a feed and a random pile. Sorting a COPY (with the spread […posts]) keeps the source array's insertion order untouched, which matters if other code relies on it, and it makes render idempotent: run it twice, get the same view. Real feeds layer ranking on top (engagement, follows, ads) but the classic 'latest' timeline every clone starts from is exactly this descending-by-time sort, nothing more.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">sort by time, descending<br><br>times:  8s   47s   4m   22m<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9660; b.time &#8722; a.time<br>order:  8s &lt; 47s &lt; 4m &lt; 22m<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(newest &#8594; top)<br><br>one comparator = "reverse chronological"</div>', code:"function renderFeed(){\n  const ordered = [...posts]                 // sort a COPY\n    .sort((a, b) => b.time - a.time);        // newest first\n  feed.innerHTML = ordered.map(postHTML).join('');\n}\n// that single comparator IS the timeline." },
+ { title:"4. Render is a pure function of state", why:"The most important architectural choice here is to draw the whole list from the array every time, rather than surgically poking individual nodes. render(posts) maps each object to a row of HTML and replaces the feed's contents in one assignment. This sounds wasteful but it is how modern UI thinks for a reason: there is exactly one place that turns data into DOM, so there is never a mismatch between what the array says and what the screen shows. Liked a post? Flip the flag, call render. Posted? Unshift, call render. A timestamp ticked over? Re-derive and render. You stop tracking 'which span holds the count for post 7' and start trusting that the view always equals the data. For a list of this size the full redraw is instant, and the mental simplicity you buy is enormous.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">state &#8594;&#8594;&#8594; view<br><br>posts[]  ──render()──▶  DOM<br><br>like?&nbsp;&nbsp;flip flag &#8594; render()<br>post?&nbsp;&nbsp;unshift &#8594; render()<br>tick?&nbsp;&nbsp;derive &#8594; render()<br><br>one path: data in, rows out</div>', code:"function postHTML(p){\n  return `<article class=\"post\" data-id=\"${p.id}\">\n    <div class=\"avatar\">${p.ini}</div>\n    <div class=\"post-main\">\n      <div class=\"post-head\">${esc(p.name)} ${esc(p.handle)}\n        · <span class=\"post-time\">${relTime(p.time)}</span></div>\n      <div class=\"post-text\">${esc(p.text)}</div>\n      ${actionsHTML(p)}\n    </div></article>`;\n}\n// the ONLY code that turns a post into DOM" },
+ { title:"5. Relative time: derive, never store", why:"A feed that stored the string '3 minutes ago' would be wrong sixty seconds later. So you store the moment — a millisecond timestamp — and compute the label fresh on every render. Subtract the post's time from Date.now() to get elapsed seconds, then step through the units in order: under five seconds reads 'now', under a minute shows seconds, then minutes, then hours, then days, and beyond a week you fall back to an actual date. This laddering is why X shows '12s', '5m', '3h', '2d' and then 'Mar 4'. Keep the true timestamp in the element's title attribute so a hover still reveals the exact time. Because the label is derived, a tiny timer can re-run relTime on the visible rows every few seconds and the clock stays honest with almost no cost.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">elapsed = now &#8722; post.time<br><br>&lt; 5s&nbsp;&nbsp;&#8594; "now"<br>&lt; 60s &#8594; "47s"<br>&lt; 60m &#8594; "5m"<br>&lt; 24h &#8594; "3h"<br>&lt; 7d&nbsp;&nbsp;&#8594; "2d"<br>else&nbsp;&nbsp;&#8594; "Mar 4"</div>', code:"function relTime(ts){\n  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));\n  if (s < 5)  return 'now';\n  if (s < 60) return s + 's';\n  const m = Math.floor(s / 60); if (m < 60) return m + 'm';\n  const h = Math.floor(m / 60); if (h < 24) return h + 'h';\n  const d = Math.floor(h / 24); if (d < 7)  return d + 'd';\n  return new Date(ts).toLocaleDateString();\n}" },
+ { title:"6. The compose box + the 280 budget", why:"The composer is a plain textarea plus a running count. On every input event you read value.length, subtract from 280 to get remaining, and turn that into two signals. First, a progress ring: length/280 drives an SVG circle's stroke-dashoffset so it fills as you type. Second, colour: blue while there is comfortable room, amber for the final twenty characters as a gentle warning, red once you cross the limit. Deliberately, the textarea has no hard maxlength — letting people type over the limit (with Post disabled and the count going negative) tells them precisely how much to cut, which is far kinder than silently refusing the next keystroke. The Post button is disabled when the box is empty or over budget, so the only way to publish is a valid post. All of this is recomputed in one small function per keystroke.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">remaining = 280 &#8722; length<br><br>&nbsp;&nbsp;260 left &#8594; &#9679; blue ring<br>&nbsp;&nbsp;&nbsp;12 left &#8594; &#9679; amber + number<br>&nbsp;&nbsp;&#8722;6 over &#8594; &#9679; red · Post disabled<br><br>no hard cap — show the overflow</div>', code:"const MAX = 280, C = 2 * Math.PI * 11;\nfunction updateComposer(){\n  const len = composer.value.length, remaining = MAX - len;\n  const over = len > MAX;\n  ringProg.style.strokeDashoffset = C * (1 - Math.min(len,MAX)/MAX);\n  ringProg.style.stroke =\n    over ? '#f4212e' : remaining <= 20 ? '#f59e0b' : '#1d9bf0';\n  ringNum.textContent = remaining <= 20 ? remaining : '';\n  postBtn.disabled = len === 0 || over;\n}" },
+ { title:"7. Posting = prepend the newest object", why:"When you hit Post, nothing clever happens — you just add data. Trim the text, guard against empty or over-limit, then build a new post object stamped with Date.now() and zeroed counters, and unshift it onto the front of the array. Strictly the position does not even matter, because render sorts by time and the new post has the largest timestamp, so it lands on top regardless; unshift simply keeps the array visually consistent with the view. Clear the textarea, reset the counter, re-render, and the CSS fade-in makes the new row slide into place at the top. This is the entire 'reverse-chronological insert': create the newest record, drop it in, let the sort put it first. The same shape handles receiving a post over a websocket — it is just another object added to the array.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">type &#8594; Post (or &#8984;/Ctrl+Enter)<br><br>posts.unshift({ &#8230;, time: Date.now() })<br>&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>newest timestamp &#8594; sorts to top<br>&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>clear box · render() · fade in</div>', code:"function publish(){\n  const text = composer.value.trim();\n  if (!text || text.length > MAX) return;\n  posts.unshift({\n    id: uid++, name:'You', handle:'@you', ini:'YO', grad: MY_GRAD,\n    text, time: Date.now(),\n    likes:0, liked:false, reposts:0, reposted:false, replies:0, replied:false\n  });\n  composer.value = ''; updateComposer();\n  renderFeed();\n}" },
+ { title:"8. Optimistic toggle: like / repost / reply", why:"Tap a heart and it fills instantly — it does not wait for a server. That is optimistic UI: you assume the action will succeed, update local state immediately, and only reconcile (or roll back) if the network later disagrees. Mechanically it is tiny: find the post by id, flip its boolean, and move its count by exactly one in the matching direction — plus one when turning on, minus one when turning off — then re-render. Because like, repost and reply share the identical shape (a boolean and a count), a single lookup table maps the action name to its two field names and one toggle() function serves all three. This is what makes engagement feel weightless: the interface trusts you. In a real app the same function would also fire a background request and revert the ±1 if it failed, but the instant local flip is the part users feel.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">flip the boolean, nudge the count<br><br>liked:false &#8594; true &nbsp;&nbsp;likes 412 &#8594; 413<br>liked:true &#8594; false &nbsp;likes 413 &#8594; 412<br><br>like · repost · reply<br>= same pair &#8594; one toggle()</div>', code:"const FIELD = {\n  like:   ['liked','likes'],\n  repost: ['reposted','reposts'],\n  reply:  ['replied','replies']\n};\nfunction toggle(id, kind){\n  const p = posts.find(x => x.id === id); if (!p) return;\n  const [flag, count] = FIELD[kind];\n  p[flag]   = !p[flag];            // flip\n  p[count] += p[flag] ? 1 : -1;    // optimistic ±1\n  renderFeed();\n}" },
+ { title:"9. One delegated handler for every button", why:"Because render rebuilds the feed from scratch, any listener you attach directly to a button is destroyed the next time you draw. The fix is event delegation: attach ONE click listener to the stable #feed container and, when a click bubbles up, find the nearest .act button and the .post it lives in. Read the action from the button's data-act and the id from the row's data-id, and call the shared toggle(). One listener now covers every action on every row, present and future, with nothing to re-bind after a redraw. The composer's Post button and a keyboard shortcut both route to publish(). Funnelling every input through toggle() or publish() means the model, the animation, and the announcement happen once, in one place, for clicks and keys alike — the same single-source-of-truth discipline that made the swipe deck's commit() work.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one listener on #feed (not per row)<br><br>click &#8593; bubbles<br>&nbsp;&nbsp;closest(".act") &#8594; data-act<br>&nbsp;&nbsp;closest(".post") &#8594; data-id<br>&nbsp;&nbsp;&nbsp;&nbsp;&#8595;<br>toggle(id, kind)<br><br>survives every re-render</div>', code:"feed.addEventListener('click', e => {\n  const btn = e.target.closest('.act'); if (!btn) return;\n  const art = btn.closest('.post');    if (!art) return;\n  toggle(+art.dataset.id, btn.dataset.act);\n});\n\npostBtn.addEventListener('click', publish);\ncomposer.addEventListener('keydown', e => {\n  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter'){\n    e.preventDefault(); publish();\n  }\n});" },
+ { title:"10. Accessibility + a live-updating clock", why:"A feed you can only use with a mouse and working eyes is half a feed. Each action button gets a descriptive aria-label ('Like, 412 likes') and an aria-pressed that mirrors its boolean, so a screen reader announces the toggled state the instant it flips. Every post and every toggle also writes a short sentence into a visually-hidden aria-live='polite' region, so a non-sighted user hears 'Posted. 9 posts in the timeline.' or 'Liked Dan Abramov's post.' exactly when a sighted user sees it change. Two more touches finish it: a setInterval re-derives the visible relative timestamps every ten seconds so 'now' never lies, and prefers-reduced-motion drops the fade-in for users who ask for calm. None of this is bolted on — it falls out naturally because every action already flows through one toggle()/publish() and one announce(), the same funnel that keeps the whole widget honest.", concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">every action &#8594; one announce()<br><br>&#9825; button: aria-pressed + label<br>aria-live: "Liked Dan\'s post."<br>aria-live: "Posted. 9 posts."<br><br>setInterval &#8594; refresh "5m" labels<br>reduced-motion &#8594; no fade</div>', code:"// aria-pressed mirrors the boolean, label speaks the count\n'<button class=\"act like\" aria-pressed=\"'+p.liked+'\"'+\n'  aria-label=\"Like, '+p.likes+' likes\">'\n\nsetInterval(() => {                 // keep the clock honest\n  feed.querySelectorAll('.post-time').forEach(el =>\n    el.textContent = relTime(+el.dataset.time));\n}, 10_000);\n\nfunction announce(msg){ live.textContent = msg; } // aria-live" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3500); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
