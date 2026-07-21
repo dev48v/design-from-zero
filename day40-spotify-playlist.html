@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 40 — Spotify Playlist Track Table</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface — Spotify dark ===== */
+  .demo-frame { min-height:520px; background:#eef2f7; border:1px solid #e2e8f0; border-radius:16px;
+                padding:24px; display:flex; align-items:flex-start; justify-content:center; }
+
+  /* ---- the playlist: the whole point of today ---- */
+  .pl { width:100%; max-width:720px; max-height:560px; overflow-y:auto; border-radius:14px;
+        background:linear-gradient(#3b2a55 0, #241a35 200px, #121212 380px, #121212 100%);
+        color:#fff; box-shadow:0 12px 34px rgba(15,23,42,.28);
+        transition:max-width .35s cubic-bezier(.22,1,.36,1); position:relative;
+        --gtc:16px 4fr 2.6fr 2fr minmax(96px,auto); }         /* one source of truth for the columns */
+  .pl::-webkit-scrollbar { width:10px; } .pl::-webkit-scrollbar-thumb { background:#4b4b4b; border-radius:8px; }
+
+  /* playlist header: big cover + title block */
+  .pl-head { display:flex; gap:22px; align-items:flex-end; padding:26px 24px 18px; }
+  .pl-cover { width:150px; height:150px; flex-shrink:0; border-radius:6px;
+              box-shadow:0 8px 30px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center;
+              background:linear-gradient(135deg,#1db954,#0ea5e9 55%,#8b5cf6);
+              font-size:3.4rem; color:rgba(255,255,255,.92); }
+  .pl-kind  { font-size:.74rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  .pl-title { font-size:2.6rem; font-weight:900; line-height:1.05; margin:6px 0 10px; letter-spacing:-.01em; }
+  .pl-desc  { font-size:.86rem; color:#b3b3b3; margin-bottom:12px; }
+  .pl-stats { font-size:.82rem; color:#d6d6d6; }
+  .pl-stats .owner { font-weight:700; } .pl-stats .dim { color:#b3b3b3; }
+
+  /* action bar */
+  .pl-actions { display:flex; align-items:center; gap:22px; padding:8px 26px 6px; }
+  .pl-bigplay { width:54px; height:54px; border:0; border-radius:50%; background:#1db954; color:#000;
+                font-size:1.4rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
+                transition:transform .12s, background .12s; box-shadow:0 6px 18px rgba(0,0,0,.35); }
+  .pl-bigplay:hover { transform:scale(1.06); background:#1ed760; }
+  .pl-iconbtn { background:transparent; border:0; color:#b3b3b3; font-size:1.5rem; cursor:pointer; }
+  .pl-iconbtn:hover { color:#fff; }
+
+  /* ---- the track table: CSS-grid rows that share ONE column template ---- */
+  .tracks { padding:8px 12px 20px; }
+  .track-headrow, .track-row {
+    display:grid; grid-template-columns:var(--gtc); gap:16px; align-items:center;
+    padding:6px 12px; border-radius:6px;
+  }
+  /* the sticky column-label row */
+  .track-headrow { position:sticky; top:0; z-index:5; color:#b3b3b3; font-size:.76rem;
+    text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid rgba(255,255,255,.12);
+    background:#181818; margin:0 -12px 8px; padding:8px 24px; border-radius:0; }
+  .track-headrow .col-index { text-align:right; }
+  .col-dur { display:flex; align-items:center; gap:14px; justify-content:flex-end; }
+  .clock { width:16px; height:16px; }
+
+  /* a single track row */
+  .track-row { cursor:pointer; outline:none; }
+  .track-row:hover { background:rgba(255,255,255,.09); }
+  .track-row.sel   { background:rgba(255,255,255,.16); }          /* keyboard-selected */
+  .track-row:focus-visible { box-shadow:inset 0 0 0 2px #1db954; }
+
+  /* col 1 — the index cell: number / play / equalizer / pause all stacked here */
+  .col-index { position:relative; text-align:right; color:#b3b3b3; font-variant-numeric:tabular-nums;
+               font-size:.95rem; min-width:16px; display:flex; justify-content:flex-end; align-items:center; }
+  .t-play, .t-pause, .t-eq { display:none; }
+  .t-play, .t-pause { background:none; border:0; color:#fff; cursor:pointer; font-size:.9rem;
+                      padding:0; line-height:1; display:none; align-items:center; justify-content:center; }
+  /* HOVER-SWAP: a non-playing row swaps its number for a play triangle */
+  .track-row:not(.playing):hover .t-num  { display:none; }
+  .track-row:not(.playing):hover .t-play { display:inline-flex; }
+  /* PLAYING (not paused): show the animated equalizer instead of the number */
+  .track-row.playing:not(.paused) .t-num { display:none; }
+  .track-row.playing:not(.paused) .t-eq  { display:inline-flex; }
+  /* …and hovering the playing row turns the equalizer into a pause button */
+  .track-row.playing:not(.paused):hover .t-eq   { display:none; }
+  .track-row.playing:not(.paused):hover .t-pause{ display:inline-flex; }
+  /* PAUSED playing row: a green play triangle to resume */
+  .track-row.playing.paused .t-num  { display:none; }
+  .track-row.playing.paused .t-play { display:inline-flex; color:#1db954; }
+
+  /* the equalizer — 4 bars scaling on a staggered loop */
+  .t-eq { align-items:flex-end; gap:2px; height:16px; }
+  .t-eq span { width:3px; height:40%; background:#1db954; border-radius:1px; animation:eq .9s ease-in-out infinite; }
+  .t-eq span:nth-child(1){ animation-delay:-.20s; } .t-eq span:nth-child(2){ animation-delay:-.55s; }
+  .t-eq span:nth-child(3){ animation-delay:-.05s; } .t-eq span:nth-child(4){ animation-delay:-.40s; }
+  @keyframes eq { 0%,100%{ height:25%; } 50%{ height:100%; } }
+
+  /* col 2 — title + artist, with a small art thumb */
+  .col-title { display:flex; align-items:center; gap:12px; min-width:0; }
+  .t-art { width:40px; height:40px; border-radius:4px; flex-shrink:0; }
+  .t-titlewrap { min-width:0; }
+  .t-title { color:#fff; font-size:.95rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .t-artist{ color:#b3b3b3; font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .track-row.playing .t-title { color:#1db954; }                 /* now-playing = green title */
+
+  /* col 3/4 — album + date (the two that hide on narrow) */
+  .col-album, .col-date { color:#b3b3b3; font-size:.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* col 5 — like heart + duration + more menu */
+  .t-like { background:none; border:0; color:#b3b3b3; cursor:pointer; font-size:1rem; opacity:0; transition:opacity .12s, color .12s; }
+  .track-row:hover .t-like { opacity:1; }
+  .t-like.on { opacity:1; color:#1db954; }
+  .t-dur  { color:#b3b3b3; font-size:.85rem; font-variant-numeric:tabular-nums; min-width:34px; text-align:right; }
+  .t-more { background:none; border:0; color:#b3b3b3; cursor:pointer; font-size:1.1rem; opacity:0; transition:opacity .12s, color .12s; }
+  .track-row:hover .t-more { opacity:1; }
+  .t-more:hover, .t-like:hover { color:#fff; }
+
+  /* ---- MOBILE reflow: shared by the toggle (.is-mobile) AND real @media ---- */
+  .pl.is-mobile { max-width:380px; --gtc:16px 1fr auto; }        /* 5 cols collapse to 3 */
+  .pl.is-mobile .col-album, .pl.is-mobile .col-date { display:none; }
+  .pl.is-mobile .pl-head { flex-direction:column; align-items:flex-start; gap:14px; }
+  .pl.is-mobile .pl-cover { width:120px; height:120px; }
+  .pl.is-mobile .pl-title { font-size:1.9rem; }
+  @media (max-width:640px){
+    .pl { --gtc:16px 1fr auto; }
+    .pl .col-album, .pl .col-date { display:none; }
+    .pl .pl-head { flex-direction:column; align-items:flex-start; gap:14px; }
+    .pl .pl-title { font-size:1.9rem; }
+  }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost.on { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .pl { transition:none; } .t-eq span { animation:none; height:70%; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 40</div>
+      <h1 class="text-xl font-bold">🎵 Spotify Playlist — The Track Table: A CSS-Grid List Where Every Row Shares One Column Template, the Index Cell Swaps Its Number for a ▶ Play Button on Hover While a Like Heart and ⋯ Menu Fade In, Clicking a Row Makes It the Now-Playing Track With a Green Title and Animated Equalizer Bars, a Sticky Column Header, Full Keyboard Row Navigation, and Album / Date Columns That Drop on a Phone</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Hover a row and its number becomes a play button; click it and the track turns green with dancing equalizer bars — the track list at the heart of Spotify.</h2>
+        <p class="text-slate-500 mb-6 max-w-2xl mx-auto">The <strong>track table</strong> is the busiest surface in Spotify, and it is pure <strong>CSS Grid</strong>: the column-label row and every song row share <em>one</em> <code>grid-template-columns</code> template, so <code>#</code>, title, album, date and duration all snap into perfectly aligned columns with no <code>&lt;table&gt;</code>. The signature move is the <strong>hover-swap</strong>: the index cell holds both the track number <em>and</em> a hidden ▶ play button stacked on top of each other, and a single <code>:hover</code> rule flips which one shows — meanwhile a <strong>like heart</strong> and a <strong>⋯ menu</strong> fade in at the end of the row. <strong>Hover</strong> the rows to see it, then <strong>click</strong> any row (or the big green button) to make it the <strong>now-playing</strong> track: its title goes <span style="color:#1db954;font-weight:700">green</span> and four <strong>equalizer bars</strong> animate in the index cell. The column header is <strong>sticky</strong>, arrow keys walk the list, and on a phone the album and date columns simply <strong>drop away</strong>. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <!-- controls -->
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Try</span>
+              <span class="btn-ghost" style="cursor:default">Hover a row → ▶</span>
+              <span class="btn-ghost" style="cursor:default">Click a row → now playing</span>
+              <span class="text-slate-300">|</span>
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">View</span>
+              <button id="vpDesktop" class="btn-ghost on" data-vp="desktop">🖥 Desktop</button>
+              <button id="vpMobile"  class="btn-ghost" data-vp="mobile">📱 Mobile</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="pl" id="pl" role="region" aria-label="Playlist">
+                <!-- playlist header -->
+                <div class="pl-head">
+                  <div class="pl-cover">🎧</div>
+                  <div>
+                    <div class="pl-kind">Playlist</div>
+                    <h2 class="pl-title">Focus Flow</h2>
+                    <p class="pl-desc">Instrumental beats to lock in and get things done.</p>
+                    <div class="pl-stats">
+                      <span class="owner">DesignFromZero</span>
+                      <span class="dim"> · <span id="statCount">8</span> songs, <span id="statTime">27 min 14 sec</span></span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- action bar -->
+                <div class="pl-actions">
+                  <button class="pl-bigplay" id="bigPlay" aria-label="Play playlist">▶</button>
+                  <button class="pl-iconbtn" id="shuffleBtn" title="Shuffle" aria-label="Shuffle">🔀</button>
+                  <button class="pl-iconbtn" title="More" aria-label="More">···</button>
+                </div>
+
+                <!-- track table -->
+                <div class="tracks" id="tracks" role="grid" aria-label="Tracks" aria-rowcount="8">
+                  <div class="track-headrow" role="row">
+                    <div class="col-index" role="columnheader">#</div>
+                    <div role="columnheader">Title</div>
+                    <div class="col-album" role="columnheader">Album</div>
+                    <div class="col-date" role="columnheader">Date added</div>
+                    <div class="col-dur" role="columnheader">
+                      <svg class="clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    </div>
+                  </div>
+                  <div id="trackBody"><!-- rows injected by JS --></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Now playing</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roNow" class="text-lg font-bold text-slate-800 truncate">Nothing</span>
+                <span id="roState" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">idle</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">playing row</span><span id="roIdx" class="pill">—</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">hovered row</span><span id="roHover" class="pill">—</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">selected row</span><span id="roSel" class="pill">1</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">liked songs</span><span id="roLiked" class="pill">0</span></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 flex justify-between text-center">
+                <div><div id="roTracks" class="text-lg font-bold text-slate-700">8</div><div class="text-xs text-slate-400 font-semibold">tracks</div></div>
+                <div><div id="roTotal" class="text-lg font-bold text-slate-700">27:14</div><div class="text-xs text-slate-400 font-semibold">total</div></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200">
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-slate-400 font-semibold">viewport</span>
+                  <span id="roVp" class="pill">desktop</span>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-slate-400 font-semibold">visible columns</span>
+                  <span id="roCols" class="pill">5</span>
+                </div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">Every row shares <strong>one <code>grid-template-columns</code></strong>, so columns line up automatically. The number and the ▶ button live in the <strong>same cell</strong> — <code>:hover</code> just flips which one shows.</p>
+              <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-2xl mx-auto">Open any playlist on Spotify, Apple Music or YouTube Music and you meet the same object: a big cover and title up top, then a <strong>grid of rows</strong> — number, song, album, date, length. It looks like a data table but there is no <code>&lt;table&gt;</code>; it is <strong>CSS Grid</strong>, one column template shared by the header and every row so everything aligns. The row comes alive on <strong>hover</strong> (number → ▶, heart and ⋯ appear) and on <strong>click</strong> (green title + equalizer = now playing). Make the header <code>position: sticky</code>, wire the arrow keys, and drop the two least-important columns under a media query, and the whole surface folds onto a phone. That is the entire pattern.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a track table works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A Spotify track list looks like a serious data table — five aligned columns, hover controls, a now-playing state with animated bars, a sticky header, keyboard support, a mobile fold — but there is no <code>&lt;table&gt;</code> anywhere. It is a stack of <strong>CSS-Grid rows that all share one <code>grid-template-columns</code></strong>, so the header labels and every song snap into the same columns. The famous hover trick is just <strong>two elements in one cell</strong> — a number and a hidden ▶ button — with a single <code>:hover</code> rule choosing which shows. Now-playing is a class that turns the title green and reveals four bars on a staggered <code>@keyframes</code> loop. Everything else is small: <code>position: sticky</code> for the header, a roving <code>tabindex</code> for the arrow keys, and a media query that swaps the column template. No framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The layout: a grid table, not a &lt;table&gt;</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The header row and every track row are <code>display:grid</code> with the <em>same</em> <code>grid-template-columns</code>. Because they share the template, column 3 of the header (Album) lines up perfectly with column 3 of each row — no <code>&lt;td&gt;</code>, no fixed widths guessed by hand. Storing that template in one CSS variable (<code>--gtc</code>) means the responsive fold later is a one-line change. Fractional units (<code>fr</code>) let Title take the lion's share while <code>#</code> stays a tight 16px.</p>
+        <div class="relative"><pre>.pl { --gtc: 16px 4fr 2.6fr 2fr minmax(96px,auto); }  /* one source of truth */
+
+.track-headrow,
+.track-row {
+  display:grid;
+  grid-template-columns: var(--gtc);   /* header + rows share it -> aligned */
+  gap:16px; align-items:center;
+  padding:6px 12px; border-radius:6px;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Render rows from data</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep the songs as an array of objects and build the rows in JS. Each row gets a <code>data-i</code> index so any later handler knows which track it is, and a <code>tabindex</code> for keyboard focus. The index cell is where the magic will live, so it holds four children up front — the number, a ▶ button, an equalizer, and a ⏸ button — all but the number hidden by default.</p>
+        <div class="relative"><pre>const TRACKS = [
+  { title:"Midnight City Lights", artist:"Neon Skyline",
+    album:"After Hours", added:"3 days ago", dur:"3:42" },
+  /* … */
+];
+trackBody.innerHTML = TRACKS.map((t,i) => `
+  &lt;div class="track-row" role="row" data-i="${i}" tabindex="-1"&gt;
+    &lt;div class="col-index"&gt;
+      &lt;span class="t-num"&gt;${i+1}&lt;/span&gt;
+      &lt;button class="t-play"&gt;▶&lt;/button&gt;
+      &lt;span class="t-eq"&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;/span&gt;
+      &lt;button class="t-pause"&gt;⏸&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class="col-title"&gt;…&lt;/div&gt; …
+  &lt;/div&gt;`).join("");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">The hover-swap: # ↔ ▶ in one cell</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the signature move. The number and the play button occupy the <em>same</em> index cell. By default the number shows and the button is <code>display:none</code>. One <code>:hover</code> rule on the row flips them — the number hides, the button appears — so it reads as the number <em>turning into</em> a ▶. It is pure CSS: no JavaScript touches this, and it is instant. (Scope it to <code>:not(.playing)</code> so the now-playing row keeps its equalizer instead.)</p>
+        <div class="relative"><pre>.t-play { display:none; }               /* hidden until hover */
+
+.track-row:not(.playing):hover .t-num  { display:none; }        /* number out */
+.track-row:not(.playing):hover .t-play { display:inline-flex; } /* ▶ in       */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The row's other hover reveals: heart + ⋯</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The like heart and the ⋯ menu sit in the last column but stay at <code>opacity:0</code> until you hover the row — so a resting list is calm and only the row under the cursor shows its actions. Fading with <code>opacity</code> (not <code>display</code>) keeps them in the layout, so nothing shifts when they appear. A liked heart stays visible and turns green even after you move away, because "liked" is a persistent state, not a hover.</p>
+        <div class="relative"><pre>.t-like, .t-more { opacity:0; transition:opacity .12s; }
+.track-row:hover .t-like,
+.track-row:hover .t-more { opacity:1; }     /* reveal on row hover */
+
+.t-like.on { opacity:1; color:#1db954; }    /* liked = stays lit, green */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Now playing: one class, many effects</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Clicking a row makes it the current track. In JS that is: strip <code>.playing</code> off whichever row had it, add it to the clicked one, remember the index. All the <em>visuals</em> are downstream CSS keyed off that single class — the title goes green, the number becomes an equalizer. State lives in one place (the class + a <code>playingIndex</code> number); the look is derived from it, so nothing can get out of sync.</p>
+        <div class="relative"><pre>let playingIndex = -1;
+function play(i){
+  rows.forEach(r => r.classList.remove("playing","paused"));
+  rows[i].classList.add("playing");
+  playingIndex = i;
+  render();                       // read-out follows the state
+}
+rows.forEach(r => r.addEventListener("click", () => play(+r.dataset.i)));
+
+/* CSS reacts to the class */
+.track-row.playing .t-title { color:#1db954; }   /* green now-playing title */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The equalizer bars</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The dancing bars are four <code>&lt;span&gt;</code>s in a flex row, each animating its <code>height</code> on the same <code>@keyframes</code> loop but with a different <strong>negative <code>animation-delay</code></strong> — that offset is what makes them look independent instead of marching in unison. They only render on the now-playing row, and hovering that row swaps the equalizer for a ⏸ pause button. Under <code>prefers-reduced-motion</code> the bars freeze, so the effect is honest but never nauseating.</p>
+        <div class="relative"><pre>.t-eq { display:flex; align-items:flex-end; gap:2px; height:16px; }
+.t-eq span { width:3px; background:#1db954; animation:eq .9s ease-in-out infinite; }
+.t-eq span:nth-child(1){ animation-delay:-.20s; }   /* staggered starts */
+.t-eq span:nth-child(2){ animation-delay:-.55s; }
+.t-eq span:nth-child(3){ animation-delay:-.05s; }
+.t-eq span:nth-child(4){ animation-delay:-.40s; }
+@keyframes eq { 0%,100%{ height:25%; } 50%{ height:100%; } }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">The sticky column header</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The row of column labels (<code>#</code>, Title, Album…) should stay put while the songs scroll under it. <code>position:sticky; top:0</code> inside the scrolling playlist does exactly that with no JS and no scroll listener — the header scrolls normally until it hits the top, then pins. Give it a solid background and a <code>z-index</code> so tracks slide <em>behind</em> it cleanly instead of showing through.</p>
+        <div class="relative"><pre>.pl { max-height:560px; overflow-y:auto; }   /* the scroll container */
+
+.track-headrow {
+  position:sticky; top:0; z-index:5;          /* pin to the top when scrolled */
+  background:#181818;                          /* opaque so rows pass behind */
+  border-bottom:1px solid rgba(255,255,255,.12);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard row navigation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A list you can only click is half-built. With a <strong>roving tabindex</strong>, exactly one row is focusable (<code>tabindex="0"</code>) at a time; <kbd>↑</kbd>/<kbd>↓</kbd> move that focus to the neighbour, and <kbd>Enter</kbd> plays the focused track. Keeping one tab stop means <kbd>Tab</kbd> jumps <em>into</em> and <em>out of</em> the list in one press instead of trudging through every song — the pattern the ARIA grid guidelines recommend.</p>
+        <div class="relative"><pre>let sel = 0;
+function focusRow(i){
+  sel = Math.max(0, Math.min(rows.length-1, i));
+  rows.forEach((r,k) => r.tabIndex = k === sel ? 0 : -1);  // roving tabindex
+  rows[sel].focus();
+}
+tracks.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown"){ e.preventDefault(); focusRow(sel+1); }
+  if (e.key === "ArrowUp"){   e.preventDefault(); focusRow(sel-1); }
+  if (e.key === "Enter" || e.key === " "){ e.preventDefault(); play(sel); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Responsive: drop columns, and the a11y finish</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On a phone there is no room for five columns, so the fold is two moves: rewrite <code>--gtc</code> to just three tracks and <code>display:none</code> the Album and Date cells. Because every row reads the same variable, one rule reshapes the whole table. To finish it honestly, the table carries <code>role="grid"</code> with <code>row</code>/<code>gridcell</code> children and a visually-hidden <code>aria-live</code> region announces each change ("Playing Midnight City Lights.", "Added to Liked Songs.") so a screen-reader user hears exactly what a sighted user sees.</p>
+        <div class="relative"><pre>@media (max-width:640px){
+  .pl { --gtc: 16px 1fr auto; }              /* 5 columns -> 3 */
+  .pl .col-album, .pl .col-date { display:none; }
+}
+/* announce every state change through one live region */
+function announce(msg){ live.textContent = msg; }
+play(i);  announce("Playing " + TRACKS[i].title + ".");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 40 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built the track table at the heart of every music app. It rests on one honest idea — <strong>CSS-Grid rows that share a single <code>grid-template-columns</code></strong> so header and songs align with no <code>&lt;table&gt;</code>. Then it comes alive: the index cell <strong>swaps its number for a ▶ on hover</strong>, a heart and ⋯ fade in, and a click flips one <code>.playing</code> class that turns the title <strong>green</strong> and starts four <strong>equalizer bars</strong> on staggered delays. Finish with <code>position:sticky</code> for the header, a <strong>roving tabindex</strong> for the arrow keys, and a media query that rewrites the column variable to fold onto a phone. <strong>👉 Tomorrow — Day 41: Pinterest masonry (a CSS-columns pin grid).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== SPOTIFY PLAYLIST TRACK TABLE =====
+const pl        = document.getElementById("pl");
+const tracksEl  = document.getElementById("tracks");
+const trackBody = document.getElementById("trackBody");
+const bigPlay   = document.getElementById("bigPlay");
+const shuffleBtn= document.getElementById("shuffleBtn");
+const vpDesktop = document.getElementById("vpDesktop");
+const vpMobile  = document.getElementById("vpMobile");
+const live      = document.getElementById("live");
+// read-out
+const roNow = document.getElementById("roNow"), roState = document.getElementById("roState");
+const roIdx = document.getElementById("roIdx"), roHover = document.getElementById("roHover");
+const roSel = document.getElementById("roSel"), roLiked = document.getElementById("roLiked");
+const roTracks = document.getElementById("roTracks"), roTotal = document.getElementById("roTotal");
+const roVp = document.getElementById("roVp"), roCols = document.getElementById("roCols");
+
+// the songs — a plain array of objects; the rows are derived from this
+const TRACKS = [
+  { title:"Midnight City Lights", artist:"Neon Skyline",  album:"After Hours",     added:"3 days ago",  dur:"3:42", art:["#f43f5e","#ec4899"] },
+  { title:"Paper Planes",         artist:"Coda Grove",    album:"Skyward",         added:"1 week ago",  dur:"4:05", art:["#0ea5e9","#3b82f6"] },
+  { title:"Slow Tide",            artist:"River & Stone", album:"Low Light",       added:"1 week ago",  dur:"2:58", art:["#10b981","#14b8a6"] },
+  { title:"Golden Hour",          artist:"Marigold",      album:"Sunroom",         added:"2 weeks ago", dur:"3:31", art:["#f59e0b","#f97316"] },
+  { title:"Static Bloom",         artist:"Violet Hours",  album:"Analog Dreams",   added:"3 weeks ago", dur:"5:12", art:["#8b5cf6","#6366f1"] },
+  { title:"Cassette Summer",      artist:"The Fondas",    album:"Rewind",          added:"1 month ago", dur:"3:19", art:["#d946ef","#f43f5e"] },
+  { title:"Undertow",             artist:"Halden",        album:"Deep Field",      added:"1 month ago", dur:"2:47", art:["#eab308","#f59e0b"] },
+  { title:"North Signal",         artist:"Aurora Lane",   album:"Beacon",          added:"2 months ago",dur:"1:40", art:["#22d3ee","#0ea5e9"] }
+];
+
+let playingIndex = -1;   // which track is current (-1 = none)
+let sel = 0;             // keyboard-selected row (roving tabindex)
+let hover = -1;          // which row the mouse is over (read-out only)
+const liked = new Set(); // indexes of liked songs
+
+// build every row from the data; the index cell stacks number/play/eq/pause
+trackBody.innerHTML = TRACKS.map((t,i) => `
+  <div class="track-row" role="row" data-i="${i}" tabindex="${i===0?0:-1}" aria-rowindex="${i+1}">
+    <div class="col-index" role="gridcell">
+      <span class="t-num">${i+1}</span>
+      <button class="t-play"  aria-label="Play ${t.title}">&#9654;</button>
+      <span class="t-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <button class="t-pause" aria-label="Pause">&#10074;&#10074;</button>
+    </div>
+    <div class="col-title" role="gridcell">
+      <span class="t-art" style="background:linear-gradient(135deg,${t.art[0]},${t.art[1]})"></span>
+      <span class="t-titlewrap">
+        <div class="t-title">${t.title}</div>
+        <div class="t-artist">${t.artist}</div>
+      </span>
+    </div>
+    <div class="col-album" role="gridcell">${t.album}</div>
+    <div class="col-date"  role="gridcell">${t.added}</div>
+    <div class="col-dur"   role="gridcell">
+      <button class="t-like" data-i="${i}" aria-label="Save ${t.title} to Liked Songs">&#9825;</button>
+      <span class="t-dur">${t.dur}</span>
+      <button class="t-more" aria-label="More options for ${t.title}">&#8943;</button>
+    </div>
+  </div>`).join("");
+
+const rows = [...trackBody.querySelectorAll(".track-row")];
+
+function announce(msg){ live.textContent = msg; }
+
+// parse "m:ss" to seconds, then a total back to "M min S sec" / "M:SS"
+function toSecs(d){ const [m,s] = d.split(":").map(Number); return m*60 + s; }
+const totalSecs = TRACKS.reduce((sum,t) => sum + toSecs(t.dur), 0);
+function fmtLong(s){ return Math.floor(s/60) + " min " + (s%60) + " sec"; }
+function fmtShort(s){ return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); }
+
+// the read-out is a pure function of the current playlist state
+function render(){
+  const playing = playingIndex >= 0;
+  const paused  = playing && rows[playingIndex].classList.contains("paused");
+  roNow.textContent   = playing ? TRACKS[playingIndex].title : "Nothing";
+  roState.textContent = !playing ? "idle" : paused ? "paused" : "playing";
+  roIdx.textContent   = playing ? (playingIndex+1) : "—";
+  roIdx.className     = "pill" + (playing && !paused ? " g" : "");
+  roHover.textContent = hover >= 0 ? (hover+1) : "—";
+  roSel.textContent   = sel+1;
+  roLiked.textContent = liked.size;
+  roLiked.className   = "pill" + (liked.size ? " g" : "");
+  roTracks.textContent= TRACKS.length;
+  roTotal.textContent = fmtShort(totalSecs);
+  const mobile = pl.classList.contains("is-mobile");
+  roVp.textContent    = mobile ? "mobile" : "desktop";
+  roCols.textContent  = mobile ? 3 : 5;
+  // keep the header stats honest too
+  document.getElementById("statCount").textContent = TRACKS.length;
+  document.getElementById("statTime").textContent  = fmtLong(totalSecs);
+  bigPlay.innerHTML = (playing && !paused) ? "&#10074;&#10074;" : "&#9654;";
+}
+
+// ---- play a track: strip .playing off the old row, add it to this one ----
+function play(i){
+  if (i === playingIndex){                       // clicking the current row toggles pause
+    const p = rows[i].classList.toggle("paused");
+    announce((p ? "Paused " : "Playing ") + TRACKS[i].title + ".");
+    render(); return;
+  }
+  rows.forEach(r => r.classList.remove("playing","paused"));
+  rows[i].classList.add("playing");
+  playingIndex = i;
+  announce("Playing " + TRACKS[i].title + " by " + TRACKS[i].artist + ".");
+  render();
+}
+
+// ---- roving tabindex: exactly one row is focusable at a time ----
+function focusRow(i){
+  sel = Math.max(0, Math.min(rows.length-1, i));
+  rows.forEach((r,k) => r.tabIndex = k === sel ? 0 : -1);
+  rows[sel].focus();
+  render();
+}
+
+// wire each row: click plays; hover feeds the read-out; buttons stop propagation
+rows.forEach(r => {
+  const i = +r.dataset.i;
+  r.addEventListener("click", () => play(i));
+  r.addEventListener("mouseenter", () => { hover = i; render(); });
+  r.addEventListener("mouseleave", () => { hover = -1; render(); });
+  r.addEventListener("focus", () => { sel = i; render(); });
+  // the play / pause buttons inside the index cell
+  r.querySelector(".t-play").addEventListener("click", e => { e.stopPropagation(); play(i); });
+  r.querySelector(".t-pause").addEventListener("click", e => { e.stopPropagation(); play(i); });
+  // the more menu — light demonstrative feedback
+  r.querySelector(".t-more").addEventListener("click", e => { e.stopPropagation(); announce("More options for " + TRACKS[i].title + "."); });
+});
+
+// like hearts (event-delegated so one listener covers every row)
+trackBody.addEventListener("click", e => {
+  const btn = e.target.closest(".t-like"); if (!btn) return;
+  e.stopPropagation();
+  const i = +btn.dataset.i;
+  const on = btn.classList.toggle("on");
+  if (on){ liked.add(i);  btn.innerHTML = "&#9829;"; announce(TRACKS[i].title + " added to Liked Songs."); }
+  else   { liked.delete(i); btn.innerHTML = "&#9825;"; announce(TRACKS[i].title + " removed from Liked Songs."); }
+  render();
+});
+
+// ---- keyboard navigation on the grid ----
+tracksEl.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown"){ e.preventDefault(); focusRow(sel+1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); focusRow(sel-1); }
+  else if (e.key === "Home"){ e.preventDefault(); focusRow(0); }
+  else if (e.key === "End"){ e.preventDefault(); focusRow(rows.length-1); }
+  else if (e.key === "Enter" || e.key === " "){ e.preventDefault(); play(sel); }
+});
+
+// big green button: play the current track, or the first if none, and toggle
+bigPlay.addEventListener("click", () => play(playingIndex >= 0 ? playingIndex : 0));
+shuffleBtn.addEventListener("click", () => {
+  const i = Math.floor(Math.random() * TRACKS.length);
+  play(i); announce("Shuffle — playing " + TRACKS[i].title + ".");
+});
+
+// ---- viewport toggle: preview the mobile fold without resizing ----
+function setViewport(mobile){
+  pl.classList.toggle("is-mobile", mobile);
+  vpMobile.classList.toggle("on", mobile);
+  vpDesktop.classList.toggle("on", !mobile);
+  announce(mobile ? "Mobile layout — album and date columns dropped." : "Desktop layout — all five columns.");
+  render();
+}
+vpDesktop.addEventListener("click", () => setViewport(false));
+vpMobile.addEventListener("click", () => setViewport(true));
+
+// ---- init ----
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a track table really is",
+   why:"Open a playlist on Spotify, Apple Music, YouTube Music or SoundCloud and the body is the same object: a scrollable list of song rows, each carrying a position number, the title and artist, the album, when it was added, and the length. It looks exactly like an HTML data table, but building it as a real <table> makes the hover controls and responsive folding painful. The modern approach is a stack of CSS-Grid rows that all share one column template, so the header labels and every song align into identical columns while each row stays an independent, styleable block. Learn this one structure — grid rows sharing a template — and you can rebuild the content area of almost any music or media app. Everything after this is small behaviour layered onto that grid: a hover swap, a now-playing class, a sticky header, arrow keys, and a mobile fold.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">a playlist = header + grid of song rows<br><br># &nbsp;Title&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Album&nbsp;&nbsp;&nbsp;Date&nbsp;&nbsp;&#9201;<br>&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;<br>1&nbsp;&nbsp;Midnight City&nbsp;&nbsp;After&nbsp;&nbsp;3d&nbsp;&nbsp;3:42<br>2&nbsp;&nbsp;Paper Planes&nbsp;&nbsp;&nbsp;Skyward&nbsp;1w&nbsp;4:05<br>3&nbsp;&nbsp;Slow Tide&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Low&nbsp;&nbsp;&nbsp;&nbsp;1w&nbsp;2:58<br><br>looks like a table — it is CSS Grid</div>',
+   code:"// Spotify · Apple Music · YouTube Music — same skeleton\n// header row: #  Title  Album  Date added  duration\n// then N song rows, each the same 5 columns\n// NOT a <table> — grid rows sharing one template\n// change the skin, keep the bones" },
+ { title:"2. CSS-Grid table: one shared column template",
+   why:"The header row and every track row are display:grid with the exact same grid-template-columns. That shared template is the whole trick: because column 3 of the header and column 3 of each row use the same track sizing, Album lines up under Album automatically — no <td>, no hand-tuned widths, no fragile percentages. Fractional units let the important column breathe (Title gets 4fr) while fixed and minmax tracks pin the tight ones (the number is 16px, the duration a minmax floor). Storing the template in a single CSS custom property (--gtc) pays off twice: it documents the layout in one place, and the responsive fold later becomes a one-line reassignment of that variable rather than rewriting every selector.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">--gtc: 16px 4fr 2.6fr 2fr minmax(96px,auto)<br><br>header:&nbsp;[#][&nbsp;Title&nbsp;][Album][Date][&#9201;]<br>row 1:&nbsp;&nbsp;[1][&nbsp;Song&nbsp;&nbsp;][Alb&nbsp;&nbsp;][3d&nbsp;&nbsp;][3:42]<br>row 2:&nbsp;&nbsp;[2][&nbsp;Song&nbsp;&nbsp;][Alb&nbsp;&nbsp;][1w&nbsp;&nbsp;][4:05]<br>&nbsp;&nbsp;&nbsp;&nbsp;&#8593; same template &#8594; columns align</div>',
+   code:".pl { --gtc: 16px 4fr 2.6fr 2fr minmax(96px,auto); }\n\n.track-headrow,\n.track-row {\n  display:grid;\n  grid-template-columns: var(--gtc);  // shared -> aligned\n  gap:16px; align-items:center;\n}\n// fr = flexible, 16px = fixed #, minmax = duration floor" },
+ { title:"3. The hover-swap: number ↔ play button",
+   why:"The signature Spotify micro-interaction is the row's leading cell: at rest it shows the track number, and the instant you hover the row that number becomes a ▶ play button. The clean way to do this is to put both elements in the same index cell — the number and a play button stacked together — and let one :hover rule decide which is visible. By default the number shows and the button is display:none; on row hover the number hides and the button appears. It is pure CSS, so it is instant and needs no JavaScript. The only nuance is scoping: qualify the rule with :not(.playing) so that the currently playing row keeps showing its equalizer instead of reverting to a plain play button — the hover swap should only apply to rows that are idle.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one cell, two children, :hover picks one<br><br>rest:&nbsp;&nbsp;[ 3 ]&nbsp;&nbsp;&#8592; .t-num shows<br>hover: [ &#9654; ]&nbsp;&nbsp;&#8592; .t-play shows<br><br>.t-play { display:none }<br>row:hover .t-num&nbsp; { display:none }<br>row:hover .t-play { display:inline-flex }</div>',
+   code:".t-play { display:none; }   // hidden until hover\n\n.track-row:not(.playing):hover .t-num  { display:none; }\n.track-row:not(.playing):hover .t-play { display:inline-flex; }\n// number and button share the cell; hover flips which shows\n// :not(.playing) so the current track keeps its equalizer" },
+ { title:"4. Row states: rest, hover, selected, playing",
+   why:"A single row can be in several visual states at once, and keeping them independent is what makes the list feel solid. Rest is the calm default. Hover (CSS :hover) lightens the background and reveals the row's actions — the play swap, the like heart, the ⋯ menu — so only the row under the cursor is 'loud'. Selected is the keyboard-focused row, marked with its own class/background so arrow-key users always see where they are, independent of the mouse. Playing is a persistent class set by JavaScript that survives hover and scrolling. Because hover is CSS and selected/playing are classes, they compose cleanly: a row can be playing AND hovered (equalizer becomes a pause button), or selected but not playing. Each state owns its own rules, so none of them stomps on another.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">four independent states<br><br>rest&nbsp;&nbsp;&nbsp;&nbsp;&#8594; number, calm<br>:hover&nbsp;&nbsp;&#8594; bg lightens, ▶ + heart + &#8943;<br>.sel&nbsp;&nbsp;&nbsp;&#8594; keyboard focus ring<br>.playing &#8594; green title + equalizer<br><br>CSS hover + JS classes compose</div>',
+   code:".track-row:hover { background:rgba(255,255,255,.09); }\n.track-row.sel   { background:rgba(255,255,255,.16); }  // keyboard\n.track-row:focus-visible { box-shadow:inset 0 0 0 2px #1db954; }\n.track-row.playing .t-title { color:#1db954; }         // now playing\n// hover = CSS, sel/playing = JS classes -> they stack" },
+ { title:"5. Now playing: state in JS, look in CSS",
+   why:"Clicking a row makes it the current track, and the discipline that keeps this bug-free is separating state from appearance. State is tiny: a playingIndex number, and a single .playing class on exactly one row. The click handler does only bookkeeping — remove .playing from whichever row had it, add it to the clicked row, update playingIndex, then call render(). Everything you SEE is downstream CSS keyed off that one class: the title turns green, the number cell switches to an equalizer. Nothing about the visuals lives in the JavaScript, so the look can never drift from the state. Clicking the already-playing row toggles a .paused class instead — same idea, one more boolean — which the CSS reads to freeze the bars and show a resume triangle. One source of truth, many derived visuals.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">click &#8594; move one class &#8594; CSS reacts<br><br>state: playingIndex = 2<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rows[2].class += "playing"<br><br>look (all CSS):<br>&nbsp;&nbsp;.playing .t-title &#8594; green<br>&nbsp;&nbsp;.playing .t-eq&nbsp;&nbsp;&nbsp;&#8594; bars show</div>',
+   code:"let playingIndex = -1;\nfunction play(i){\n  rows.forEach(r => r.classList.remove('playing','paused'));\n  rows[i].classList.add('playing');\n  playingIndex = i;\n  render();                       // read-out follows state\n}\nrows.forEach(r =>\n  r.addEventListener('click', () => play(+r.dataset.i)));" },
+ { title:"6. The equalizer: staggered CSS animation",
+   why:"The four bouncing bars that mark the now-playing track are the smallest possible CSS animation and a great lesson in one trick: negative animation-delay. All four bars run the identical @keyframes — grow the height to 100% at the midpoint, shrink back at the ends — on the same duration. If they started together they would pulse in unison and look mechanical. Giving each a different negative delay starts it partway INTO the loop immediately (no waiting), so at any instant the four bars are at different heights and the group reads as lively and organic. The bars only exist on the .playing row, and hovering that row swaps the equalizer for a pause button. Respecting prefers-reduced-motion by freezing the bars keeps the effect from bothering users who are sensitive to movement — motion should always be optional.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">4 bars · same keyframes · different delays<br><br>&#9601;&#9603;&#9605;&#9607; &#8594; &#9607;&#9601;&#9606;&#9602; &#8594; &#9602;&#9607;&#9601;&#9605;<br><br>@keyframes eq { 50% { height:100% } }<br>bar1 delay -.20s&nbsp;&nbsp;bar2 -.55s<br>bar3 delay -.05s&nbsp;&nbsp;bar4 -.40s<br><br>negative delay = start mid-loop</div>',
+   code:".t-eq span {\n  width:3px; background:#1db954;\n  animation:eq .9s ease-in-out infinite;\n}\n.t-eq span:nth-child(1){ animation-delay:-.20s; }\n.t-eq span:nth-child(2){ animation-delay:-.55s; }\n.t-eq span:nth-child(3){ animation-delay:-.05s; }\n@keyframes eq { 0%,100%{ height:25%; } 50%{ height:100%; } }" },
+ { title:"7. The sticky column header",
+   why:"When a playlist is long you scroll the songs, but the column labels (#, Title, Album, Date, duration) should stay pinned at the top so you never lose track of what each column means. position:sticky with top:0 does this with zero JavaScript and zero scroll listeners: the element scrolls along normally until its top edge reaches the offset you named, then it 'sticks' there while the rest keeps moving. The two things people forget: the sticky element needs a scroll CONTAINER (here the playlist has max-height and overflow-y:auto), and it needs an opaque background plus a z-index, otherwise the song rows scrolling underneath show through the transparent header. Get those right and the header pins cleanly — the same technique behind sticky table heads, section headers in contact lists, and docked toolbars everywhere.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">header pins while rows scroll under it<br><br>&#9660; scroll<br>&#9552;&#9552; # Title Album Date &#9201; &#9552;&#9552; &#8592; stuck at top:0<br>&nbsp;&nbsp;3&nbsp;&nbsp;Slow Tide&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;…<br>&nbsp;&nbsp;4&nbsp;&nbsp;Golden Hour&nbsp;&nbsp;&nbsp;…<br><br>needs: scroll container + opaque bg + z-index</div>',
+   code:".pl { max-height:560px; overflow-y:auto; }  // scroll container\n\n.track-headrow {\n  position:sticky; top:0;   // pin at the top when scrolled\n  z-index:5;                // above the rows\n  background:#181818;       // opaque so rows pass behind, not through\n}" },
+ { title:"8. Keyboard row navigation (roving tabindex)",
+   why:"A list you can only operate with a mouse excludes keyboard and screen-reader users. The established pattern for a navigable list or grid is the roving tabindex: at any moment exactly one row has tabindex='0' (it is in the tab order) and all the others have tabindex='-1' (focusable by script, skipped by Tab). Pressing Tab therefore moves focus INTO the list once and OUT once, instead of stopping on all eight songs; once inside, ArrowDown/ArrowUp move the '0' to the neighbouring row and focus it, and Enter or Space plays the focused track. This is exactly how the ARIA grid and listbox guidelines say to do it, and it matches what users expect from native lists. The selected row also gets a visible focus style so sighted keyboard users can always see where they are.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one tab stop, arrows move within<br><br>row1 tabindex="-1"<br>row2 tabindex="0"&nbsp;&#8592; the one tab stop<br>row3 tabindex="-1"<br><br>&#8595; ArrowDown &#8594; moves the 0 down + focus<br>Enter &#8594; play the focused row</div>',
+   code:"let sel = 0;\nfunction focusRow(i){\n  sel = Math.max(0, Math.min(rows.length-1, i));\n  rows.forEach((r,k) => r.tabIndex = k===sel ? 0 : -1); // roving\n  rows[sel].focus();\n}\ntracks.addEventListener('keydown', e => {\n  if (e.key==='ArrowDown'){ e.preventDefault(); focusRow(sel+1); }\n  if (e.key==='ArrowUp'){   e.preventDefault(); focusRow(sel-1); }\n  if (e.key==='Enter'){ play(sel); }\n});" },
+ { title:"9. Responsive fold + accessibility finish",
+   why:"On a narrow screen five columns will not fit, and the fold is beautifully small because the layout lives in one variable. A media query rewrites --gtc from five tracks down to three and sets the Album and Date cells to display:none; since every row reads that same variable, one rule reshapes the entire table — number, title and duration remain, the secondary columns vanish. Toggling a class does the same thing for a live preview. The accessibility finish is not an afterthought: the table declares role='grid' with role='row' and role='gridcell' descendants so assistive tech understands the structure, every actionable control is a real <button> with an aria-label, and a visually-hidden aria-live region speaks each change — 'Playing Midnight City Lights.', 'Added to Liked Songs.', 'Mobile layout.' — so a non-sighted user follows the same story a sighted one sees. Because every action already funnels through a handler, adding an announce() is one line each.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">rewrite one variable &#8594; whole table folds<br><br>desktop --gtc: 16px 4fr 2.6fr 2fr 96px&nbsp;(5)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8595; &lt; 640px<br>mobile&nbsp;&nbsp;--gtc: 16px 1fr auto&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(3)<br>&nbsp;&nbsp;&nbsp;&nbsp;+ album & date display:none<br><br>aria-live: "Playing Midnight City Lights."</div>',
+   code:"@media (max-width:640px){\n  .pl { --gtc: 16px 1fr auto; }        // 5 columns -> 3\n  .pl .col-album, .pl .col-date { display:none; }\n}\n// role='grid' > role='row' > role='gridcell'\n// one live region speaks every change\nfunction announce(msg){ live.textContent = msg; }\nplay(i); announce('Playing ' + TRACKS[i].title + '.');" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3500); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
