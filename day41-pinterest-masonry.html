@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 41 — Pinterest Masonry</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:520px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:20px; }
+  .board-wrap { max-height:600px; overflow-y:auto; border-radius:12px; }
+  .board-wrap::-webkit-scrollbar { width:10px; } .board-wrap::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:8px; }
+
+  /* ---- the board: ONE element, two layout modes ---- */
+  .board { position:relative; width:100%; --cols:4; --gap:16px; }
+
+  /* mode A — pure CSS multi-column: one line does the packing */
+  .board.mode-css { column-count:var(--cols); column-gap:var(--gap); }
+  .board.mode-css .pin { break-inside:avoid; -webkit-column-break-inside:avoid;
+                         width:100%; margin:0 0 var(--gap); }
+
+  /* mode B — JS-measured masonry: every pin is absolutely placed by script */
+  .board.mode-js .pin { position:absolute; margin:0; }
+
+  /* ---- a pin ---- */
+  .pin { border-radius:16px; cursor:zoom-in; transition:transform .15s; will-change:transform; }
+  .pin:hover { transform:translateY(-2px); }
+  .pin-img { position:relative; overflow:hidden; border-radius:16px; width:100%;
+             box-shadow:0 1px 3px rgba(15,23,42,.12); display:flex; align-items:center; justify-content:center; }
+  .pin-cat { color:rgba(255,255,255,.9); font-weight:800; font-size:.9rem; letter-spacing:.02em;
+             text-transform:uppercase; text-shadow:0 1px 6px rgba(0,0,0,.25); user-select:none; }
+
+  /* the DOM-order badge — reveals the reading order of each technique */
+  .pin-order { position:absolute; top:8px; left:8px; z-index:3; display:none;
+               width:26px; height:26px; border-radius:50%; align-items:center; justify-content:center;
+               background:rgba(15,23,42,.82); color:#fff; font-weight:800; font-size:12px; font-variant-numeric:tabular-nums; }
+  .board.show-order .pin-order { display:flex; }
+
+  /* the hover overlay: dim + Save + actions */
+  .pin-overlay { position:absolute; inset:0; opacity:0; transition:opacity .18s ease;
+                 background:linear-gradient(180deg, rgba(0,0,0,.32), rgba(0,0,0,.02) 32%, rgba(0,0,0,.02) 60%, rgba(0,0,0,.46));
+                 display:flex; flex-direction:column; padding:10px; }
+  .pin:hover .pin-overlay, .pin:focus-within .pin-overlay { opacity:1; }
+  .pin-save { align-self:flex-end; background:#e60023; color:#fff; border:0; border-radius:999px;
+              padding:8px 16px; font-weight:800; font-size:.85rem; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25);
+              transition:transform .1s, background .12s; }
+  .pin-save:hover { transform:scale(1.04); background:#ad081b; }
+  .pin-save.saved { background:#111; }
+  .pin-actions { margin-top:auto; align-self:flex-end; display:flex; gap:8px; }
+  .pin-act { width:34px; height:34px; border-radius:50%; border:0; cursor:pointer;
+             background:rgba(255,255,255,.94); color:#111; font-size:1rem; font-weight:700;
+             display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  .pin-act:hover { background:#fff; }
+  .pin-act svg { width:16px; height:16px; }
+
+  /* the caption under the image */
+  .pin-cap { padding:8px 6px 2px; }
+  .pin-title { font-size:.9rem; font-weight:700; color:#1e293b; line-height:1.25;
+               overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .pin-author { margin-top:4px; font-size:.78rem; color:#64748b; display:flex; align-items:center; gap:6px; }
+  .pin-dot { width:16px; height:16px; border-radius:50%; flex-shrink:0; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost.on { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none; } .pin, .pin-overlay { transition:none; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 41</div>
+      <h1 class="text-xl font-bold">📌 Pinterest Masonry — A Pin Board Where Cards of Every Height Pack Into Columns With No Row Gaps, Built Two Ways: the One-Line CSS <code>columns</code> Version That Flows Top-to-Bottom Down Each Column, and True JavaScript Masonry That Measures Every Pin and Drops It Into the Shortest Column So the Columns Stay Balanced — Pick 2–5 Columns or Auto-by-Width, Hover a Pin to Dim It and Reveal a Save Button and Actions, Toggle the Numbered Reading Order, and See Exactly Why CSS Grid Can't Do This on Its Own</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Pins of every height pack into tight columns with no gaps between rows — that is masonry, and there are two very different ways to get it.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A Pinterest board is a wall of <strong>pins of wildly different heights</strong> that still tile together with <strong>no ragged row gaps</strong>. Plain CSS Grid can't do that easily — its rows share a height, so a short pin next to a tall one leaves a hole. So you reach for one of two techniques. <strong>CSS <code>columns</code></strong> is one line (<code>column-count</code> + <code>break-inside:avoid</code>) and packs beautifully, but it flows pins <strong>top-to-bottom down each column</strong> — so the reading order is column-major (watch the numbers). <strong>True masonry</strong> is a pinch of JavaScript: measure each pin and drop it into whichever <strong>column is currently shortest</strong>, which keeps the columns balanced and reads left-to-right. Flip the <strong>technique</strong> toggle to feel the difference, change the <strong>column count</strong> (or pick Auto and resize the window), turn on <strong>Show order #</strong> to see the reading-order caveat, and <strong>hover any pin</strong> to dim it and reveal its <strong>Save</strong> button and actions. No library.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <!-- controls -->
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Technique</span>
+              <button id="mCss" class="btn-ghost on" data-mode="css">CSS columns</button>
+              <button id="mJs"  class="btn-ghost" data-mode="js">JS masonry</button>
+              <span class="text-slate-300">|</span>
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Columns</span>
+              <div id="colBtns" class="flex gap-1">
+                <button class="btn-ghost" data-cols="2">2</button>
+                <button class="btn-ghost" data-cols="3">3</button>
+                <button class="btn-ghost on" data-cols="4">4</button>
+                <button class="btn-ghost" data-cols="5">5</button>
+                <button class="btn-ghost" data-cols="auto">Auto</button>
+              </div>
+              <span class="text-slate-300">|</span>
+              <button id="orderBtn" class="btn-ghost" data-on="false">Show order #</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="board-wrap">
+                <div class="board mode-css" id="board" role="list" aria-label="Pin board">
+                  <!-- pins injected by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Layout technique</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roTech" class="text-lg font-bold text-slate-800 truncate">CSS columns</span>
+                <span id="roTechKind" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">1 line</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">columns</span><span id="roCols" class="pill">4</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">pins</span><span id="roPins" class="pill">18</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">saved</span><span id="roSaved" class="pill">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">reading order</span><span id="roOrder" class="pill a">&#8595; column</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">hovered pin</span><span id="roHover" class="pill">&mdash;</span></div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200">
+                <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Column balance</div>
+                <div class="flex justify-between text-center">
+                  <div><div id="roShort" class="text-base font-bold text-slate-700">0</div><div class="text-xs text-slate-400 font-semibold">shortest</div></div>
+                  <div><div id="roTall" class="text-base font-bold text-slate-700">0</div><div class="text-xs text-slate-400 font-semibold">tallest</div></div>
+                  <div><div id="roSpread" class="text-base font-bold text-slate-700">0</div><div class="text-xs text-slate-400 font-semibold">spread</div></div>
+                </div>
+                <div class="text-xs text-slate-400 mt-1 text-center">column heights, px</div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">A small <strong>spread</strong> means the columns end at nearly the same height — that is what JS masonry optimises for. CSS columns balances differently and reads <strong>down</strong> each column, not across.</p>
+              <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Open Pinterest, Unsplash, a Dribbble grid or any image wall and you meet the same object: <strong>cards of different heights packed into columns with no row gaps</strong>. CSS Grid wants rows to line up, so it can't tile ragged heights without leaving holes — which is why masonry is its own pattern. The cheap win is CSS <code>columns</code>: one declaration, the browser packs it, but the pins flow <strong>down each column then across</strong>, so item 5 sits under item 4, not to its right. The full version is JavaScript that <strong>measures each pin and places it in the shortest column</strong>, so the wall stays balanced and reads in DOM order. Layer a hover overlay with a <strong>Save</strong> button on top, make the column count responsive, and you have the whole surface.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How masonry works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Masonry is the Pinterest wall: pins of every height packed into columns with <strong>no row gaps</strong>. The catch is that CSS Grid can't do it cheaply — grid rows share a height, so ragged pins leave holes. You have two real options. <strong>CSS <code>columns</code></strong> is a one-liner that packs top-to-bottom down each column (great, but the reading order is column-major). <strong>True masonry</strong> is a little JavaScript: measure each pin and drop it into the <strong>shortest column</strong>, which balances the wall and keeps DOM reading order. We'll build the pins, wire both techniques behind one toggle, add responsive columns and the hover Save overlay, and finish with accessibility. No framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Why CSS Grid can't do true masonry</h3></div>
+        <p class="text-sm text-slate-600 mb-3">In a normal CSS Grid, every cell in a row shares that row's track height — so a short pin beside a tall one gets stretched or leaves a gap, and the next row starts <em>below the tallest item</em>. Masonry needs each column to flow independently, pulling the next item up into the shortest gap. Grid's row model can't express that (the <code>grid-template-rows: masonry</code> proposal exists but is experimental and not shipped across browsers). That's the whole reason masonry is its own pattern — you either give up rows entirely (CSS columns) or place items yourself (JS).</p>
+        <div class="relative"><pre>/* GRID tries to align rows -> ragged heights leave holes */
+.grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+/* a short pin next to a tall one: the row height = the TALL one,
+   so the short pin's column has a gap before the next row starts.
+   masonry wants the next item pulled UP into that gap -> grid can't. */
+
+/* the experimental fix (NOT widely shipped yet): */
+.grid { grid-template-rows: masonry; }   /* Firefox flag / draft spec */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Render the pins from data</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep the pins as an array of objects — a title, an author, a colour and, crucially, an <strong>aspect ratio</strong> that gives each pin a different height. Build the markup in JS. Each pin has an image block (its height comes from <code>aspect-ratio</code> so the widths can change without us re-doing the math), a hidden hover overlay, and a caption. A <code>data-i</code> index and an order badge let us show the reading order later.</p>
+        <div class="relative"><pre>const PINS = [
+  { title:"Cozy Reading Nook", author:"studio.lume",
+    cat:"Decor", ratio:"3/4", grad:["#6366f1","#a855f7"] },
+  /* … 18 pins, ratios from 16/9 (wide) to 9/16 (tall) … */
+];
+board.innerHTML = PINS.map((p,i) =&gt; `
+  &lt;div class="pin" data-i="${i}" role="listitem"&gt;
+    &lt;div class="pin-img"
+         style="aspect-ratio:${p.ratio};
+                background:linear-gradient(135deg,${p.grad[0]},${p.grad[1]})"&gt;
+      &lt;span class="pin-order"&gt;${i+1}&lt;/span&gt;
+      &lt;div class="pin-overlay"&gt;…Save + actions…&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class="pin-cap"&gt;${p.title} · ${p.author}&lt;/div&gt;
+  &lt;/div&gt;`).join("");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Technique A — CSS columns (one line)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The cheapest masonry is <code>column-count</code>. The browser slices the container into N equal columns and pours the pins in. The one rule that makes it work is <code>break-inside: avoid</code> so a pin never splits across a column boundary. No JavaScript, no measuring — but the pins flow <strong>top-to-bottom down column 1, then column 2</strong>, so this is column-major (see step 4).</p>
+        <div class="relative"><pre>.board { column-count:4; column-gap:16px; }   /* that's the whole layout */
+
+.board .pin {
+  break-inside:avoid;             /* never split a pin across columns */
+  -webkit-column-break-inside:avoid;
+  width:100%;                     /* fill the column */
+  margin:0 0 16px;                /* the row gap */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The reading-order caveat of CSS columns</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the trade-off you must know. CSS <code>columns</code> lays pins out <strong>vertically</strong>: pin 1, 2, 3 go down the first column, then 4, 5, 6 down the second. So visually, pin 5 sits <em>under</em> pin 4, not to its right — the DOM order reads down-then-across, which is wrong for a feed where "newest first" should read left-to-right across the top. Turn on <strong>Show order #</strong> in the demo to see the numbers march downward. If order matters, you need technique B.</p>
+        <div class="relative"><pre>/* CSS columns fills DOWN each column, then moves ACROSS:
+
+   col 1   col 2   col 3   col 4
+   [ 1 ]   [ 5 ]   [ 9 ]   [13 ]
+   [ 2 ]   [ 6 ]   [10 ]   [14 ]
+   [ 3 ]   [ 7 ]   [11 ]   [15 ]
+   [ 4 ]   [ 8 ]   [12 ]   …
+
+   reading order = column-major (down). For a "newest across
+   the top" feed this is WRONG — that's why real feeds use JS. */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Technique B — JS masonry: shortest-column placement</h3></div>
+        <p class="text-sm text-slate-600 mb-3">True masonry places pins in DOM order, each into whichever column is <strong>currently shortest</strong>. Keep an array of running column heights, all starting at 0. For each pin, find the index of the minimum height, that's the pin's column; then add the pin's height (plus the gap) to that column's running total. Because you always feed the shortest column, the wall stays balanced <em>and</em> the pins read across-then-down in DOM order.</p>
+        <div class="relative"><pre>const colH = new Array(cols).fill(0);   // running height of each column
+
+pins.forEach(pin =&gt; {
+  // 1) which column is shortest right now?
+  let c = 0;
+  for (let k = 1; k &lt; cols; k++) if (colH[k] &lt; colH[c]) c = k;
+
+  // 2) place the pin there (step 6 does the pixel math)
+  place(pin, c, colH[c]);
+
+  // 3) grow that column by the pin's measured height + the gap
+  colH[c] += pin.offsetHeight + GAP;
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Measure &amp; absolutely position each pin</h3></div>
+        <p class="text-sm text-slate-600 mb-3">JS masonry means you own the coordinates. Make the board <code>position:relative</code> and every pin <code>position:absolute</code>. Compute the column width from the container: <code>(boardWidth − (cols−1)·gap) / cols</code>, and set it on each pin first so <code>aspect-ratio</code> resolves the height. Then <code>pin.offsetHeight</code> gives the real measured height to feed the algorithm. The pin's <code>left</code> is its column index times (colW + gap); its <code>top</code> is that column's running height. Finally set the board's height to the tallest column so the page flows correctly.</p>
+        <div class="relative"><pre>const boardW = board.clientWidth;
+const colW = (boardW - GAP*(cols-1)) / cols;
+
+pins.forEach(p =&gt; { p.style.position="absolute"; p.style.width = colW+"px"; });
+
+const colH = new Array(cols).fill(0);
+pins.forEach(p =&gt; {
+  let c = 0; for (let k=1;k&lt;cols;k++) if (colH[k] &lt; colH[c]) c = k;
+  p.style.left = c*(colW+GAP) + "px";     // horizontal slot
+  p.style.top  = colH[c] + "px";          // stack under this column
+  colH[c] += p.offsetHeight + GAP;        // measured height grows the column
+});
+board.style.height = Math.max(...colH) + "px";   // container must wrap them</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Responsive column count</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A board should show more columns on a wide screen and fewer on a phone. Derive the count from the container's width with a few breakpoints, and re-run the layout on <code>resize</code> (throttled with <code>requestAnimationFrame</code> so it stays smooth). For JS masonry you <em>must</em> re-layout on resize anyway, because the column width — and therefore every pin's height and position — changes. The pure-CSS route can be responsive too by swapping <code>column-count</code> for <code>column-width</code>, letting the browser fit as many columns as the width allows.</p>
+        <div class="relative"><pre>function autoCols(w){ return w&lt;480 ? 2 : w&lt;720 ? 3 : w&lt;1000 ? 4 : 5; }
+
+let queued = false;
+addEventListener("resize", () =&gt; {
+  if (queued) return; queued = true;
+  requestAnimationFrame(() =&gt; { queued = false; layout(); });  // re-place on resize
+});
+
+/* pure-CSS responsive alternative — no JS, browser fits the columns: */
+.board { column-width:220px; column-gap:16px; }   /* as many as fit */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The hover overlay: dim + Save + actions</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every pin carries an overlay that's invisible at rest (<code>opacity:0</code>) and fades in on hover. It's a dark gradient that <strong>dims</strong> the image so the controls read clearly: a red <strong>Save</strong> button pinned top-right, and a row of round action buttons at the bottom. Fading with <code>opacity</code> (not <code>display</code>) keeps the controls in the layout so nothing shifts. Save is a persistent toggle — a saved pin flips to a dark "Saved" state, which is state, not hover, so it stays saved after the cursor leaves.</p>
+        <div class="relative"><pre>.pin-overlay {
+  position:absolute; inset:0; opacity:0; transition:opacity .18s;
+  background:linear-gradient(180deg, rgba(0,0,0,.32), transparent 40%,
+                                     rgba(0,0,0,.46));      /* the dim */
+  display:flex; flex-direction:column; padding:10px;
+}
+.pin:hover .pin-overlay,
+.pin:focus-within .pin-overlay { opacity:1; }               /* reveal */
+
+.pin-save   { align-self:flex-end; background:#e60023; color:#fff; }
+.pin-save.saved { background:#111; }                        /* persistent state */
+.pin-actions{ margin-top:auto; align-self:flex-end; }        /* bottom row */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Wire it together + the a11y finish</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One <code>layout()</code> function reads the current mode and column count and calls either <code>layoutCSS()</code> (clear inline styles, set <code>column-count</code>) or <code>layoutJS()</code> (measure &amp; place). Every control — the technique toggle, the column buttons, resize — just calls <code>layout()</code>, so state lives in two variables and the view is derived from them. Finish honestly: the board is a <code>role="list"</code> of <code>listitem</code> pins, each Save is a real <code>&lt;button&gt;</code> with an <code>aria-pressed</code> and <code>aria-label</code>, and a visually-hidden <code>aria-live</code> region announces each change ("Saved Cozy Reading Nook.", "Switched to JS masonry.") so a screen-reader user follows the same story.</p>
+        <div class="relative"><pre>let mode = "css", colMode = 4;                 // the entire state
+function resolveCols(){ return colMode==="auto" ? autoCols(board.clientWidth) : colMode; }
+function layout(){
+  const cols = resolveCols();
+  mode === "css" ? layoutCSS(cols) : layoutJS(cols);   // one branch
+  report(cols);                                        // read-out follows
+}
+/* announce every change through one live region */
+function announce(msg){ live.textContent = msg; }
+save.onclick = () =&gt; { const on = save.classList.toggle("saved");
+  save.setAttribute("aria-pressed", on);
+  announce((on?"Saved ":"Removed ") + PINS[i].title + "."); };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 41 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built the Pinterest wall — pins of every height packed into columns with <strong>no row gaps</strong>. You learned <strong>why CSS Grid can't tile ragged heights</strong> (rows share a height), and the two escapes: <strong>CSS <code>columns</code></strong> for a free one-liner that reads column-major, and <strong>JS masonry</strong> that measures each pin and drops it into the <strong>shortest column</strong> to stay balanced and read in DOM order. Then a <strong>responsive column count</strong>, a hover overlay that <strong>dims and reveals a Save button</strong>, and an <code>aria-live</code> finish. <strong>👉 Tomorrow — Day 42: Trello board (horizontal scroll lanes with drag-and-drop cards).</strong></p></div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+  if (t.dataset.tab === "look") requestAnimationFrame(layout);   // remeasure when shown
+});
+
+// ===== PINTEREST MASONRY =====
+const GAP = 16;
+const board = document.getElementById("board");
+const live  = document.getElementById("live");
+// controls
+const mCss = document.getElementById("mCss"), mJs = document.getElementById("mJs");
+const colBtns = document.getElementById("colBtns");
+const orderBtn = document.getElementById("orderBtn");
+// read-out
+const roTech = document.getElementById("roTech"), roTechKind = document.getElementById("roTechKind");
+const roCols = document.getElementById("roCols"), roPins = document.getElementById("roPins");
+const roSaved = document.getElementById("roSaved"), roOrder = document.getElementById("roOrder");
+const roHover = document.getElementById("roHover");
+const roShort = document.getElementById("roShort"), roTall = document.getElementById("roTall"), roSpread = document.getElementById("roSpread");
+
+// the pins — a plain array; the wall is derived from this. ratio drives the height.
+const PINS = [
+  { title:"Cozy Reading Nook",     author:"studio.lume",     cat:"Decor",       ratio:"3/4",  grad:["#6366f1","#a855f7"] },
+  { title:"Matcha Morning",        author:"kettle.and.co",   cat:"Food",        ratio:"1/1",  grad:["#10b981","#14b8a6"] },
+  { title:"Desert Road Trip",      author:"wanderfolk",      cat:"Travel",      ratio:"3/2",  grad:["#f59e0b","#f97316"] },
+  { title:"Minimal Workspace",     author:"deskotype",       cat:"Design",      ratio:"4/5",  grad:["#0ea5e9","#3b82f6"] },
+  { title:"Golden Hour Portrait",  author:"lenslight",       cat:"Photo",       ratio:"2/3",  grad:["#f43f5e","#ec4899"] },
+  { title:"Terrazzo Tiles",        author:"casa.mod",        cat:"Interiors",   ratio:"1/1",  grad:["#eab308","#f59e0b"] },
+  { title:"Trail Running Sunrise", author:"pacemaker",       cat:"Fitness",     ratio:"9/16", grad:["#8b5cf6","#6366f1"] },
+  { title:"Late Night Ramen Bar",  author:"slurp.club",      cat:"Food",        ratio:"3/4",  grad:["#d946ef","#f43f5e"] },
+  { title:"Analog Film Grain",     author:"grainy",          cat:"Photo",       ratio:"1/1",  grad:["#06b6d4","#0ea5e9"] },
+  { title:"Indoor Jungle Corner",  author:"leaf.theory",     cat:"Plants",      ratio:"3/4",  grad:["#84cc16","#22c55e"] },
+  { title:"Neon Alley After Rain", author:"nightmode",       cat:"Urban",       ratio:"2/3",  grad:["#6366f1","#8b5cf6"] },
+  { title:"Handmade Ceramic Mugs", author:"clay.hands",      cat:"Craft",       ratio:"4/3",  grad:["#f97316","#ef4444"] },
+  { title:"Mountain Cabin",        author:"highaltitude",    cat:"Travel",      ratio:"16/9", grad:["#0ea5e9","#6366f1"] },
+  { title:"Pastel Gradient Set",   author:"hue.lab",         cat:"Wallpaper",   ratio:"9/16", grad:["#ec4899","#8b5cf6"] },
+  { title:"Autumn Street Style",   author:"fitcheck",        cat:"Fashion",     ratio:"2/3",  grad:["#f59e0b","#eab308"] },
+  { title:"Latte Art Study",       author:"barista.daily",   cat:"Coffee",      ratio:"1/1",  grad:["#a855f7","#d946ef"] },
+  { title:"Sunset Surf Session",   author:"saltwater",       cat:"Travel",      ratio:"3/5",  grad:["#14b8a6","#0ea5e9"] },
+  { title:"Bookshelf Styling",     author:"shelf.life",      cat:"Home",        ratio:"4/5",  grad:["#f43f5e","#f59e0b"] }
+];
+
+let mode = "css";     // "css" | "js"
+let colMode = 4;      // 2..5 | "auto"
+let showOrder = false;
+let hover = -1;
+const saved = new Set();
+
+// share icon (inline SVG so there are no external assets)
+const shareSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>';
+
+// build every pin from the data
+board.innerHTML = PINS.map((p,i) => `
+  <div class="pin" data-i="${i}" role="listitem">
+    <div class="pin-img" style="aspect-ratio:${p.ratio}; background:linear-gradient(135deg,${p.grad[0]},${p.grad[1]})">
+      <span class="pin-order" aria-hidden="true">${i+1}</span>
+      <span class="pin-cat" aria-hidden="true">${p.cat}</span>
+      <div class="pin-overlay">
+        <button class="pin-save" data-i="${i}" aria-pressed="false" aria-label="Save ${p.title}">Save</button>
+        <div class="pin-actions">
+          <button class="pin-act" title="Share" aria-label="Share ${p.title}">${shareSVG}</button>
+          <button class="pin-act" title="More options" aria-label="More options for ${p.title}">&#8943;</button>
+        </div>
+      </div>
+    </div>
+    <div class="pin-cap">
+      <div class="pin-title">${p.title}</div>
+      <div class="pin-author"><span class="pin-dot" style="background:${p.grad[0]}"></span>${p.author}</div>
+    </div>
+  </div>`).join("");
+
+const pins = [...board.querySelectorAll(".pin")];
+
+function announce(msg){ live.textContent = msg; }
+
+// column count derived from the board's own width (used for "Auto")
+function autoCols(w){ return w < 480 ? 2 : w < 720 ? 3 : w < 1000 ? 4 : 5; }
+function resolveCols(){ return colMode === "auto" ? autoCols(board.clientWidth) : colMode; }
+
+// ---- technique A: pure CSS columns — clear inline styles, let CSS pack ----
+function layoutCSS(cols){
+  board.classList.add("mode-css"); board.classList.remove("mode-js");
+  board.style.height = "";
+  board.style.setProperty("--cols", cols);
+  pins.forEach(p => { p.style.position = ""; p.style.width = ""; p.style.left = ""; p.style.top = ""; });
+}
+
+// ---- technique B: JS masonry — measure each pin, drop it in the shortest column ----
+function layoutJS(cols){
+  board.classList.add("mode-js"); board.classList.remove("mode-css");
+  const boardW = board.clientWidth;
+  const colW = (boardW - GAP*(cols-1)) / cols;
+  // set the width first so aspect-ratio resolves the height before we measure
+  pins.forEach(p => { p.style.position = "absolute"; p.style.width = colW + "px"; });
+  const colH = new Array(cols).fill(0);
+  pins.forEach(p => {
+    let c = 0;                                   // find the shortest column
+    for (let k = 1; k < cols; k++) if (colH[k] < colH[c]) c = k;
+    p.style.left = (c*(colW+GAP)) + "px";
+    p.style.top  = colH[c] + "px";
+    colH[c] += p.offsetHeight + GAP;             // measured height grows that column
+  });
+  board.style.height = Math.max(...colH) + "px"; // container wraps the tallest column
+}
+
+// read the rendered DOM to find each column's height (works for BOTH techniques)
+function measureColumns(){
+  const cols = {};
+  pins.forEach(p => {
+    const x = Math.round(p.offsetLeft);
+    const bottom = p.offsetTop + p.offsetHeight;
+    let key = Object.keys(cols).find(k => Math.abs(k - x) < 10);
+    if (key === undefined) key = x;
+    cols[key] = Math.max(cols[key] || 0, bottom);
+  });
+  const hs = Object.values(cols);
+  return hs.length ? { min: Math.min(...hs), max: Math.max(...hs) } : { min:0, max:0 };
+}
+
+// the read-out is a pure function of the current state
+function report(cols){
+  roTech.textContent     = mode === "css" ? "CSS columns" : "JS masonry";
+  roTechKind.textContent = mode === "css" ? "1 line" : "measured";
+  roCols.textContent     = colMode === "auto" ? (cols + " · auto") : cols;
+  roPins.textContent     = PINS.length;
+  roSaved.textContent    = saved.size;
+  roSaved.className      = "pill" + (saved.size ? " g" : "");
+  roOrder.innerHTML      = mode === "css" ? "&#8595; column" : "&#8594; shortest";
+  roOrder.className      = "pill " + (mode === "css" ? "a" : "g");
+  roHover.textContent    = hover >= 0 ? ("#" + (hover+1)) : "—";
+  const m = measureColumns();
+  roShort.textContent    = Math.round(m.min);
+  roTall.textContent     = Math.round(m.max);
+  const spread = Math.round(m.max - m.min);
+  roSpread.textContent   = spread;
+  roSpread.className      = "text-base font-bold " + (spread <= 40 ? "text-emerald-600" : "text-slate-700");
+}
+
+// one entry point: read state, run the right technique, update the read-out
+function layout(){
+  const cols = resolveCols();
+  if (mode === "css") layoutCSS(cols); else layoutJS(cols);
+  report(cols);
+}
+
+// ---- controls ----
+function setMode(m){
+  mode = m;
+  mCss.classList.toggle("on", m === "css");
+  mJs.classList.toggle("on", m === "js");
+  announce(m === "css" ? "Switched to CSS columns — reads down each column." : "Switched to JS masonry — balances the shortest column.");
+  layout();
+}
+mCss.addEventListener("click", () => setMode("css"));
+mJs.addEventListener("click", () => setMode("js"));
+
+colBtns.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  colMode = b.dataset.cols === "auto" ? "auto" : +b.dataset.cols;
+  [...colBtns.children].forEach(x => x.classList.toggle("on", x === b));
+  announce(colMode === "auto" ? "Columns: auto by width." : ("Columns: " + colMode + "."));
+  layout();
+});
+
+orderBtn.addEventListener("click", () => {
+  showOrder = !showOrder;
+  board.classList.toggle("show-order", showOrder);
+  orderBtn.classList.toggle("on", showOrder);
+  orderBtn.dataset.on = showOrder;
+  announce(showOrder ? "Showing pin order numbers." : "Hiding pin order numbers.");
+});
+
+// per-pin wiring: hover feeds the read-out, Save toggles + announces
+pins.forEach(p => {
+  const i = +p.dataset.i;
+  p.addEventListener("mouseenter", () => { hover = i; report(resolveCols()); });
+  p.addEventListener("mouseleave", () => { hover = -1; report(resolveCols()); });
+});
+board.addEventListener("click", e => {
+  const btn = e.target.closest(".pin-save"); if (!btn) return;
+  e.stopPropagation();
+  const i = +btn.dataset.i;
+  const on = btn.classList.toggle("saved");
+  btn.textContent = on ? "Saved" : "Save";
+  btn.setAttribute("aria-pressed", on);
+  if (on){ saved.add(i); announce("Saved " + PINS[i].title + " to your board."); }
+  else   { saved.delete(i); announce("Removed " + PINS[i].title + " from your board."); }
+  report(resolveCols());
+});
+
+// re-layout on resize (throttled) — JS masonry MUST re-measure; Auto may change count
+let queued = false;
+window.addEventListener("resize", () => {
+  if (queued) return; queued = true;
+  requestAnimationFrame(() => { queued = false; layout(); });
+});
+
+// ---- init ----
+requestAnimationFrame(layout);
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What masonry is",
+   why:"Open Pinterest, Unsplash, a Dribbble grid or almost any image wall and you meet the same object: cards of many different heights packed into vertical columns with NO gaps between rows. A row-based layout would line the tops and bottoms up and leave ragged holes; masonry instead lets each column flow independently so a short card is immediately followed by the next one, and the wall looks like dry-stone masonry — bricks of different sizes fitted tightly together. The pattern is worth learning once because it is everywhere: photo feeds, product grids, moodboards, note apps. Everything interesting about it comes down to one question — how do you decide which column each card goes into so there are no gaps — and there are two very different answers, one in pure CSS and one in a little JavaScript, each with its own trade-off.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">cards of different heights, no row gaps<br><br>[  1  ][ 2 ][   3  ][ 4 ]<br>[  1  ][ 2 ][   3  ][ 4 ]<br>[  1  ][ 5 ][   3  ][ 6 ]<br>[  7  ][ 5 ][   8  ][ 6 ]<br>[  7  ][ 9 ][   8  ]<br><br>columns flow independently &#8594; tight pack</div>',
+   code:"// masonry = columns that flow independently\n// a short card is followed immediately by the next\n// -> no ragged row gaps like a normal grid\n// two ways to build it:\n//   A) CSS columns  (one line, reads down)\n//   B) JS masonry   (measure + shortest column)" },
+ { title:"2. Why CSS Grid can't do it easily",
+   why:"The instinct is to reach for CSS Grid, but Grid is built on ROWS: every cell in a given row shares that row's track height. Put a short card next to a tall one and the whole row becomes as tall as the tall card, so the short card's column has an empty gap before the next row can start — exactly the ragged holes masonry is trying to avoid. Grid simply has no way to let one column pull its next item up into the gap a neighbour left, because items are aligned to a shared row grid. There IS a proposal, grid-template-rows: masonry, that adds exactly this, but it is experimental and not shipped across browsers, so you cannot rely on it. That single limitation — rows share a height — is the whole reason masonry needs its own technique rather than a Grid one-liner.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">grid rows share a height &#8594; gaps<br><br>[  A  ][ B ]  &#8592; row height = tall A<br>[  A  ][ &nbsp; ]  &#8592; B is short, GAP here<br>[  A  ][ C ]  &#8592; C waits for next row<br><br>masonry wants C pulled UP into the gap<br>grid can\'t (rows are aligned)</div>',
+   code:"/* grid aligns rows -> ragged heights leave holes */\n.grid { display:grid; grid-template-columns:repeat(4,1fr); }\n// row height = the TALLEST item in that row\n// short item's column keeps a gap until the next row\n\n// experimental fix, NOT widely shipped:\n.grid { grid-template-rows: masonry; }  // draft spec" },
+ { title:"3. Technique A: CSS columns",
+   why:"The cheapest masonry is the multi-column layout. Set column-count (how many columns) and column-gap on the container, mark each card break-inside: avoid so it never splits across a column boundary, and the browser pours the cards in and packs them for you. There is zero JavaScript, no measuring, and it degrades gracefully. This is genuinely the right tool when the order of the cards does not matter — a gallery, a moodboard, a tag cloud of images. The catch, which the next step is entirely about, is the direction the browser fills: multi-column flows top-to-bottom down the first column, then moves to the second, so the reading order is column-major, not the left-to-right order most feeds want.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">column-count + break-inside:avoid<br><br>.board { column-count:4; column-gap:16px }<br>.pin&nbsp;&nbsp; { break-inside:avoid }<br><br>&#8594; browser slices 4 columns and packs<br>&#8594; no JS, no measuring<br>&#8594; but it fills DOWN each column</div>',
+   code:".board { column-count:4; column-gap:16px; }\n\n.board .pin {\n  break-inside:avoid;              // don't split a pin\n  -webkit-column-break-inside:avoid;\n  width:100%;\n  margin:0 0 16px;                 // the row gap\n}\n// that's the ENTIRE layout - one declaration" },
+ { title:"4. The reading-order caveat",
+   why:"This is the trade-off you must understand before choosing CSS columns. Multi-column fills VERTICALLY: cards 1, 2, 3 stack down the first column, then 4, 5, 6 down the second, and so on. So on screen, card 5 sits UNDER card 4, not to its right. For a gallery where order is irrelevant that is fine. But for a feed where 'newest' should read left-to-right across the top row, it is wrong — the newest items would run down the left edge instead of across the top. There is no clean CSS fix for this; the fill direction is intrinsic to how columns work. Turn on 'Show order #' in the demo and switch to CSS columns to watch the numbers march downward. When the order matters, this is the moment you graduate to JavaScript masonry.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">CSS columns = column-major reading order<br><br>col1&nbsp;col2&nbsp;col3&nbsp;col4<br>[1]&nbsp;&nbsp;[5]&nbsp;&nbsp;[9]&nbsp;&nbsp;[13]<br>[2]&nbsp;&nbsp;[6]&nbsp;&nbsp;[10]&nbsp;[14]<br>[3]&nbsp;&nbsp;[7]&nbsp;&nbsp;[11]&nbsp;…<br>[4]&nbsp;&nbsp;[8]&nbsp;&nbsp;[12]<br><br>5 sits UNDER 4, not beside it</div>',
+   code:"// reading order flows DOWN then ACROSS:\n//   col1: 1,2,3,4   col2: 5,6,7,8   col3: 9,10,11,12\n//\n// fine for a gallery (order doesn't matter)\n// WRONG for a 'newest across the top' feed\n// no CSS fix -> use JS masonry when order matters" },
+ { title:"5. Technique B: shortest-column masonry",
+   why:"True masonry places the cards yourself, in DOM order, each into whichever column is CURRENTLY shortest. You keep an array of running column heights, all starting at zero. For each card in order: scan the array for the smallest value — that index is the card's column — place the card there, then add the card's height (plus the gap) to that column's running total so the next card sees the updated heights. Because you always feed the shortest column, no column races far ahead of the others and the wall stays balanced. And because you walk the cards in DOM order, card 1 lands top-left, card 2 in the next-shortest column (usually to its right), and so on — the reading order is the natural left-to-right, top-to-bottom people expect. This is the algorithm real Pinterest-style feeds use.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">place each card in the SHORTEST column<br><br>colH = [0, 0, 0, 0]<br>card1 &#8594; col0 (all equal) &nbsp; colH=[220,0,0,0]<br>card2 &#8594; col1 (shortest)&nbsp; colH=[220,180,0,0]<br>card3 &#8594; col2 &nbsp; card4 &#8594; col3<br>card5 &#8594; whichever is shortest now<br><br>always shortest &#8594; balanced + reads across</div>',
+   code:"const colH = new Array(cols).fill(0);\n\npins.forEach(pin => {\n  let c = 0;                          // find shortest column\n  for (let k=1;k<cols;k++) if (colH[k] < colH[c]) c = k;\n  place(pin, c, colH[c]);             // drop it there\n  colH[c] += pin.offsetHeight + GAP;  // grow that column\n});" },
+ { title:"6. Measure & position each pin",
+   why:"JS masonry means you own every coordinate, so the board becomes position: relative and each pin position: absolute. First compute the column width from the container: (boardWidth minus the gaps between columns) divided by the column count. Set that width on each pin BEFORE measuring, because a pin's height comes from its aspect-ratio applied to that width — change the width and the height changes. Now pin.offsetHeight gives the real, rendered height to feed the shortest-column algorithm. Each pin's left is its column index times (column width + gap); its top is that column's running height at the moment you place it. One subtlety people miss: because the pins are absolutely positioned they no longer contribute to the container's height, so you must set the board's height to the tallest column yourself, or the page below it will overlap.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">own the coordinates<br><br>colW = (boardW - gap*(cols-1)) / cols<br>left = col * (colW + gap)<br>top&nbsp; = colH[col]&nbsp;&nbsp;// running height<br><br>height from aspect-ratio &#8594; offsetHeight<br>board.height = max(colH)&nbsp;// or overlap!</div>',
+   code:"const colW = (board.clientWidth - GAP*(cols-1)) / cols;\npins.forEach(p => { p.style.position='absolute';\n                    p.style.width = colW+'px'; }); // set width FIRST\nconst colH = new Array(cols).fill(0);\npins.forEach(p => {\n  let c=0; for(let k=1;k<cols;k++) if(colH[k]<colH[c]) c=k;\n  p.style.left = c*(colW+GAP)+'px';\n  p.style.top  = colH[c]+'px';\n  colH[c] += p.offsetHeight + GAP;   // measured height\n});\nboard.style.height = Math.max(...colH)+'px';  // wrap them" },
+ { title:"7. Responsive column count",
+   why:"The number of columns should follow the available width — five on a wide desktop, two on a phone. Derive it from the container's width with a few breakpoints (a plain function returning 2, 3, 4 or 5), and re-run the layout whenever the window resizes. For JS masonry the resize handler is not optional: the column width changes with the container, which changes every pin's height and position, so you must re-measure and re-place. Throttle the handler with requestAnimationFrame so you lay out at most once per frame instead of on every resize event. The pure-CSS route gets responsiveness almost for free by using column-width instead of column-count: name an ideal column width and the browser fits as many columns as the container allows, adding and removing them as it resizes.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">columns follow the width<br><br>&lt;480 &#8594; 2 &nbsp; &lt;720 &#8594; 3<br>&lt;1000 &#8594; 4 &nbsp; else &#8594; 5<br><br>resize &#8594; rAF throttle &#8594; layout()<br><br>CSS-only: column-width:220px<br>(browser fits as many as it can)</div>',
+   code:"function autoCols(w){ return w<480?2 : w<720?3 : w<1000?4 : 5; }\n\nlet queued=false;\naddEventListener('resize', () => {\n  if(queued) return; queued=true;\n  requestAnimationFrame(()=>{ queued=false; layout(); });\n});\n// CSS-only responsive alternative:\n.board { column-width:220px; column-gap:16px; } // fits N" },
+ { title:"8. The hover overlay: dim + Save",
+   why:"On top of the layout sits the interaction everyone recognises: hover a pin and it dims while a Save button and some actions appear. Build it as an absolutely positioned overlay filling the pin image, invisible at rest with opacity: 0 and fading in on the pin's :hover (and :focus-within, so keyboard users get it too). A dark gradient background does the dimming and makes the white controls legible: a red Save button pinned to the top-right, a row of round action buttons along the bottom. Fade with opacity rather than toggling display so the buttons stay in the layout and nothing reflows when they appear. Save itself is a persistent toggle, not a hover effect: clicking it flips the pin to a dark 'Saved' state that survives the cursor leaving, because saved is state you store (in a Set), while the overlay's visibility is pure CSS hover.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">rest &#8594; clean image<br>hover &#8594; dim + [Save] + actions<br><br>.pin-overlay { opacity:0 }<br>.pin:hover .pin-overlay { opacity:1 }<br><br>Save = persistent toggle (a Set)<br>overlay = pure CSS hover</div>',
+   code:".pin-overlay {\n  position:absolute; inset:0; opacity:0; transition:opacity .18s;\n  background:linear-gradient(180deg,rgba(0,0,0,.32),transparent 40%,\n                                     rgba(0,0,0,.46)); // dim\n}\n.pin:hover .pin-overlay,\n.pin:focus-within .pin-overlay { opacity:1; }\n.pin-save.saved { background:#111; }  // persistent state" },
+ { title:"9. Wire it together + a11y",
+   why:"Everything funnels through one layout() function that reads two pieces of state — the current technique and the column count — and calls either layoutCSS (clear the inline styles, set column-count) or layoutJS (measure and place). Every control does nothing but change state and call layout(): the technique toggle, the column buttons, the resize handler. State in one place, view derived from it, so the two techniques can never disagree with the read-out. The accessibility finish matters as much as the layout: the board is a role='list' of listitem pins, each Save is a real button carrying aria-pressed and an aria-label naming its pin, and a single visually-hidden aria-live region speaks each change out loud — 'Saved Cozy Reading Nook.', 'Switched to JS masonry.', 'Columns: 3.' — so a screen-reader user follows exactly the same story a sighted user watches unfold.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one layout(), state = 2 vars<br><br>mode = "css" | "js"<br>colMode = 2..5 | "auto"<br>layout() &#8594; layoutCSS() or layoutJS()<br><br>role="list" &gt; listitem<br>Save = button[aria-pressed]<br>aria-live speaks every change</div>',
+   code:"let mode='css', colMode=4;             // the entire state\nfunction layout(){\n  const cols = resolveCols();\n  mode==='css' ? layoutCSS(cols) : layoutJS(cols);\n  report(cols);                        // read-out follows state\n}\nfunction announce(m){ live.textContent = m; } // one live region\n// role='list' > listitem ; Save = <button aria-pressed>" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3500); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
