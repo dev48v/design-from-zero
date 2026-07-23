@@ -48,6 +48,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 39 — LinkedIn Profile Header](https://dev48v.infy.uk/design/day39-linkedin-profile.html) — `day39-linkedin-profile.html`
 - [DesignFromZero · Day 40 — Spotify Playlist Track Table](https://dev48v.infy.uk/design/day40-spotify-playlist.html) — `day40-spotify-playlist.html`
 - [DesignFromZero · Day 41 — Pinterest Masonry](https://dev48v.infy.uk/design/day41-pinterest-masonry.html) — `day41-pinterest-masonry.html`
+- [DesignFromZero · Day 42 — Image Lightbox](https://dev48v.infy.uk/design/day42-image-lightbox.html) — `day42-image-lightbox.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

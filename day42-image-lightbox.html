@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 42 — Image Lightbox</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:460px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:20px; }
+
+  /* ---- the thumbnail grid ---- */
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  @media (max-width:640px){ .grid { grid-template-columns:repeat(2,1fr); } }
+  .thumb { position:relative; border:0; padding:0; margin:0; cursor:zoom-in; border-radius:12px; overflow:hidden;
+           aspect-ratio:1/1; background:#e2e8f0; box-shadow:0 1px 3px rgba(15,23,42,.12);
+           transition:transform .15s, box-shadow .15s; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(15,23,42,.2); }
+  .thumb-cap { position:absolute; left:0; right:0; bottom:0; padding:8px 10px; color:#fff; font-size:.78rem; font-weight:700;
+               text-align:left; background:linear-gradient(transparent, rgba(0,0,0,.6)); }
+
+  /* ---- the lightbox overlay ---- */
+  .lb { position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center;
+        background:rgba(15,23,42,.92); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); padding:24px; }
+  .lb.open { display:flex; animation:lbFade .2s ease-out; }
+  @keyframes lbFade { from { opacity:0; } to { opacity:1; } }
+  .lb-figure { margin:0; max-width:92vw; max-height:88vh; display:flex; flex-direction:column; align-items:center; gap:12px; }
+  .lb-img { max-width:90vw; max-height:76vh; border-radius:12px; box-shadow:0 24px 70px rgba(0,0,0,.55);
+            background:#0f172a; cursor:zoom-in; transition:transform .25s ease; object-fit:contain;
+            transform-origin:center center; }
+  .lb-img.zoomed { transform:scale(1.7); cursor:zoom-out; }
+  .lb.is-zoomed { overflow:auto; }
+  .lb-cap { color:#e2e8f0; font-size:.95rem; display:flex; gap:14px; align-items:center;
+            background:rgba(0,0,0,.4); padding:7px 16px; border-radius:999px; }
+  .lb-cap #lb-counter { font-variant-numeric:tabular-nums; color:#94a3b8; font-weight:800; }
+
+  .lb-btn { position:absolute; border:0; cursor:pointer; color:#fff; background:rgba(15,23,42,.55);
+            display:flex; align-items:center; justify-content:center; border-radius:50%;
+            transition:background .15s, transform .1s; -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); }
+  .lb-btn:hover { background:rgba(30,41,59,.9); }
+  .lb-close { top:18px; right:18px; width:46px; height:46px; font-size:26px; line-height:1; }
+  .lb-nav   { top:50%; transform:translateY(-50%); width:54px; height:54px; font-size:30px; line-height:1; }
+  .lb-prev  { left:18px; } .lb-next { right:18px; }
+  .lb-nav:hover { transform:translateY(-50%) scale(1.06); }
+  .lb-zoom  { bottom:22px; left:50%; transform:translateX(-50%); width:auto; height:auto; border-radius:999px;
+              padding:8px 18px; font-size:.85rem; font-weight:700; }
+  .lb-zoom:hover { transform:translateX(-50%) scale(1.04); }
+  .lb-btn:focus-visible { outline:2px solid #a5b4fc; outline-offset:2px; }
+  @media (max-width:640px){ .lb-nav { width:44px; height:44px; font-size:24px; } }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .lb.open { animation:none; }
+    .thumb, .lb-img, .lb-btn { transition:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 42</div>
+      <h1 class="text-xl font-bold">🖼 Image Lightbox — Click a Thumbnail and the Photo Blows Up Into a Fullscreen Overlay With a Dimmed, Blurred Backdrop and the Image Centered On Top; Arrow Keys and On-Screen Buttons Step Through the Gallery and Wrap Around at the Ends, a Caption and a <code>3 / 8</code> Counter Track Where You Are, Clicking the Image Toggles Zoom While Clicking the Backdrop Closes, and the Whole Thing Is Done Right — the Page Scroll Locks While It Is Open, Tab Is Trapped Inside the Dialog, <kbd>Esc</kbd> Closes, and Focus Returns to the Exact Thumbnail You Opened From. No Library.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Click any thumbnail — the photo opens fullscreen over a dimmed backdrop, and you drive the whole gallery from the keyboard.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A lightbox is the pattern you meet on every photo gallery, product page and image feed: a grid of <strong>thumbnails</strong>, and when you click one it expands into a <strong>fullscreen overlay</strong> — a fixed, dimmed, blurred layer with the full image centered on top. The interesting part is everything <em>around</em> the image. You can walk the gallery with the <strong>&larr; / &rarr; arrow keys</strong> or the on-screen buttons (they <strong>wrap</strong> at the ends), a <strong>caption + counter</strong> tells you it is image <code>3 / 8</code>, clicking the <strong>image toggles zoom</strong> while clicking the <strong>backdrop closes</strong>, and <kbd>Esc</kbd> closes too. Under the hood it is done honestly: the <strong>page scroll locks</strong> so the background does not creep, <strong>Tab is trapped</strong> inside the dialog, and when you close, <strong>focus returns to the exact thumbnail</strong> you came from. The eight images below are self-contained SVG gradients — no external hosts. Open one and watch the read-out on the right update.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Gallery</span>
+              <span class="text-xs text-slate-500">Click a thumbnail, or focus one and press <kbd>Enter</kbd>. Inside: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> navigate, <kbd>Esc</kbd> closes, click image to zoom.</span>
+            </div>
+            <div class="demo-frame">
+              <div class="grid" id="grid" role="list" aria-label="Photo thumbnails"><!-- thumbnails injected by JS --></div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Lightbox state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roStateBig" class="text-lg font-bold text-slate-800">Closed</span>
+                <span id="roCounter" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">1 / 8</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">overlay</span><span id="roState" class="pill">Closed</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">current index</span><span id="roIndex" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">zoom</span><span id="roZoom" class="pill">off</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">page scroll</span><span id="roScroll" class="pill g">free</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">focus trap</span><span id="roTrap" class="pill">off</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">focus returns to</span><span id="roReturn" class="pill">&mdash;</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">Open the lightbox and this panel flips <strong>live</strong>: scroll goes from <span class="pill g" style="padding:1px 7px">free</span> to <span class="pill r" style="padding:1px 7px">locked</span>, the focus trap turns <strong>active</strong>, and <em>focus returns to</em> names the exact thumbnail you will land back on when you close.</p>
+              <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Open a photo on Unsplash, a product image on a store, a screenshot in a docs site or almost any gallery and you meet the same object: a <strong>fullscreen overlay</strong> that dims the page and floats one image on top, with prev/next and a close. The layout is easy — a <code>position:fixed</code> layer with a centered image. The craft is the behaviour: <strong>scroll-lock</strong> so the page behind does not move, a <strong>focus trap</strong> so Tab cannot escape into the hidden page, <strong>keyboard nav</strong> (&larr; &rarr; Esc), <strong>backdrop-vs-image</strong> click handling, and <strong>returning focus</strong> to the trigger so a keyboard user is not dumped at the top of the page. Get those right and you have a real, accessible lightbox — no library needed.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a lightbox works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A lightbox is a <strong>fullscreen overlay</strong> that floats one image over a dimmed page, with prev/next, a counter, and a close. The layout is a <code>position:fixed</code> layer; the real work is the behaviour that makes it feel right and keeps it accessible: <strong>scroll-lock</strong>, <strong>keyboard nav</strong>, <strong>backdrop-vs-image</strong> clicks, a <strong>focus trap</strong>, and <strong>returning focus</strong> to the thumbnail. We build it over a gallery of eight self-contained SVG images, one piece at a time, no framework and no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The thumbnail grid (from data)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep the gallery as an array of objects — a title, a category, and here a self-contained SVG gradient so the page has no external image hosts. Render each thumbnail as a real <code>&lt;button&gt;</code>, not a bare <code>&lt;img&gt;</code>: a button is keyboard-focusable and fires on <kbd>Enter</kbd>/<kbd>Space</kbd> for free, and it is the element we will return focus to on close. Give each one a <code>data-i</code> index and a clear <code>aria-label</code>.</p>
+        <div class="relative"><pre>const GALLERY = [
+  { title:"Alpine Sunrise", cat:"Landscape", w:1400, h:900,  grad:["#f59e0b","#ef4444"] },
+  /* … 8 images, varied aspect ratios … */
+];
+grid.innerHTML = GALLERY.map((im,i) =&gt; `
+  &lt;button class="thumb" data-i="${i}"
+          aria-label="Open ${im.title}, image ${i+1} of ${GALLERY.length}"&gt;
+    &lt;img src="${svgFor(im,i)}" alt="${im.title}" loading="lazy"&gt;
+    &lt;span class="thumb-cap"&gt;${im.title}&lt;/span&gt;
+  &lt;/button&gt;`).join("");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The overlay: fixed, backdrop, centered image</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The overlay is one <code>position:fixed</code> element pinned to all four edges (<code>inset:0</code>) with a high <code>z-index</code>, a translucent dark background that dims the page, and an optional <code>backdrop-filter:blur</code>. Make it a <strong>flex</strong> container with <code>align-items:center; justify-content:center</code> so the image sits dead-center at any size, and cap the image with <code>max-width</code>/<code>max-height</code> in viewport units so it always fits. It starts hidden (<code>display:none</code>) and an <code>.open</code> class flips it to <code>flex</code>.</p>
+        <div class="relative"><pre>.lb { position:fixed; inset:0; z-index:100; display:none;
+      align-items:center; justify-content:center;      /* center the image */
+      background:rgba(15,23,42,.92); backdrop-filter:blur(4px); }  /* the dim */
+.lb.open { display:flex; }
+
+.lb-img { max-width:90vw; max-height:76vh;   /* always fits the viewport */
+          object-fit:contain; border-radius:12px; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Open from a thumbnail — remember the trigger</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One delegated click listener on the grid catches every thumbnail (<code>e.target.closest(".thumb")</code>), so the wiring is one handler no matter how many images. <code>open(i, trigger)</code> stores the index, adds <code>.open</code>, and — critically — <strong>saves the element that opened it</strong> so we can return focus there later. Right now, capture <code>lastTrigger</code>; steps 9–10 spend it. Then move focus into the dialog so the keyboard is immediately inside it.</p>
+        <div class="relative"><pre>let idx = 0, opened = false, lastTrigger = null;
+
+grid.addEventListener("click", e =&gt; {
+  const b = e.target.closest(".thumb");
+  if (b) open(+b.dataset.i, b);          // pass the button as the trigger
+});
+
+function open(i, trigger){
+  idx = i;
+  lastTrigger = trigger || document.activeElement;   // remember for return-focus
+  lb.classList.add("open");
+  render();                              // fill src / caption / counter
+  lbClose.focus();                       // move focus INTO the dialog
+  opened = true;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Lock the page scroll while open</h3></div>
+        <p class="text-sm text-slate-600 mb-3">If you do nothing, scrolling with the lightbox open scrolls the <em>page behind it</em> — the background creeps, which feels broken. The fix is one line: set <code>document.body.style.overflow = "hidden"</code> on open and restore it (<code>""</code>) on close. That freezes the page. (On desktop, hiding the scrollbar can shift layout by its width; the polished version measures <code>window.innerWidth - documentElement.clientWidth</code> and adds it as right padding so nothing jumps — but the one-liner is the core idea.)</p>
+        <div class="relative"><pre>function open(i, trigger){
+  /* … */
+  document.body.style.overflow = "hidden";   // SCROLL-LOCK the page
+}
+function close(){
+  /* … */
+  document.body.style.overflow = "";          // restore scrolling
+}
+/* optional: avoid the scrollbar-width layout jump */
+const sw = window.innerWidth - document.documentElement.clientWidth;
+document.body.style.paddingRight = sw + "px";</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Prev / next with wraparound + counter</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Navigation is one function. <code>go(step)</code> moves the index by <code>+1</code> or <code>-1</code>, and the modulo trick <code>(idx + step + n) % n</code> makes it <strong>wrap</strong> — past the last image you land back on the first, and before the first you land on the last, with no <code>if</code> branches. Adding <code>+ n</code> before the modulo keeps the result non-negative when stepping back from index 0. After moving, <code>render()</code> swaps the <code>src</code>, updates the caption, and rewrites the <code>3 / 8</code> counter so the viewer always knows where they are.</p>
+        <div class="relative"><pre>function go(step){
+  const n = GALLERY.length;
+  idx = (idx + step + n) % n;   // +n so -1 from index 0 wraps to the last
+  render();
+}
+lbPrev.onclick = () =&gt; go(-1);
+lbNext.onclick = () =&gt; go(+1);
+
+function render(){
+  const im = GALLERY[idx];
+  lbImg.src = svgFor(im, idx);  lbImg.alt = im.title;
+  lbTitle.textContent   = im.title + " · " + im.cat;
+  lbCounter.textContent = (idx + 1) + " / " + n;   // the counter
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Keyboard navigation (← → Esc)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A lightbox that only works with the mouse is half a lightbox. Attach one <code>keydown</code> listener that only acts while open: <kbd>&larr;</kbd> is <code>go(-1)</code>, <kbd>&rarr;</kbd> is <code>go(1)</code>, and <kbd>Esc</kbd> closes. Call <code>preventDefault()</code> so the arrows do not also scroll the page underneath. This is the same <code>go()</code> and <code>close()</code> the buttons use — one behaviour, two ways in — so the mouse and keyboard can never drift out of sync.</p>
+        <div class="relative"><pre>document.addEventListener("keydown", e =&gt; {
+  if (!opened) return;                 // ignore keys unless the lightbox is up
+  if (e.key === "Escape")     { e.preventDefault(); close(); }
+  else if (e.key === "ArrowLeft")  { e.preventDefault(); go(-1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
+  else if (e.key === "Tab")   { trapTab(e); }   // step 9
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Click backdrop to close vs click image</h3></div>
+        <p class="text-sm text-slate-600 mb-3">People expect clicking the dark area around the image to close, but clicking the image itself should <em>not</em> close. The clean way is to check <strong>where the click landed</strong>: if <code>e.target</code> is the overlay element itself, the click was on the backdrop, so close; a click on the image bubbles up with <code>e.target === lbImg</code>, so we handle that separately (here, toggle zoom) and stop it from reaching the overlay. No invisible catch-layers, no guessing coordinates — just identity checks on the event target.</p>
+        <div class="relative"><pre>// clicking the overlay ITSELF (the backdrop) closes
+lb.addEventListener("click", e =&gt; { if (e.target === lb) close(); });
+
+// clicking the IMAGE does not close — it toggles zoom, and we stop
+// the event so it never reaches the backdrop handler above
+lbImg.addEventListener("click", e =&gt; { e.stopPropagation(); toggleZoom(); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The zoom toggle</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A nice extra: click the image (or a zoom button) to blow it up. Keep it as pure state — a <code>zoomed</code> boolean toggling a <code>.zoomed</code> class that applies a CSS <code>transform:scale()</code>. Reset zoom to off every time you navigate or close, so you never open the next image already zoomed. Swap the cursor (<code>zoom-in</code> ⇄ <code>zoom-out</code>) and flip <code>aria-pressed</code> on the button so the control announces its state.</p>
+        <div class="relative"><pre>let zoomed = false;
+function setZoom(on){
+  zoomed = on;
+  lbImg.classList.toggle("zoomed", on);       // CSS: transform:scale(1.7)
+  lbZoom.setAttribute("aria-pressed", on);
+  lbZoom.textContent = on ? "Zoom out" : "Zoom in";
+}
+function toggleZoom(){ setZoom(!zoomed); }
+// render() and close() both call setZoom(false) -> never carry zoom over
+.lb-img.zoomed { transform:scale(1.7); cursor:zoom-out; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Trap focus inside the dialog</h3></div>
+        <p class="text-sm text-slate-600 mb-3">While the overlay is open, the page behind it is inert — but the browser does not know that, so <kbd>Tab</kbd> would happily walk into the hidden thumbnails. A <strong>focus trap</strong> keeps Tab cycling among the dialog controls only. Collect the focusable elements (the close, prev, next and zoom buttons), and when Tab hits the last one, loop back to the first; when <kbd>Shift+Tab</kbd> hits the first, loop to the last. Combined with moving focus in on open (step 3), the keyboard can never escape into the page underneath.</p>
+        <div class="relative"><pre>function trapTab(e){
+  const f = lb.querySelectorAll("button:not([disabled])");
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey &amp;&amp; document.activeElement === first){
+    e.preventDefault(); last.focus();        // Shift+Tab off the first -> last
+  } else if (!e.shiftKey &amp;&amp; document.activeElement === last){
+    e.preventDefault(); first.focus();       // Tab off the last -> first
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">ARIA + return focus on close</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The honest finish. Mark the overlay <code>role="dialog"</code> with <code>aria-modal="true"</code> and an <code>aria-label</code> so assistive tech announces a modal image viewer. Give every button a real <code>aria-label</code>, and use a visually-hidden <code>aria-live</code> region to speak each change (<em>Alpine Sunrise, image 1 of 8</em>). Most important: on <code>close()</code>, call <code>lastTrigger.focus()</code> to send focus <strong>back to the thumbnail the user opened from</strong> — without it, focus falls to the top of the document and a keyboard user is lost. That single line is the difference between a demo and a real component.</p>
+        <div class="relative"><pre>&lt;div class="lb" role="dialog" aria-modal="true" aria-label="Image viewer"&gt;…&lt;/div&gt;
+
+function close(){
+  lb.classList.remove("open");
+  document.body.style.overflow = "";
+  setZoom(false);
+  opened = false;
+  if (lastTrigger) lastTrigger.focus();   // RETURN focus to the trigger
+  announce("Viewer closed.");
+}
+function announce(msg){ live.textContent = msg; }   // one aria-live region</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 42 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real <strong>image lightbox</strong> from scratch — a thumbnail grid that opens a <strong>fullscreen overlay</strong> with a dimmed, blurred backdrop and a centered image. You learned the layout (one <code>position:fixed</code> flex layer) and, more importantly, the behaviour that makes it right: <strong>scroll-lock</strong>, <strong>prev/next with wraparound</strong> and a <strong>counter</strong>, <strong>keyboard nav</strong> (&larr; &rarr; Esc), <strong>backdrop-vs-image</strong> click handling, an optional <strong>zoom</strong>, a <strong>focus trap</strong>, and <code>role="dialog"</code> ARIA that <strong>returns focus</strong> to the trigger on close. <strong>👉 Tomorrow — Day 43: Trello board (horizontal scroll lanes with drag-and-drop cards).</strong></p></div>
+  </div>
+</section>
+
+<!-- ===== the lightbox overlay (hidden until opened) ===== -->
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer" aria-hidden="true">
+  <button class="lb-btn lb-close" id="lb-close" aria-label="Close viewer">&times;</button>
+  <button class="lb-btn lb-nav lb-prev" id="lb-prev" aria-label="Previous image">&#8249;</button>
+  <figure class="lb-figure">
+    <img class="lb-img" id="lb-img" src="" alt="" />
+    <figcaption class="lb-cap">
+      <span id="lb-title"></span>
+      <span id="lb-counter"></span>
+    </figcaption>
+  </figure>
+  <button class="lb-btn lb-nav lb-next" id="lb-next" aria-label="Next image">&#8250;</button>
+  <button class="lb-btn lb-zoom" id="lb-zoom" aria-pressed="false" aria-label="Toggle zoom">Zoom in</button>
+</div>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== IMAGE LIGHTBOX =====
+// the gallery — a plain array. Each "image" is a self-contained SVG gradient
+// (data-URI) so there are NO external hosts. Varied aspect ratios show the
+// centering/fitting off.
+const GALLERY = [
+  { title:"Alpine Sunrise", cat:"Landscape",  w:1400, h:900,  grad:["#f59e0b","#ef4444"] },
+  { title:"Ocean Verge",    cat:"Seascape",   w:1000, h:1250, grad:["#0ea5e9","#2563eb"] },
+  { title:"Neon District",  cat:"Urban",      w:1400, h:900,  grad:["#8b5cf6","#d946ef"] },
+  { title:"Forest Canopy",  cat:"Nature",     w:1100, h:1100, grad:["#10b981","#065f46"] },
+  { title:"Desert Dunes",   cat:"Landscape",  w:1400, h:820,  grad:["#f97316","#b45309"] },
+  { title:"Arctic Aurora",  cat:"Sky",        w:1000, h:1300, grad:["#22d3ee","#4f46e5"] },
+  { title:"Coral Reef",     cat:"Underwater", w:1300, h:900,  grad:["#ec4899","#f43f5e"] },
+  { title:"Golden Meadow",  cat:"Nature",     w:1200, h:1200, grad:["#eab308","#84cc16"] }
+];
+
+// build a self-contained SVG data-URI: gradient + deterministic decorative circles
+function svgFor(im, i){
+  const a = im.grad[0], b = im.grad[1];
+  let seed = (i + 1) * 97;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % 1000) / 1000; };
+  let shapes = "";
+  for (let k = 0; k < 7; k++){
+    const cx = Math.round(rnd() * im.w);
+    const cy = Math.round(rnd() * im.h);
+    const r  = Math.round(50 + rnd() * Math.min(im.w, im.h) * 0.30);
+    const op = (0.05 + rnd() * 0.16).toFixed(2);
+    shapes += "<circle cx='" + cx + "' cy='" + cy + "' r='" + r + "' fill='#ffffff' fill-opacity='" + op + "'/>";
+  }
+  const svg =
+    "<svg xmlns='http://www.w3.org/2000/svg' width='" + im.w + "' height='" + im.h + "' viewBox='0 0 " + im.w + " " + im.h + "'>" +
+      "<defs><linearGradient id='g" + i + "' x1='0' y1='0' x2='1' y2='1'>" +
+        "<stop offset='0' stop-color='" + a + "'/><stop offset='1' stop-color='" + b + "'/>" +
+      "</linearGradient></defs>" +
+      "<rect width='100%' height='100%' fill='url(#g" + i + ")'/>" + shapes +
+    "</svg>";
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+// elements
+const grid      = document.getElementById("grid");
+const lb        = document.getElementById("lb");
+const lbImg     = document.getElementById("lb-img");
+const lbTitle   = document.getElementById("lb-title");
+const lbCounter = document.getElementById("lb-counter");
+const lbClose   = document.getElementById("lb-close");
+const lbPrev    = document.getElementById("lb-prev");
+const lbNext    = document.getElementById("lb-next");
+const lbZoom    = document.getElementById("lb-zoom");
+const live      = document.getElementById("live");
+// read-out
+const roStateBig = document.getElementById("roStateBig");
+const roState    = document.getElementById("roState");
+const roIndex    = document.getElementById("roIndex");
+const roCounter  = document.getElementById("roCounter");
+const roZoom     = document.getElementById("roZoom");
+const roScroll   = document.getElementById("roScroll");
+const roTrap     = document.getElementById("roTrap");
+const roReturn   = document.getElementById("roReturn");
+
+// state
+let idx = 0, opened = false, zoomed = false, lastTrigger = null;
+
+// build the thumbnails from data
+grid.innerHTML = GALLERY.map((im, i) => (
+  '<button class="thumb" data-i="' + i + '" role="listitem" ' +
+    'aria-label="Open ' + im.title + ', image ' + (i + 1) + ' of ' + GALLERY.length + '">' +
+    '<img src="' + svgFor(im, i) + '" alt="' + im.title + '" loading="lazy">' +
+    '<span class="thumb-cap">' + im.title + '</span>' +
+  '</button>'
+)).join("");
+
+function announce(msg){ live.textContent = msg; }
+
+// zoom is pure state
+function setZoom(on){
+  zoomed = on;
+  lbImg.classList.toggle("zoomed", on);
+  lb.classList.toggle("is-zoomed", on);
+  lbZoom.setAttribute("aria-pressed", String(on));
+  lbZoom.textContent = on ? "Zoom out" : "Zoom in";
+}
+
+// render the current image (src + caption + counter); reset zoom each time
+function render(){
+  const im = GALLERY[idx];
+  lbImg.src = svgFor(im, idx);
+  lbImg.alt = im.title;
+  lbTitle.textContent   = im.title + " · " + im.cat;
+  lbCounter.textContent = (idx + 1) + " / " + GALLERY.length;
+  setZoom(false);
+  announce(im.title + ", image " + (idx + 1) + " of " + GALLERY.length + ".");
+  report();
+}
+
+function open(i, trigger){
+  idx = i;
+  lastTrigger = trigger || document.activeElement;   // remember for return-focus
+  lb.classList.add("open");
+  lb.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";           // SCROLL-LOCK
+  opened = true;
+  render();
+  lbClose.focus();                                   // move focus INTO the dialog
+  report();
+}
+
+function close(){
+  lb.classList.remove("open");
+  lb.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";                 // restore scroll
+  opened = false;
+  setZoom(false);
+  if (lastTrigger && lastTrigger.focus) lastTrigger.focus();   // RETURN focus
+  announce("Viewer closed.");
+  report();
+}
+
+function go(step){
+  const n = GALLERY.length;
+  idx = (idx + step + n) % n;                         // wraparound
+  render();
+}
+
+// the read-out is a pure function of the current state
+function report(){
+  const label = opened ? "Open" : "Closed";
+  roStateBig.textContent = label;
+  roState.textContent    = label;
+  roState.className      = "pill " + (opened ? "g" : "");
+  roIndex.textContent    = opened ? ("#" + (idx + 1)) : "—";
+  roCounter.textContent  = (idx + 1) + " / " + GALLERY.length;
+  roZoom.textContent     = zoomed ? "on" : "off";
+  roZoom.className       = "pill " + (zoomed ? "a" : "");
+  roScroll.textContent   = opened ? "locked" : "free";
+  roScroll.className     = "pill " + (opened ? "r" : "g");
+  roTrap.textContent     = opened ? "active" : "off";
+  roTrap.className       = "pill " + (opened ? "g" : "");
+  roReturn.textContent   = (opened && lastTrigger) ? GALLERY[idx].title : "—";
+}
+
+// ---- wiring ----
+// open from any thumbnail (delegated) — pass the button as the trigger
+grid.addEventListener("click", e => {
+  const b = e.target.closest(".thumb");
+  if (b) open(+b.dataset.i, b);
+});
+
+lbClose.addEventListener("click", close);
+lbPrev.addEventListener("click", () => go(-1));
+lbNext.addEventListener("click", () => go(1));
+lbZoom.addEventListener("click", () => setZoom(!zoomed));
+
+// click IMAGE = toggle zoom (and stop it reaching the backdrop handler)
+lbImg.addEventListener("click", e => { e.stopPropagation(); setZoom(!zoomed); });
+// click BACKDROP (the overlay itself) = close
+lb.addEventListener("click", e => { if (e.target === lb) close(); });
+
+// focus trap — keep Tab cycling among the dialog buttons only
+function trapTab(e){
+  const f = lb.querySelectorAll("button:not([disabled])");
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
+
+// keyboard: arrows navigate, Esc closes, Tab is trapped — only while open
+document.addEventListener("keydown", e => {
+  if (!opened) return;
+  if (e.key === "Escape")          { e.preventDefault(); close(); }
+  else if (e.key === "ArrowLeft")  { e.preventDefault(); go(-1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
+  else if (e.key === "Tab")        { trapTab(e); }
+});
+
+report();   // seed the read-out (closed state)
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a lightbox is",
+   why:"Open a photo on Unsplash, a product shot on a store page, or a screenshot in a docs site and you meet the same object: a grid of small thumbnails, and clicking one expands it into a fullscreen overlay floating over the dimmed page. That overlay is the lightbox. It is worth learning once because it is everywhere and because the easy part (a big centered image) is only half of it. The half people get wrong is the behaviour around the image: navigating the set, locking the page, trapping focus, and giving focus back. Everything in this walkthrough builds toward a lightbox that behaves correctly for both mouse and keyboard users, with no library.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">thumbnail grid &#8594; click &#8594; fullscreen overlay<br><br>[ ][ ][ ][ ]<br>[ ][X][ ][ ]&nbsp;&nbsp;&#8594;&nbsp;&nbsp;&#9608;&#9608;&#9608;&#9608;&#9608;<br>[ ][ ][ ][ ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9608; IMG &#9608;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9608;&#9608;&#9608;&#9608;&#9608;<br><br>dimmed backdrop + centered image on top</div>',
+   code:"// a lightbox = grid of thumbnails\n//   + a fullscreen overlay that floats one image\n//   over the dimmed page.\n// easy part: the centered image.\n// real part: navigate, scroll-lock, focus-trap,\n//            return focus. build all of it below." },
+ { title:"2. The overlay: fixed + backdrop + centered",
+   why:"The overlay is a single element pinned over everything: position fixed with inset 0 so it covers all four edges, a high z-index so it sits above the page, and a translucent dark background that dims what is behind (a backdrop-filter blur is a nice touch). Make it a flex container that centers its child on both axes, and the image lands dead-center at any viewport size with zero math. Cap the image with max-width and max-height in viewport units so a huge photo still fits on a small screen. The overlay starts hidden with display none, and an .open class flips it to flex.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">.lb { position:fixed; inset:0; z-index:100 }<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;display:flex (center both axes)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;background: rgba(15,23,42,.92) &#8592; dim<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backdrop-filter: blur(4px)<br><br>.lb-img { max-width:90vw; max-height:76vh }<br>&#8594; always fits, always centered</div>',
+   code:".lb {\n  position:fixed; inset:0; z-index:100;\n  display:none;                       // hidden at rest\n  align-items:center; justify-content:center;\n  background:rgba(15,23,42,.92);      // the dim\n  backdrop-filter:blur(4px);\n}\n.lb.open { display:flex; }\n.lb-img { max-width:90vw; max-height:76vh; object-fit:contain; }" },
+ { title:"3. Open from a thumbnail (remember the trigger)",
+   why:"Wire opening with ONE delegated click listener on the grid rather than a listener per thumbnail: e.target.closest('.thumb') finds the clicked button no matter how many there are. The open function records which image (the index) and adds the .open class. The subtle-but-essential move is to also save the element that triggered the open into a variable like lastTrigger. Steps 9 and 10 spend it: a modal must return focus to whatever opened it, or a keyboard user is stranded. Capture it now, at the one moment you still know what was clicked.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one delegated listener on the grid<br><br>click &#8594; closest(".thumb") &#8594; open(i, btn)<br><br>open() stores:<br>&nbsp;&nbsp;idx = i<br>&nbsp;&nbsp;lastTrigger = btn&nbsp;&#8592; for return-focus<br>&nbsp;&nbsp;lb.classList.add("open")</div>',
+   code:"let idx=0, opened=false, lastTrigger=null;\n\ngrid.addEventListener('click', e => {\n  const b = e.target.closest('.thumb');\n  if (b) open(+b.dataset.i, b);   // pass the button\n});\nfunction open(i, trigger){\n  idx = i;\n  lastTrigger = trigger;          // REMEMBER what opened us\n  lb.classList.add('open');\n  render(); lbClose.focus(); opened = true;\n}" },
+ { title:"4. Scroll-lock the page while open",
+   why:"With the overlay up, if you scroll, the page BEHIND it scrolls, and the background visibly creeps under the image. That reads as a bug. The core fix is a single line: set document.body.style.overflow = 'hidden' when you open, and reset it to '' when you close. That freezes the page for as long as the lightbox lives. One refinement on desktop: hiding the scrollbar removes its width and the page can jump sideways by ~15px; the polished version measures that width and adds it back as body padding so nothing shifts. But the one-liner is the whole idea.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">open&nbsp;&nbsp;&#8594; body.overflow = "hidden"&nbsp;&#8594; page frozen<br>close &#8594; body.overflow = ""&nbsp;&nbsp;&nbsp;&#8594; page scrolls again<br><br>without it: background creeps behind the image<br><br>polish: pad by scrollbar-width so no jump<br>sw = innerWidth - documentElement.clientWidth</div>',
+   code:"function open(){\n  /* ... */\n  document.body.style.overflow = 'hidden';  // LOCK\n}\nfunction close(){\n  /* ... */\n  document.body.style.overflow = '';         // UNLOCK\n}\n// avoid the scrollbar-width jump:\nconst sw = innerWidth - document.documentElement.clientWidth;\ndocument.body.style.paddingRight = sw + 'px';" },
+ { title:"5. Prev / next with wraparound + counter",
+   why:"Navigation is one function, go(step), where step is +1 or -1. The trick that makes it wrap without any if-branches is modular arithmetic: idx = (idx + step + n) % n, where n is the gallery length. Stepping past the last image wraps to the first; the extra + n keeps the number non-negative so stepping back from index 0 lands on the last image instead of going negative. After changing idx, one render() call swaps the image source, updates the caption, and rewrites the counter (the familiar 3 / 8) so the viewer always knows where they are in the set. The buttons and the arrow keys both call this same go().",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">go(step): idx = (idx + step + n) % n<br><br>n = 8<br>at 7, go(+1) &#8594; (7+1+8)%8 = 0&nbsp;&#8592; wrap to first<br>at 0, go(-1) &#8594; (0-1+8)%8 = 7&nbsp;&#8592; wrap to last<br><br>render() &#8594; src, caption, "3 / 8" counter</div>',
+   code:"function go(step){\n  const n = GALLERY.length;\n  idx = (idx + step + n) % n;   // +n so -1 wraps cleanly\n  render();\n}\nlbPrev.onclick = () => go(-1);\nlbNext.onclick = () => go(1);\n\nfunction render(){\n  lbImg.src = svgFor(GALLERY[idx], idx);\n  lbCounter.textContent = (idx+1) + ' / ' + n;\n}" },
+ { title:"6. Keyboard navigation (arrows + Esc)",
+   why:"A lightbox that only responds to the mouse is half-built. Add one keydown listener on the document that only acts while the lightbox is open: Left arrow calls go(-1), Right arrow calls go(1), and Escape closes. Call preventDefault on the arrows so they do not ALSO scroll the (locked) page. Because these reuse the very same go() and close() the buttons call, mouse and keyboard can never fall out of sync: there is exactly one navigation path and one close path, entered two ways. Escape-to-close is an expectation for every modal, so it is not optional.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">document keydown (only when opened):<br><br>&#8592;&nbsp;&nbsp;ArrowLeft&nbsp;&#8594; go(-1)<br>&#8594;&nbsp;&nbsp;ArrowRight &#8594; go(1)<br>Esc&nbsp;&#8594; close()<br>Tab &#8594; trapTab (step 9)<br><br>same go()/close() as the buttons</div>',
+   code:"document.addEventListener('keydown', e => {\n  if (!opened) return;\n  if (e.key === 'Escape')         { e.preventDefault(); close(); }\n  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }\n  else if (e.key === 'ArrowRight'){ e.preventDefault(); go(1); }\n  else if (e.key === 'Tab')       { trapTab(e); }\n});" },
+ { title:"7. Click backdrop to close vs click image",
+   why:"Users expect a click on the dark area around the image to close the lightbox, but a click on the image itself should not. The clean way to tell them apart is to check WHERE the click landed rather than tracking coordinates. If e.target is the overlay element itself, the pointer was on the backdrop, so close. A click on the image is a different target; handle it on the image directly (here it toggles zoom) and call stopPropagation so it never bubbles up to the overlay's close handler. Identity checks on the event target, nothing more.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">where did the click land?<br><br>e.target === lb&nbsp;&nbsp;&#8594; the BACKDROP &#8594; close()<br>e.target === img &#8594; the IMAGE &#8594; zoom + stop<br><br>stopPropagation() keeps the image click<br>from reaching the backdrop-close handler</div>',
+   code:"// backdrop (the overlay itself) closes\nlb.addEventListener('click', e => {\n  if (e.target === lb) close();\n});\n\n// the image does NOT close - it zooms, and stops\nlbImg.addEventListener('click', e => {\n  e.stopPropagation();\n  toggleZoom();\n});" },
+ { title:"8. The zoom toggle",
+   why:"A common extra is zoom: click the image (or a dedicated button) to enlarge it. Keep it as pure state, a zoomed boolean that toggles a .zoomed class applying a CSS transform: scale(). Because it is class-based, the transition is CSS and the JS stays tiny. Two rules keep it from feeling buggy: reset zoom to off inside render() so navigating to the next image never starts already-zoomed, and reset on close so reopening is clean. Swap the cursor between zoom-in and zoom-out and flip aria-pressed on the button so its state is announced.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">zoom = one boolean + one class<br><br>.lb-img.zoomed { transform: scale(1.7) }<br>cursor: zoom-in &#8646; zoom-out<br>button aria-pressed = zoomed<br><br>render() &amp; close() both setZoom(false)<br>&#8594; never carry zoom into the next image</div>',
+   code:"let zoomed = false;\nfunction setZoom(on){\n  zoomed = on;\n  lbImg.classList.toggle('zoomed', on);   // scale(1.7)\n  lbZoom.setAttribute('aria-pressed', on);\n  lbZoom.textContent = on ? 'Zoom out' : 'Zoom in';\n}\nfunction toggleZoom(){ setZoom(!zoomed); }\n// render() calls setZoom(false) every navigation" },
+ { title:"9. Trap focus inside the dialog",
+   why:"While the overlay is open the page behind is meant to be inert, but the browser still lets Tab walk into it, so a keyboard user can tab straight into the hidden thumbnails and get lost. A focus trap fixes this: gather the focusable controls inside the dialog (close, prev, next, zoom), and when Tab moves off the LAST one, loop back to the FIRST; when Shift+Tab moves off the first, loop to the last. Together with moving focus INTO the dialog on open (step 3), Tab is now caged inside the lightbox for as long as it is open. This is the single most-skipped part of a home-made modal.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab cycles among dialog buttons only<br><br>[close] &#8594; [prev] &#8594; [next] &#8594; [zoom]<br>&nbsp;&#8593;___________________________|<br><br>Tab off last &#8594; first<br>Shift+Tab off first &#8594; last<br>&#8594; keyboard can\'t escape to the page</div>',
+   code:"function trapTab(e){\n  const f = lb.querySelectorAll('button:not([disabled])');\n  if (!f.length) return;\n  const first = f[0], last = f[f.length-1];\n  if (e.shiftKey && document.activeElement === first){\n    e.preventDefault(); last.focus();\n  } else if (!e.shiftKey && document.activeElement === last){\n    e.preventDefault(); first.focus();\n  }\n}" },
+ { title:"10. ARIA + return focus on close",
+   why:"The finish is what separates a demo from a real component. Mark the overlay role='dialog' with aria-modal='true' and an aria-label so assistive tech announces a modal image viewer; give every button a genuine aria-label; and pipe every change through one visually-hidden aria-live region (Alpine Sunrise, image 1 of 8) so a screen-reader user follows the same story. The most important line lives in close(): lastTrigger.focus(), sending focus back to the exact thumbnail the user opened from. Without it, focus resets to the top of the document and the keyboard user has to tab all the way back. That one line is the difference between polished and broken.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="dialog" aria-modal="true" aria-label<br>each button: real aria-label<br>one aria-live region speaks every change<br><br>close() &#8594; lastTrigger.focus()<br>&#8594; back to the SAME thumbnail<br>(else focus falls to top of page)</div>',
+   code:"<div class='lb' role='dialog' aria-modal='true'\n     aria-label='Image viewer'> ... </div>\n\nfunction close(){\n  lb.classList.remove('open');\n  document.body.style.overflow = '';\n  opened = false;\n  lastTrigger.focus();          // RETURN focus to trigger\n  announce('Viewer closed.');\n}\nfunction announce(m){ live.textContent = m; }" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3800); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
