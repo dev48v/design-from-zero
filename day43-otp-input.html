@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 43 — OTP / Verification-Code Input</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:460px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:24px;
+                display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; }
+
+  /* ---- the OTP boxes ---- */
+  .otp { display:flex; gap:10px; }
+  @media (max-width:480px){ .otp { gap:6px; } }
+  .otp-box { width:54px; height:64px; text-align:center; font-size:1.7rem; font-weight:800; color:#0f172a;
+             border:2px solid #cbd5e1; border-radius:12px; background:#fff; caret-color:#6366f1;
+             font-variant-numeric:tabular-nums; transition:border-color .15s, box-shadow .15s, background .15s, transform .1s;
+             -moz-appearance:textfield; }
+  @media (max-width:480px){ .otp-box { width:42px; height:54px; font-size:1.35rem; } }
+  .otp-box::-webkit-outer-spin-button, .otp-box::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .otp-box:hover { border-color:#94a3b8; }
+  .otp-box:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 4px rgba(99,102,241,.18); }
+  .otp-box.filled { background:#eef2ff; border-color:#a5b4fc; }
+  .otp-box.done { border-color:#10b981; background:#ecfdf5; color:#047857; }
+  .otp-box.err  { border-color:#ef4444; background:#fef2f2; color:#b91c1c; }
+  .otp.shake { animation:shake .38s; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
+
+  .otp-status { font-size:.95rem; font-weight:800; min-height:24px; display:flex; align-items:center; gap:8px; }
+  .otp-status.wait { color:#64748b; }
+  .otp-status.ok   { color:#059669; }
+  .otp-status.bad  { color:#dc2626; }
+  .otp-hint { font-size:.8rem; color:#94a3b8; }
+  .otp-hint b { color:#475569; font-variant-numeric:tabular-nums; letter-spacing:.15em; }
+
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover:not(:disabled) { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.5; cursor:not-allowed; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.12em; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none; }
+    .otp-box { transition:none; }
+    .otp.shake { animation:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 43</div>
+      <h1 class="text-xl font-bold">🔢 OTP / Verification-Code Input — Six Separate Single-Character Boxes That Behave Like One Field: Type a Digit and Focus <em>Auto-Advances</em> to the Next Box, <kbd>Backspace</kbd> on an Empty Box Jumps Back and Clears the Previous One, the <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> Arrows Walk Between Boxes, and Pasting a Whole <code>123456</code> Code <em>Splits Across All Six</em> at Once. Only Digits Get In, and the Moment the Last Box Fills, an <strong>on-complete</strong> Callback Fires — Validating the Code and Flipping the Field to <span style="color:#059669">verified ✓</span> — With a Live Resend Countdown and Full ARIA. No Library.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Type the code — focus hops box to box on its own, paste a whole code and it splits across all six, and the last digit flips it to <span class="text-emerald-600">verified ✓</span>.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">The OTP (one-time-password) input is the row of little boxes you meet at every 2FA / sign-in-code / phone-verification screen: <strong>six separate single-character fields</strong> that <em>feel</em> like one. The craft is entirely in the behaviour. Typing a digit <strong>auto-advances</strong> to the next box; <kbd>Backspace</kbd> on an empty box <strong>jumps back and clears</strong> the previous one; the <kbd>&larr;</kbd> / <kbd>&rarr;</kbd> arrows walk between boxes; and — the part people always get wrong — <strong>pasting a full <code>123456</code> splits one digit per box</strong> instead of dumping the whole string into one field. Only <strong>digits</strong> are allowed in, and the instant the sixth box fills, an <strong>on-complete</strong> event fires that validates the code and flips the whole field green. There is a <strong>resend countdown</strong> and real ARIA underneath. Try it below — type, paste the demo code, hit <kbd>Backspace</kbd>, and watch the read-out on the right update live.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Enter code</span>
+              <span class="text-xs text-slate-500">Type digits (auto-advances) · <kbd>&larr;</kbd> <kbd>&rarr;</kbd> move · <kbd>Backspace</kbd> goes back · or <strong>paste</strong> the whole code.</span>
+            </div>
+            <div class="demo-frame">
+              <div class="otp" id="otp" role="group" aria-label="One-time verification code, 6 digits"><!-- boxes injected by JS --></div>
+              <div class="otp-status wait" id="otp-status">Enter the 6-digit code</div>
+              <div class="otp-hint">Demo code sent to your phone: <b id="otp-demo">— — — — — —</b></div>
+              <div class="flex items-center gap-2 mt-1">
+                <button class="btn-ghost" id="resend" type="button">Resend code</button>
+                <button class="btn-ghost" id="otp-clear" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Field state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roStateBig" class="text-lg font-bold text-slate-800">Empty</span>
+                <span id="roFilledBig" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">0 / 6</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">value</span><span id="roValue" class="pill mono">• • • • • •</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">filled</span><span id="roFilled" class="pill">0 / 6</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">focused box</span><span id="roFocus" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last event</span><span id="roEvent" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">complete fired</span><span id="roComplete" class="pill">no</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">resend</span><span id="roResend" class="pill g">ready</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure function of the widget's state. Type and <em>value</em> fills left-to-right and <em>focused box</em> tracks the caret; paste the demo code and all six fill at once with <em>last event</em> reading <span class="pill" style="padding:1px 7px">paste</span>; fill the last box and <em>complete fired</em> flips to <span class="pill g" style="padding:1px 7px">yes</span>.</p>
+              <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Open a 2FA prompt, a phone-number verification, a "check your email for a code" screen or an authenticator flow and you meet the same object: a strip of single-character boxes that acts like one field. The layout is trivial — <em>N</em> small inputs in a flex row. The craft is the behaviour, and there is a lot of it: <strong>digit-only</strong> filtering, <strong>auto-advance</strong>, the exact <strong>backspace</strong> rule, <strong>arrow-key</strong> movement, <strong>paste-splitting</strong> a whole code across the boxes, a <strong>complete</strong> event that fires once (not on every keystroke), <strong>validation</strong>, a <strong>resend timer</strong>, and honest <strong>ARIA</strong> so a screen-reader user hears "digit 3 of 6". Get those right and you have a real verification input — no library needed.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How an OTP input works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">An OTP input is <em>N</em> single-character text fields in a row that behave like one. The layout is a flex row of tiny <code>&lt;input&gt;</code>s; the real work is the behaviour that makes them feel like a single field: <strong>digit-only</strong> filtering, <strong>auto-advance</strong>, the <strong>backspace-goes-back</strong> rule, <strong>arrow-key</strong> movement, <strong>paste-splitting</strong>, a single <strong>complete</strong> event, <strong>validation</strong>, a <strong>resend timer</strong>, and real <strong>ARIA</strong>. We build all of it from scratch over six boxes, one piece at a time, no framework and no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The boxes — render N inputs from a single number</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not hand-write six <code>&lt;input&gt;</code>s — render them from one <code>LEN</code> constant so the field is trivially 4, 6 or 8 boxes. Each is a real text input with <code>maxlength="1"</code>, and the hints that make phones behave: <code>inputmode="numeric"</code> pops the number pad, <code>autocomplete="one-time-code"</code> lets iOS/Android offer the SMS code, and a <code>data-i</code> index tells every handler which box it is. Keep a live array of the DOM nodes in <code>boxes</code> — every other step indexes into it.</p>
+        <div class="relative"><pre>const LEN = 6;
+otp.innerHTML = Array.from({length: LEN}, (_, i) =&gt; `
+  &lt;input class="otp-box" type="text" inputmode="numeric"
+         autocomplete="one-time-code" maxlength="1"
+         data-i="${i}" aria-label="Digit ${i+1} of ${LEN}"&gt;`
+).join("");
+const boxes = [...otp.querySelectorAll(".otp-box")];
+const code  = () =&gt; boxes.map(b =&gt; b.value).join("");</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Only digits get in</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A verification code is digits, so scrub everything else on the <code>input</code> event: <code>value.replace(/\D/g, "")</code> strips letters and symbols the instant they appear, so a stray "a" never sticks. Do it in JS rather than trusting <code>type="number"</code> — number inputs allow <code>e</code>, <code>+</code>, <code>-</code> and a spinner you do not want. If more than one digit landed in a single box (autofill, or a fast paste that slipped past step 7), don't throw the extras away — hand them to the spread helper so they flow into the following boxes.</p>
+        <div class="relative"><pre>function onInput(e){
+  const b = e.target, i = +b.dataset.i;
+  let v = b.value.replace(/\D/g, "");   // DIGITS ONLY
+  if (v.length &gt; 1) return spread(v, i); // multi-char -&gt; flow across boxes
+  b.value = v;
+  if (v &amp;&amp; i &lt; LEN - 1) boxes[i + 1].focus();  // auto-advance (step 3)
+  afterChange();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Auto-advance on entry</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The signature feel: type a digit and focus jumps to the next box so the user just keeps typing without ever reaching for <kbd>Tab</kbd>. It is one line inside <code>onInput</code> — if a digit was entered and we are not already on the last box, <code>boxes[i + 1].focus()</code>. Because each box is <code>maxlength="1"</code>, it can only ever hold that one digit, so the next keystroke naturally lands in the box you just moved to. On the last box you deliberately do <em>not</em> advance — there is nowhere to go, and that is where completion is detected (step 8).</p>
+        <div class="relative"><pre>// inside onInput, after writing the digit:
+if (v &amp;&amp; i &lt; LEN - 1) boxes[i + 1].focus();
+// last box: no advance -&gt; caret stays, completion check runs</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Backspace: delete, or jump back and clear</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the rule everyone gets wrong. Backspace has two jobs depending on the box's state, handled in <code>keydown</code> (so we act <em>before</em> the value changes). If the current box <strong>has a digit</strong>, let the default delete it in place. If it is <strong>already empty</strong>, the user wants to fix the previous box: <code>preventDefault()</code>, move focus back one, and clear <em>that</em> box too — so one Backspace both jumps and erases, exactly like a real single field. Without this, backspacing from an empty box does nothing and the user is stuck.</p>
+        <div class="relative"><pre>function onKeydown(e){
+  const i = +e.target.dataset.i;
+  if (e.key === "Backspace" &amp;&amp; e.target.value === "" &amp;&amp; i &gt; 0){
+    e.preventDefault();
+    boxes[i - 1].focus();        // jump back
+    boxes[i - 1].value = "";     // and clear it
+    afterChange();
+  }
+  // box has a value -&gt; default Backspace clears it in place
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Arrow-key navigation (← →)</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A keyboard user must be able to move without retyping. In the same <code>keydown</code> handler, <kbd>&larr;</kbd> focuses the previous box and <kbd>&rarr;</kbd> the next, each guarded so you cannot walk off either end, and each with <code>preventDefault()</code> so the arrow does not also move the caret inside the one-char field. This costs two lines and turns the six boxes into something you can actually navigate — pair it with a <code>focus</code> handler that selects the box's content so typing overwrites instead of appending.</p>
+        <div class="relative"><pre>if (e.key === "ArrowLeft"  &amp;&amp; i &gt; 0)       { e.preventDefault(); boxes[i-1].focus(); }
+if (e.key === "ArrowRight" &amp;&amp; i &lt; LEN-1)   { e.preventDefault(); boxes[i+1].focus(); }
+
+// so typing replaces instead of appends:
+boxes.forEach(b =&gt; b.addEventListener("focus", () =&gt; b.select()));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Paste a whole code — split it across the boxes</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Real users copy the code from their SMS or email and paste it. The naive field dumps all six digits into one box; the correct one <strong>spreads them</strong>. Listen for <code>paste</code>, <code>preventDefault()</code> so the browser's default single-box insert never runs, read the clipboard text, keep only its digits, and write one per box from the start. A shared <code>spread()</code> helper does the writing and is reused by step 2's multi-char guard, so paste and fast-typing behave identically. Then move focus to the box after the last one filled, and run the change hook.</p>
+        <div class="relative"><pre>function spread(str, start = 0){
+  const ds = str.replace(/\D/g, "").split("");
+  for (let k = 0; k &lt; ds.length &amp;&amp; start + k &lt; LEN; k++)
+    boxes[start + k].value = ds[k];
+  const landed = Math.min(start + ds.length, LEN - 1);
+  boxes[landed].focus();
+  afterChange();
+}
+otp.addEventListener("paste", e =&gt; {
+  e.preventDefault();
+  spread(e.clipboardData.getData("text"), 0);   // fill from the first box
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">The complete event — fire once, when it is full</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every mutation — typing, backspace, paste — routes through one <code>afterChange()</code> so there is a single place that asks "are we done?". Join the boxes and test for exactly <code>LEN</code> digits; only then call <code>onComplete(code)</code>. Funnelling everything through one hook means the complete callback can never be missed (paste fills all six at once and still triggers it) and never double-fires per keystroke. This is the contract a real form cares about: give me the finished code, once.</p>
+        <div class="relative"><pre>function afterChange(){
+  const c = code();
+  render();                                  // update styles + read-out
+  if (/^\d{6}$/.test(c)) onComplete(c);      // FULL -&gt; fire once
+}
+function onComplete(c){ /* validate, submit, show result (step 8) */ }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Validate + show the result</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On complete you would normally POST the code to the server; in the demo we compare it to the one that was "sent". A match locks the field, paints every box green and shows <strong>verified ✓</strong>; a mismatch paints them red, <strong>shakes</strong> the row (a CSS keyframe toggled by a class), and clears the digits so the user can retry — with the message announced for screen readers. Keep the outcome as state (a class on the boxes) so the CSS does the visuals and the JS stays about logic.</p>
+        <div class="relative"><pre>function onComplete(c){
+  if (c === SENT){                       // server call in real life
+    boxes.forEach(b =&gt; b.classList.add("done"));
+    setStatus("ok", "verified ✓");
+  } else {
+    boxes.forEach(b =&gt; b.classList.add("err"));
+    otp.classList.add("shake");
+    setStatus("bad", "Incorrect code — try again");
+    setTimeout(clearAll, 700);           // reset for another attempt
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">The resend countdown</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Codes expire, so every OTP screen has a "Resend" that you cannot spam. Model it as a plain <code>setInterval</code> that ticks a <code>remaining</code> counter down each second while the button is <strong>disabled</strong> and labelled "Resend in 30s"; at zero, clear the interval and re-enable it. Clicking resend "sends" a fresh code, clears the boxes, refocuses the first, and restarts the timer. Always <code>clearInterval</code> before starting a new one so repeated clicks can never stack two timers.</p>
+        <div class="relative"><pre>let timer = null, remaining = 0;
+function startTimer(s){
+  clearInterval(timer);
+  remaining = s; resend.disabled = true;
+  const tick = () =&gt; resend.textContent = "Resend in " + remaining + "s";
+  tick();
+  timer = setInterval(() =&gt; {
+    if (--remaining &lt;= 0){ clearInterval(timer); resend.disabled = false;
+                           resend.textContent = "Resend code"; }
+    else tick();
+  }, 1000);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">ARIA + accessibility — the honest finish</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The boxes look like one field, so tell assistive tech that too. Wrap them in a <code>role="group"</code> with an <code>aria-label</code> ("verification code, 6 digits"), give each input its own <code>aria-label="Digit N of 6"</code>, and pipe every meaningful change through one visually-hidden <code>aria-live</code> region so a screen-reader user hears "digit 3 entered" and "code complete, verified". <code>autocomplete="one-time-code"</code> lets phones surface the SMS code directly. None of this changes how it looks — it is the difference between a widget that demos and one you can ship.</p>
+        <div class="relative"><pre>&lt;div class="otp" role="group" aria-label="Verification code, 6 digits"&gt;
+  &lt;input aria-label="Digit 1 of 6" autocomplete="one-time-code" …&gt;
+  …
+&lt;/div&gt;
+&lt;div id="live" class="sr-only" role="status" aria-live="polite"&gt;&lt;/div&gt;
+
+function announce(msg){ live.textContent = msg; }   // one live region
+// afterChange() -&gt; announce("Digit " + n + " of 6"); onComplete -&gt; announce("Verified")</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 43 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real <strong>OTP / verification-code input</strong> from scratch — six single-character boxes that behave like one field. You learned the layout (a flex row of tiny inputs rendered from one <code>LEN</code>) and, more importantly, the behaviour that makes it right: <strong>digit-only</strong> filtering, <strong>auto-advance</strong>, the two-mode <strong>backspace</strong>, <strong>arrow-key</strong> movement, <strong>paste-splitting</strong> a whole code, a single <strong>complete</strong> event, <strong>validation</strong> with a verified/error result, a <strong>resend countdown</strong>, and <code>role="group"</code> + per-box ARIA with a live region. <strong>👉 Tomorrow — Day 44: Trello board (horizontal scroll lanes with drag-and-drop cards).</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== OTP / VERIFICATION-CODE INPUT =====
+const LEN = 6;
+
+// elements
+const otp       = document.getElementById("otp");
+const otpStatus = document.getElementById("otp-status");
+const otpDemo   = document.getElementById("otp-demo");
+const resend    = document.getElementById("resend");
+const clearBtn  = document.getElementById("otp-clear");
+const live      = document.getElementById("live");
+// read-out
+const roStateBig  = document.getElementById("roStateBig");
+const roFilledBig = document.getElementById("roFilledBig");
+const roValue     = document.getElementById("roValue");
+const roFilled    = document.getElementById("roFilled");
+const roFocus     = document.getElementById("roFocus");
+const roEvent     = document.getElementById("roEvent");
+const roComplete  = document.getElementById("roComplete");
+const roResend    = document.getElementById("roResend");
+
+// state
+let SENT = "", completed = false, lastEvent = "—", timer = null, remaining = 0;
+
+// build the boxes from ONE number — N real <input>s
+otp.innerHTML = Array.from({ length: LEN }, (_, i) => (
+  '<input class="otp-box" type="text" inputmode="numeric" autocomplete="one-time-code" ' +
+    'maxlength="1" pattern="[0-9]*" data-i="' + i + '" ' +
+    'aria-label="Digit ' + (i + 1) + ' of ' + LEN + '">'
+)).join("");
+const boxes = [...otp.querySelectorAll(".otp-box")];
+
+const code        = () => boxes.map(b => b.value).join("");
+const filledCount = () => boxes.filter(b => b.value !== "").length;
+const focusIndex  = () => boxes.indexOf(document.activeElement);
+function announce(msg){ live.textContent = msg; }
+function setStatus(kind, text){ otpStatus.className = "otp-status " + kind; otpStatus.textContent = text; }
+
+// spread a multi-char string across the boxes from `start` — shared by paste + fast typing
+function spread(str, start){
+  const ds = String(str).replace(/\D/g, "").split("");
+  for (let k = 0; k < ds.length && start + k < LEN; k++) boxes[start + k].value = ds[k];
+  const landed = Math.min(start + ds.length, LEN - 1);
+  boxes[landed].focus();
+  afterChange();
+}
+
+// only a digit lands in a box; auto-advance on entry
+function onInput(e){
+  const b = e.target, i = +b.dataset.i;
+  let v = b.value.replace(/\D/g, "");         // DIGITS ONLY
+  if (v.length > 1){ lastEvent = "spread"; return spread(v, i); }
+  b.value = v;
+  lastEvent = v ? "type " + v : "clear";
+  if (v && i < LEN - 1) boxes[i + 1].focus();  // AUTO-ADVANCE
+  afterChange();
+}
+
+// backspace (empty -> jump back + clear) / arrows / delete — act before the value changes
+function onKeydown(e){
+  const i = +e.target.dataset.i;
+  if (e.key === "Backspace"){
+    if (e.target.value === "" && i > 0){
+      e.preventDefault();
+      boxes[i - 1].focus();
+      boxes[i - 1].value = "";
+      lastEvent = "backspace ←";
+      afterChange();
+    } else if (e.target.value !== ""){
+      lastEvent = "backspace";               // default clears it in place; report after
+      setTimeout(afterChange, 0);
+    }
+  } else if (e.key === "ArrowLeft" && i > 0){        e.preventDefault(); boxes[i - 1].focus(); refresh(); }
+  else if (e.key === "ArrowRight" && i < LEN - 1){   e.preventDefault(); boxes[i + 1].focus(); refresh(); }
+  else if (e.key === "Delete"){ e.target.value = ""; lastEvent = "delete"; afterChange(); }
+}
+
+// paste a whole code -> split one digit per box, from the first box
+function onPaste(e){
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  lastEvent = "paste";
+  spread(text, 0);
+}
+
+// single funnel for every mutation — the ONE place completion is detected
+function afterChange(){
+  if (completed){ completed = false; }        // a new edit after completion resets the flag
+  boxes.forEach(b => { b.classList.remove("done", "err"); b.classList.toggle("filled", b.value !== ""); });
+  const c = code();
+  const n = filledCount();
+  if (/^\d$/.test(c[Math.max(0, focusIndex())] || "")) announce("Digit " + (focusIndex() + 1) + " of " + LEN + " entered.");
+  if (c.length === LEN && /^\d{6}$/.test(c)) onComplete(c);
+  else setStatus("wait", n === 0 ? "Enter the 6-digit code" : (LEN - n) + " digit" + ((LEN - n) === 1 ? "" : "s") + " to go");
+  refresh();
+}
+
+// the complete callback — fires ONCE when all six are digits
+function onComplete(c){
+  completed = true;
+  if (c === SENT){
+    boxes.forEach(b => { b.classList.remove("err"); b.classList.add("done"); });
+    setStatus("ok", "verified ✓");
+    announce("Code complete: " + c.split("").join(" ") + ". Verified.");
+  } else {
+    boxes.forEach(b => { b.classList.remove("done"); b.classList.add("err"); });
+    otp.classList.add("shake");
+    setTimeout(() => otp.classList.remove("shake"), 400);
+    setStatus("bad", "Incorrect code — try again");
+    announce("Incorrect code. Cleared, please re-enter.");
+    setTimeout(() => { clearAll(false); boxes[0].focus(); }, 750);
+  }
+  refresh();
+}
+
+// clear the field (optionally keep the status line)
+function clearAll(resetStatus){
+  boxes.forEach(b => { b.value = ""; b.classList.remove("done", "err", "filled"); });
+  completed = false;
+  if (resetStatus !== false) setStatus("wait", "Enter the 6-digit code");
+  refresh();
+}
+
+// "send" a fresh 6-digit demo code + (re)start the resend cooldown
+function sendCode(){
+  SENT = Array.from({ length: LEN }, () => Math.floor(Math.random() * 10)).join("");
+  otpDemo.textContent = SENT.split("").join(" ");
+  startTimer(30);
+}
+function startTimer(s){
+  clearInterval(timer);
+  remaining = s; resend.disabled = true;
+  const paint = () => { resend.textContent = "Resend in " + remaining + "s"; };
+  paint(); refresh();
+  timer = setInterval(() => {
+    if (--remaining <= 0){ clearInterval(timer); timer = null; resend.disabled = false; resend.textContent = "Resend code"; refresh(); }
+    else { paint(); refresh(); }
+  }, 1000);
+}
+
+// the read-out is a pure function of the current state
+function refresh(){
+  const n = filledCount(), c = code();
+  const label = completed ? (SENT && c === SENT ? "Verified" : "Error") : (n === 0 ? "Empty" : n === LEN ? "Full" : "Typing");
+  roStateBig.textContent  = label;
+  roFilledBig.textContent = n + " / " + LEN;
+  roValue.textContent     = boxes.map(b => b.value || "•").join(" ");
+  roFilled.textContent    = n + " / " + LEN;
+  const fi = focusIndex();
+  roFocus.textContent     = fi >= 0 ? "#" + (fi + 1) : "—";
+  roFocus.className       = "pill" + (fi >= 0 ? "" : "");
+  roEvent.textContent     = lastEvent;
+  const okDone = completed && SENT && c === SENT;
+  roComplete.textContent  = completed ? "yes" : "no";
+  roComplete.className     = "pill " + (okDone ? "g" : completed ? "r" : "");
+  roResend.textContent    = resend.disabled ? remaining + "s" : "ready";
+  roResend.className      = "pill " + (resend.disabled ? "a" : "g");
+}
+
+// ---- wiring ----
+boxes.forEach(b => {
+  b.addEventListener("input", onInput);
+  b.addEventListener("keydown", onKeydown);
+  b.addEventListener("paste", onPaste);
+  b.addEventListener("focus", () => { b.select(); refresh(); });
+  b.addEventListener("blur", () => setTimeout(refresh, 0));
+});
+resend.addEventListener("click", () => {
+  if (resend.disabled) return;
+  clearAll(true);
+  sendCode();
+  lastEvent = "resend";
+  announce("A new code was sent.");
+  boxes[0].focus();
+});
+clearBtn.addEventListener("click", () => { clearAll(true); lastEvent = "clear all"; boxes[0].focus(); });
+
+// seed: send the first demo code + paint the read-out (closed state)
+sendCode();
+refresh();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What an OTP input is",
+   why:"Sign in with 2FA, verify a phone number, or type the code your bank just texted, and you meet the same object: a short row of separate single-character boxes that together hold one code. It exists because a code is easier to read, type and correct when each digit sits in its own slot, and because it can auto-advance so you never touch Tab. The layout is trivial — N tiny inputs in a flex row. Everything worth learning is the behaviour wrapped around them: filtering to digits, moving focus for you, handling backspace and paste the way people expect, firing one completion event, and staying accessible. This walkthrough builds all of that from zero, no library.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one code &#8594; six single-char boxes<br><br>[1][2][3][4][5][6]<br><br>type &#8594; auto-advance &#8594;<br>paste "123456" &#8594; splits across all six<br>last box filled &#8594; complete &#8594; verified &#10003;</div>',
+   code:"// an OTP input = N single-char <input>s\n//   that behave like ONE field.\n// easy part: N boxes in a flex row.\n// real part: digits-only, auto-advance,\n//   backspace, arrows, paste-split,\n//   one complete event, validation, a11y." },
+ { title:"2. Render the boxes from one number",
+   why:"Never hand-write the inputs — render them from a single LEN constant so the field is instantly 4, 6 or 8 boxes. Each box is a real text input with maxlength 1, plus the attributes that make phones behave: inputmode numeric pops the number pad, autocomplete one-time-code lets iOS and Android offer the just-received SMS code, and a data-i index lets every handler know which box fired. Keep the live DOM nodes in a boxes array; every later step indexes into it, and a tiny code() helper joins their values into the current string.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">LEN = 6 &#8594; Array.from(...) &#8594; 6 inputs<br><br>each: maxlength=1<br>&nbsp;&nbsp;inputmode="numeric"&nbsp;&#8592; number pad<br>&nbsp;&nbsp;autocomplete="one-time-code"&nbsp;&#8592; SMS<br>&nbsp;&nbsp;data-i=index&nbsp;&#8592; who am I<br><br>boxes = [...] &nbsp; code() = boxes.map(v).join("")</div>',
+   code:"const LEN = 6;\notp.innerHTML = Array.from({length:LEN}, (_,i) => `\n  <input class='otp-box' type='text' inputmode='numeric'\n         autocomplete='one-time-code' maxlength='1'\n         data-i='${i}' aria-label='Digit ${i+1} of ${LEN}'>`\n).join('');\nconst boxes = [...otp.querySelectorAll('.otp-box')];\nconst code  = () => boxes.map(b => b.value).join('');" },
+ { title:"3. Only digits get in",
+   why:"A verification code is digits, so scrub everything else the instant it appears. On the input event, value.replace(/\\D/g,'') strips any letter or symbol so a stray keystroke never sticks. Do this in JS rather than trusting type=number: number inputs quietly allow e, +, - and a spinner, and they behave badly with leading zeros. One more case to respect: if more than one character landed in a single box — autofill, or a fast paste — do not discard the extras; hand the whole string to the spread helper so the digits flow into the following boxes instead of being lost.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">on input: value.replace(/\\D/g, "")<br><br>"a" &#8594; ""&nbsp;&nbsp;&nbsp;&nbsp;"7" &#8594; "7"<br>"5x" &#8594; "5"<br><br>more than 1 char? &#8594; spread() across boxes<br>(don\'t throw the extra digits away)</div>',
+   code:"function onInput(e){\n  const b = e.target, i = +b.dataset.i;\n  let v = b.value.replace(/\\D/g, '');   // DIGITS ONLY\n  if (v.length > 1) return spread(v, i); // multi-char -> flow across\n  b.value = v;\n  if (v && i < LEN - 1) boxes[i+1].focus(); // auto-advance\n  afterChange();\n}" },
+ { title:"4. Auto-advance on entry",
+   why:"This is the signature feel of an OTP field: type a digit and focus jumps to the next box, so the user keeps typing straight through the code without ever reaching for Tab. It is one line inside onInput — if a digit was entered and we are not on the last box, focus boxes[i+1]. Because every box is maxlength 1, it can hold only that single digit, so the very next keystroke lands in the box you just moved to. On the last box you deliberately do NOT advance: there is nowhere to go, and that box is exactly where completion gets detected.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">type in box i &#8594; focus box i+1<br><br>[1|][ ][ ]&#8594;[1][2|][ ]&#8594;[1][2][3|]<br><br>maxlength=1 &#8594; each box holds one digit<br>last box: no advance &#8594; completion check</div>',
+   code:"// inside onInput, after writing the digit:\nif (v && i < LEN - 1) boxes[i + 1].focus();\n// on the LAST box we don't advance --\n// the caret stays and afterChange() detects\n// completion there." },
+ { title:"5. Backspace: delete, or jump back and clear",
+   why:"This is the rule everyone gets wrong. Backspace has two jobs depending on the box's state, and you handle it in keydown so you act before the value changes. If the current box HAS a digit, let the default delete it in place. If the box is ALREADY empty, the user is trying to fix the previous box, so preventDefault, move focus back one box, and clear THAT box too — one Backspace both jumps and erases, exactly like editing a single continuous field. Skip the empty-box case and backspacing from an empty box does nothing, the user gets stuck, and the field feels broken.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Backspace, two modes:<br><br>box has "7" &#8594; delete in place (default)<br>box empty&nbsp;&nbsp;&#8594; focus prev + clear it<br><br>[1][2][ |] &#8212;Bksp&#8594; [1][ |][ ]<br>&#8594; jump back AND erase, like one field</div>',
+   code:"function onKeydown(e){\n  const i = +e.target.dataset.i;\n  if (e.key === 'Backspace' && e.target.value === '' && i > 0){\n    e.preventDefault();\n    boxes[i - 1].focus();      // jump back\n    boxes[i - 1].value = '';   // and clear it\n    afterChange();\n  }\n  // box has a value -> default Backspace clears in place\n}" },
+ { title:"6. Arrow-key navigation (left / right)",
+   why:"A keyboard user must be able to move between boxes without retyping. In the same keydown handler, Left focuses the previous box and Right the next, each guarded so you cannot walk off either end, and each with preventDefault so the arrow does not also nudge the caret inside the one-character field. Two lines, and the six boxes become something you can actually navigate. Pair it with a focus listener that selects the box's content, so landing on a filled box and typing OVERWRITES the digit instead of being rejected by maxlength — a small touch that makes correcting a single digit painless.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&#8592; focus prev &nbsp;&nbsp; &#8594; focus next<br>(guarded at both ends, preventDefault)<br><br>on focus: input.select()<br>&#8594; typing REPLACES the digit,<br>&nbsp;&nbsp;doesn\'t bounce off maxlength=1</div>',
+   code:"if (e.key === 'ArrowLeft'  && i > 0)     { e.preventDefault(); boxes[i-1].focus(); }\nif (e.key === 'ArrowRight' && i < LEN-1) { e.preventDefault(); boxes[i+1].focus(); }\n\n// so typing over a filled box replaces it:\nboxes.forEach(b =>\n  b.addEventListener('focus', () => b.select()));" },
+ { title:"7. Paste a whole code — split it across the boxes",
+   why:"Real users copy the code from their SMS or email and paste it, and this is where naive fields fall apart: they dump all six digits into one box. The correct field spreads them. Listen for the paste event, preventDefault so the browser's default single-box insert never runs, read the clipboard text, keep only its digits, and write one per box starting at the first. A shared spread() helper does the writing and is reused by step 3's multi-char guard, so paste and fast typing behave identically. After filling, move focus to the box just past the last digit and run the same change hook everything else uses.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">paste "123456"<br>&#8595; preventDefault + keep digits<br>[1][2][3][4][5][6]<br><br>ONE digit per box, from the first<br>(naive field: all 6 in one box &#10007;)<br>spread() is shared with fast-typing</div>',
+   code:"function spread(str, start = 0){\n  const ds = str.replace(/\\D/g,'').split('');\n  for (let k = 0; k < ds.length && start+k < LEN; k++)\n    boxes[start + k].value = ds[k];\n  boxes[Math.min(start + ds.length, LEN-1)].focus();\n  afterChange();\n}\notp.addEventListener('paste', e => {\n  e.preventDefault();\n  spread(e.clipboardData.getData('text'), 0);\n});" },
+ { title:"8. The complete event — fire once, when full, then validate",
+   why:"Every mutation — typing, backspace, paste — routes through one afterChange() so there is a single place that asks are we done. Join the boxes and test for exactly LEN digits; only then call onComplete(code). Funnelling everything through one hook means completion can never be missed (a paste fills all six at once and still triggers it) and never double-fires per keystroke. onComplete is where validation lives: in real life you POST the code; in the demo we compare it to the one that was sent — a match locks the field green with verified, a mismatch paints it red, shakes the row, and clears for a retry.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">all mutations &#8594; afterChange() (one funnel)<br><br>code().length === 6 &amp;&amp; /^\\d{6}$/ ?<br>&nbsp;&nbsp;&#8594; onComplete(code)&nbsp;&#8592; fires ONCE<br><br>match &#8594; green "verified &#10003;"<br>miss&nbsp;&#8594; red + shake + clear &#8594; retry</div>',
+   code:"function afterChange(){\n  const c = code();\n  render();\n  if (/^\\d{6}$/.test(c)) onComplete(c);   // full -> once\n}\nfunction onComplete(c){\n  if (c === SENT){ mark('done'); status('verified \\u2713'); }\n  else { mark('err'); shake(); status('try again');\n         setTimeout(clearAll, 700); }\n}" },
+ { title:"9. The resend countdown",
+   why:"Codes expire and networks drop messages, so every OTP screen offers a Resend that you must not be able to spam. Model it as a plain setInterval that ticks a remaining counter down each second while the button sits disabled and labelled Resend in 30s; at zero, clear the interval and re-enable it. Clicking resend sends a fresh code, clears the boxes, refocuses the first, and restarts the timer. The one rule that keeps it honest: always clearInterval before starting a new timer, so a double click or a quick resend can never leave two intervals racing and counting down twice as fast.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Resend in 30s &#8230; 29 &#8230; 1 &#8594; Resend code<br>(button disabled while counting)<br><br>click &#8594; new code + clear + restart timer<br><br>clearInterval() BEFORE start &#8594; never two timers</div>',
+   code:"let timer = null, remaining = 0;\nfunction startTimer(s){\n  clearInterval(timer);          // never stack two\n  remaining = s; resend.disabled = true;\n  const tick = () => resend.textContent = 'Resend in '+remaining+'s';\n  tick();\n  timer = setInterval(() => {\n    if (--remaining <= 0){ clearInterval(timer);\n      resend.disabled = false; resend.textContent = 'Resend code'; }\n    else tick();\n  }, 1000);\n}" },
+ { title:"10. ARIA + accessibility — the honest finish",
+   why:"The boxes look like one field to sighted users, so you have to tell assistive tech the same story. Wrap them in a role=group with an aria-label like verification code, 6 digits, and give each input its own aria-label Digit N of 6 so a screen-reader user knows where they are. Pipe every meaningful change through one visually-hidden aria-live region so they hear digit 3 entered and code complete, verified without watching the boxes. autocomplete=one-time-code lets phones surface the SMS code directly into the field. None of this changes how it looks — it is the difference between a widget that only demos and one you can actually ship.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="group" aria-label="code, 6 digits"<br>each input: aria-label="Digit N of 6"<br>one aria-live region speaks every change<br>autocomplete="one-time-code"&nbsp;&#8592; SMS autofill<br><br>looks identical &#8212; but now it ships</div>',
+   code:"<div class='otp' role='group'\n     aria-label='Verification code, 6 digits'>\n  <input aria-label='Digit 1 of 6'\n         autocomplete='one-time-code' ...>\n  ...\n</div>\n<div id='live' class='sr-only' role='status' aria-live='polite'></div>\n\nfunction announce(m){ live.textContent = m; }\n// afterChange -> announce('Digit '+n+' of 6');\n// onComplete  -> announce('Verified');" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3800); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
