@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 44 — Drag-to-Reorder Sortable List</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:460px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:24px;
+                display:flex; flex-direction:column; align-items:stretch; justify-content:center; gap:14px; }
+
+  /* ---- the sortable list ---- */
+  .dz-list { list-style:none; margin:0 auto; padding:0; position:relative; width:100%; max-width:440px; }
+  .drag-item {
+    display:flex; align-items:center; gap:12px;
+    height:56px; box-sizing:border-box;
+    margin-bottom:10px; padding:0 14px;
+    background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+    box-shadow:0 1px 2px rgba(15,23,42,.05);
+    cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none;
+    will-change:transform;
+  }
+  .drag-item:last-child { margin-bottom:0; }
+  .drag-item.shifting { transition:transform .18s cubic-bezier(.2,.8,.2,1); }   /* only the items making room animate */
+  .drag-item:hover { border-color:#c7d2fe; }
+  .drag-item:focus-visible { outline:2px solid #6366f1; outline-offset:2px; border-color:#a5b4fc; }
+  .drag-item.dragging {                                                          /* the picked-up item */
+    cursor:grabbing; z-index:20; border-color:#a5b4fc; background:#eef2ff;
+    box-shadow:0 16px 32px rgba(79,70,229,.24); transition:none;
+  }
+  .drag-item .handle { color:#cbd5e1; font-size:18px; line-height:1; letter-spacing:-2px; flex:none; }
+  .drag-item.dragging .handle { color:#6366f1; }
+  .drag-item .num { width:22px; height:22px; flex:none; display:flex; align-items:center; justify-content:center;
+                    font-size:11px; font-weight:800; color:#4f46e5; background:#eef2ff; border-radius:6px; font-variant-numeric:tabular-nums; }
+  .drag-item .body { display:flex; flex-direction:column; min-width:0; }
+  .drag-item .title { font-weight:700; font-size:.95rem; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .drag-item .tag   { font-size:.72rem; color:#94a3b8; font-weight:600; }
+  body.dz-grabbing, body.dz-grabbing * { cursor:grabbing !important; }
+
+  .dz-hint { text-align:center; font-size:.8rem; color:#94a3b8; }
+
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover:not(:disabled) { background:#f8fafc; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.18em; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none; }
+    .drag-item.shifting { transition:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 44</div>
+      <h1 class="text-xl font-bold">↕ Drag-to-Reorder Sortable List — Grab Any Row and Drag It, and the Other Items <em>Slide Live</em> to Open a Gap Where It Will Land; Release and the <strong>Real Array Splice-Reorders</strong> to Match. Built on <strong>Pointer Events</strong> So One Code Path Handles <strong>Mouse, Touch and Pen</strong>; the Target Slot Is Computed From the Pointer's Y Travel, the Shifting Is Pure <code>transform</code> So It Stays Smooth, and There Is a Full <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> <strong>Keyboard Fallback</strong> With Live <strong>ARIA</strong> Announcements. No Library.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">👁 LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Grab a row, drag it, and the rest <span class="text-indigo-600">slide out of the way</span> to show where it lands — let go and the list is really reordered.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A drag-to-reorder (or <em>sortable</em>) list is the thing you use to rank a to-do list, arrange a playlist, or set column order: <strong>pick up any row and drop it somewhere else</strong>. The craft is entirely in the feel. As you drag, the item you are holding <strong>follows your pointer</strong> while every other row <strong>shifts live</strong> to open a gap exactly where the item will land, so you always see the result before you commit. On release, the underlying <strong>array is spliced into the new order</strong> and the list re-renders to match — the visual and the data never drift apart. It is built on <strong>Pointer Events</strong>, so the same handful of handlers cover mouse, touch and pen; the movement is pure <code>transform</code> so it stays at 60fps; and it has a proper <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> <strong>keyboard path</strong> with <strong>ARIA</strong> announcements underneath. Try it — drag a row up or down, or focus one and use the arrow keys, and watch the read-out on the right update live.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Sprint tasks — drag to prioritise</span>
+              <span class="text-xs text-slate-500">Grab a row and drag · or focus one and press <kbd>&uarr;</kbd> <kbd>&darr;</kbd> to move it.</span>
+            </div>
+            <div class="demo-frame">
+              <ul class="dz-list" id="dzList" role="listbox" aria-label="Sprint task priority — reorderable list"><!-- rows injected by JS --></ul>
+              <div class="dz-hint">Drag any row, or focus one and use <kbd>&uarr;</kbd> <kbd>&darr;</kbd> · <kbd>Home</kbd>/<kbd>End</kbd> jump to the ends.</div>
+              <div class="flex items-center justify-center gap-2 mt-1">
+                <button class="btn-ghost" id="dzShuffle" type="button">Shuffle</button>
+                <button class="btn-ghost" id="dzReset" type="button">Reset order</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">List state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roStateBig" class="text-lg font-bold text-slate-800">Resting</span>
+                <span id="roMovesBig" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">0 moves</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">order (by id)</span><span id="roOrder" class="pill mono">1 2 3 4 5 6</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">dragging</span><span id="roDrag" class="pill g">no</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">grabbed</span><span id="roGrab" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">from &rarr; to</span><span id="roFromTo" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last method</span><span id="roMethod" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">moves</span><span id="roMoves" class="pill">0</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure function of the widget's state. Pick up a row and <em>dragging</em> flips to <span class="pill a" style="padding:1px 7px">yes</span> while <em>from &rarr; to</em> tracks the live target slot; drop it and <em>order</em> shows the new id sequence with <em>last method</em> reading <span class="pill" style="padding:1px 7px">pointer</span>. Move a focused row with the arrow keys and it reads <span class="pill" style="padding:1px 7px">keyboard</span> instead.</p>
+              <div class="sr-only" id="dzLive" role="status" aria-live="assertive"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Reorder your Trello cards, drag a song up your queue, rank your Todoist tasks, arrange a Notion database's columns — the same object each time: a list whose order <em>you</em> set by dragging. The layout is trivial — rows in a column. The craft is the behaviour: capturing the pointer so the drag survives leaving the row, <strong>tracking the held item</strong> against your pointer, <strong>computing the target slot</strong> from how far you have travelled, <strong>shifting the other rows</strong> live with a transition to preview the drop, then <strong>splice-reordering the real array</strong> on release so data and DOM agree — plus an honest <strong>keyboard</strong> path and <strong>ARIA</strong> so it is not mouse-only. Get those right and you have a real sortable list, no library needed.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a drag-to-reorder list works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">← Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next →</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">▶ Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step →</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">—</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">🔨 Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A sortable list is a column of rows whose order lives in <strong>one array</strong>. The layout is nothing; the behaviour is everything: <strong>grab</strong> a row on <code>pointerdown</code> and capture the pointer, <strong>follow</strong> it on <code>pointermove</code>, <strong>compute the target slot</strong> from the distance travelled, <strong>shift the other rows</strong> live to preview the drop, then on <code>pointerup</code> <strong>splice-reorder the array</strong> and re-render so the data and the DOM match. Because it is built on Pointer Events, mouse, touch and pen all run the same code — and we add an <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> keyboard path with ARIA so it is not drag-only. We build all of it from scratch, one piece at a time, no framework and no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The array is the source of truth — render rows from it</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not treat the DOM as the data. Keep the order in one <code>data</code> array of objects and <em>render the list from it</em>, so DOM order always equals array order. Every row is a real focusable element — <code>role="option"</code>, <code>tabindex="0"</code>, an <code>aria-label</code> that says its position — and carries a <code>data-id</code> so a handler can find its object. <code>touch-action:none</code> on the row is essential: it tells the browser "this gesture is a drag, not a scroll", so a touch drag does not scroll the page instead.</p>
+        <div class="relative"><pre>let data = [
+  { id:1, title:"Draft the launch email", tag:"Marketing" },
+  /* …5 more… */
+];
+function render(focusId){
+  list.innerHTML = data.map((it,i) =&gt; `
+    &lt;li class="drag-item" role="option" tabindex="0" data-id="${it.id}"
+        aria-label="${it.title}, position ${i+1} of ${data.length}"&gt;
+      &lt;span class="handle" aria-hidden="true"&gt;&#x28FF;&lt;/span&gt;
+      &lt;span class="num"&gt;${i+1}&lt;/span&gt;
+      &lt;span class="title"&gt;${it.title}&lt;/span&gt;
+    &lt;/li&gt;`).join("");
+  if (focusId != null) list.querySelector(`[data-id="${focusId}"]`)?.focus();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Grab it — pointerdown, capture, lift</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Listen for <code>pointerdown</code> on the list (one delegated handler), find the row with <code>closest(".drag-item")</code>, and open a <code>drag</code> state object: the element, its start index, the pointer's start Y, and the <strong>row height including the gap</strong> (measured from two real rows so you never hard-code it). Then call <code>setPointerCapture(pointerId)</code> — the single most important line — so every later move and the release are routed to this element <em>even when the pointer leaves it</em>. Add a <code>dragging</code> class to lift it (shadow, raised z-index) and mark the rest as <code>shifting</code> so only they animate.</p>
+        <div class="relative"><pre>let drag = null;
+list.addEventListener("pointerdown", e =&gt; {
+  const item = e.target.closest(".drag-item");
+  if (!item || !e.isPrimary) return;
+  const rows = [...list.children];
+  const rowH = rows.length &gt; 1
+    ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top
+    : item.offsetHeight;                    // height + gap, measured
+  drag = { item, rows, rowH, startIndex: rows.indexOf(item),
+           targetIndex: rows.indexOf(item), startY: e.clientY };
+  item.setPointerCapture(e.pointerId);      // ← drag survives leaving the row
+  item.classList.add("dragging");
+  rows.forEach(r =&gt; r !== item &amp;&amp; r.classList.add("shifting"));
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Follow the pointer — pointermove</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because we captured the pointer, we can attach <code>pointermove</code> to the dragged element itself. The delta is just <code>dy = e.clientY - startY</code>, and the held row follows by writing <code>transform: translateY(dy)</code>. We move it with a <code>transform</code>, not <code>top</code> or margins, so it is composited on the GPU and never triggers layout — that is what keeps a drag buttery. The dragged row deliberately has <em>no</em> transition, so it tracks your finger 1:1; only the other rows animate.</p>
+        <div class="relative"><pre>item.addEventListener("pointermove", e =&gt; {
+  if (!drag) return;
+  const dy = e.clientY - drag.startY;
+  drag.item.style.transform = `translateY(${dy}px)`;   // 1:1, no transition
+  updateTarget(dy);                                     // step 4
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Where will it land? — the target index from pointer Y</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the heart of it. You do not track the mouse against every row's rectangle — you ask one question: <strong>how many whole rows have I travelled?</strong> That is <code>Math.round(dy / rowH)</code>. Add it to the start index and clamp to the list bounds and you have the target slot. Rounding means the item snaps to a new slot once you have dragged past a row's <em>midpoint</em> — exactly the "it flips when I'm halfway over the next one" feel. Only act when the target actually changes, so you are not re-shifting on every pixel.</p>
+        <div class="relative"><pre>function updateTarget(dy){
+  const n = drag.rows.length;
+  const target = Math.max(0, Math.min(n - 1,
+    drag.startIndex + Math.round(dy / drag.rowH)));   // whole rows travelled
+  if (target !== drag.targetIndex){
+    drag.targetIndex = target;
+    shiftOthers();                                    // step 5
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Open the gap — shift the other rows live</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Nothing in the array has changed yet — the reorder is still just a <em>preview</em> painted with transforms. Every row between the start slot and the target slot slides by exactly one row-height to make room: when you drag <strong>down</strong>, the rows you passed slide <strong>up</strong>; when you drag <strong>up</strong>, they slide <strong>down</strong>. Because those rows carry the <code>shifting</code> class (a <code>transform</code> transition), each one glides into place instead of snapping, and the empty slot visibly opens where the item will drop.</p>
+        <div class="relative"><pre>function shiftOthers(){
+  const { rows, startIndex, targetIndex, item, rowH } = drag;
+  rows.forEach((r, i) =&gt; {
+    if (r === item) return;
+    let shift = 0;
+    if (startIndex &lt; targetIndex &amp;&amp; i &gt; startIndex &amp;&amp; i &lt;= targetIndex) shift = -rowH; // dragging down
+    else if (startIndex &gt; targetIndex &amp;&amp; i &gt;= targetIndex &amp;&amp; i &lt; startIndex) shift =  rowH; // dragging up
+    r.style.transform = shift ? `translateY(${shift}px)` : "";
+  });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Drop — splice-reorder the real array</h3></div>
+        <p class="text-sm text-slate-600 mb-3">On <code>pointerup</code> the preview becomes real. Release the pointer capture, then perform the one operation the whole widget exists for: pull the item out of its start slot and put it back at the target — <code>data.splice(from, 1)</code> then <code>data.splice(to, 0, moved)</code>. That is the actual reorder; every transform up to now was theatre. If the target equals the start (you dropped it back), you change nothing — a click, not a move.</p>
+        <div class="relative"><pre>item.addEventListener("pointerup", e =&gt; {
+  const { startIndex, targetIndex } = drag;
+  item.releasePointerCapture(e.pointerId);
+  if (targetIndex !== startIndex){
+    const [moved] = data.splice(startIndex, 1);   // pull out
+    data.splice(targetIndex, 0, moved);           // put back at target
+  }
+  const focusId = +item.dataset.id;
+  drag = null;
+  commit(focusId);                                // step 7
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Re-render from the array — and no flash</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The rows are still wearing preview transforms and the DOM order is still the <em>old</em> order — only the array is new. Fix both in one move: re-render the list from <code>data</code>. The fresh rows are created in the new order with <strong>no transforms at all</strong>, so they land exactly where the preview left them and there is no visible jump. Re-rendering from the single source of truth is what guarantees the picture and the data can never disagree. Restore focus to the row you moved by its id.</p>
+        <div class="relative"><pre>function commit(focusId){
+  render(focusId);   // rebuild rows from `data` — new order, zero transforms
+}
+// because the preview already showed the final layout,
+// the re-render is seamless: same positions, now backed by real data.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Keyboard fallback — ↑ / ↓ move the focused row</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A drag-only list is unusable for keyboard and screen-reader users, and the fix is small because the array is already the source of truth. Focus a row, and <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> run the <em>exact same splice</em> the drop does — just with indices from the keyboard instead of the pointer — then re-render and keep focus on the moved row so you can move it again. <kbd>Home</kbd>/<kbd>End</kbd> jump it to the ends. Same reorder logic, a completely different input.</p>
+        <div class="relative"><pre>list.addEventListener("keydown", e =&gt; {
+  const item = e.target.closest(".drag-item");
+  if (!item) return;
+  const rows = [...list.children], i = rows.indexOf(item);
+  let j = i;
+  if      (e.key === "ArrowUp")   j = i - 1;
+  else if (e.key === "ArrowDown") j = i + 1;
+  else if (e.key === "Home")      j = 0;
+  else if (e.key === "End")       j = rows.length - 1;
+  else return;
+  e.preventDefault();
+  if (j &lt; 0 || j &gt;= rows.length || j === i) return;
+  const [moved] = data.splice(i, 1);
+  data.splice(j, 0, moved);          // same splice as the drop
+  render(moved.id);                  // keep focus on the moved row
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">ARIA + touch — the honest finish</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Make it real for everyone. The list is a <code>role="listbox"</code> with an <code>aria-label</code>; each row is a <code>role="option"</code> whose <code>aria-label</code> states "&lt;title&gt;, position N of M". Pipe every meaningful change — picked up, hovering slot k, dropped at k — through one visually-hidden <code>aria-live="assertive"</code> region so a screen-reader user hears the reorder happen. <code>touch-action:none</code> makes the drag work on phones without hijacking scroll, and honouring <code>prefers-reduced-motion</code> (drop the shift transition) keeps it comfortable. None of this changes how it looks — it is the difference between a demo and something you can ship.</p>
+        <div class="relative"><pre>&lt;ul role="listbox" aria-label="Reorderable task list"&gt;
+  &lt;li role="option" tabindex="0"
+      aria-label="Draft the launch email, position 1 of 6"&gt; … &lt;/li&gt;
+&lt;/ul&gt;
+&lt;div id="live" class="sr-only" role="status" aria-live="assertive"&gt;&lt;/div&gt;
+
+function announce(msg){ live.textContent = msg; }
+// pointerdown → announce("Picked up X.")
+// updateTarget → announce("Position k of n.")
+// drop / key   → announce("X moved to position k of n.")
+/* CSS: .drag-item { touch-action:none } */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">🎉 Day 44 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real <strong>drag-to-reorder sortable list</strong> from scratch — no library. You learned the one idea everything hangs on (<strong>the array is the source of truth; the DOM is rendered from it</strong>) and the mechanics that make it feel right: <strong>capture the pointer</strong> so the drag survives leaving the row, <strong>follow it</strong> with a <code>transform</code>, <strong>compute the target slot</strong> from whole rows travelled, <strong>shift the other rows</strong> live to preview the drop, <strong>splice-reorder the array</strong> on release, <strong>re-render</strong> so nothing can drift, and an honest <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> <strong>keyboard</strong> path with <code>role="listbox"</code>, per-row labels and an <code>aria-live</code> region. <strong>👉 Tomorrow — Day 45: Trello board (horizontal scroll lanes with drag-and-drop cards across columns).</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DRAG-TO-REORDER SORTABLE LIST =====
+const list    = document.getElementById("dzList");
+const liveEl  = document.getElementById("dzLive");
+const shuffleBtn = document.getElementById("dzShuffle");
+const resetBtn   = document.getElementById("dzReset");
+// read-out
+const roStateBig = document.getElementById("roStateBig");
+const roMovesBig = document.getElementById("roMovesBig");
+const roOrder    = document.getElementById("roOrder");
+const roDrag     = document.getElementById("roDrag");
+const roGrab     = document.getElementById("roGrab");
+const roFromTo   = document.getElementById("roFromTo");
+const roMethod   = document.getElementById("roMethod");
+const roMoves    = document.getElementById("roMoves");
+
+// THE DATA — the single source of truth. Order here == order on screen, always.
+const SEED = [
+  { id:1, title:"Draft the launch email",     tag:"Marketing" },
+  { id:2, title:"Fix the checkout bug",       tag:"Engineering" },
+  { id:3, title:"Review the Q3 budget",       tag:"Finance" },
+  { id:4, title:"Record the demo video",      tag:"Product" },
+  { id:5, title:"Reply to the press enquiry", tag:"PR" },
+  { id:6, title:"Ship the release notes",     tag:"Docs" }
+];
+let data = SEED.map(x => ({ ...x }));
+
+// UI state (not the data — just what the widget is doing right now)
+let drag = null;            // active pointer-drag session, or null
+let moves = 0;              // how many reorders committed
+let method = "—";           // "pointer" | "keyboard" | "—"
+let lastFrom = null, lastTo = null;
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+// build one row of HTML from an item + its position
+function rowHTML(it, i, n){
+  return (
+    '<li class="drag-item" role="option" tabindex="0" data-id="' + it.id + '" ' +
+        'aria-label="' + esc(it.title) + ', position ' + (i + 1) + ' of ' + n + '. Use arrow up or down to move.">' +
+      '<span class="handle" aria-hidden="true">⣿</span>' +
+      '<span class="num">' + (i + 1) + '</span>' +
+      '<span class="body">' +
+        '<span class="title">' + esc(it.title) + '</span>' +
+        '<span class="tag">' + esc(it.tag) + '</span>' +
+      '</span>' +
+    '</li>'
+  );
+}
+
+// render the DOM straight from the array — DOM order == data order, no transforms
+function render(focusId){
+  const n = data.length;
+  list.innerHTML = data.map((it, i) => rowHTML(it, i, n)).join("");
+  if (focusId != null){
+    const f = list.querySelector('[data-id="' + focusId + '"]');
+    if (f) f.focus();
+  }
+  refresh();
+}
+
+function announce(msg){ liveEl.textContent = msg; }
+
+// ---- POINTER DRAG ----
+list.addEventListener("pointerdown", e => {
+  const item = e.target.closest(".drag-item");
+  if (!item || !e.isPrimary) return;
+  const rows = [...list.children];
+  const rowH = rows.length > 1
+    ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top
+    : item.offsetHeight;                                   // row height incl. gap
+  const startIndex = rows.indexOf(item);
+  drag = { item, rows, rowH, startIndex, targetIndex: startIndex, startY: e.clientY };
+
+  item.setPointerCapture(e.pointerId);                     // drag survives leaving the row
+  item.classList.add("dragging");
+  rows.forEach(r => { if (r !== item) r.classList.add("shifting"); });
+  document.body.classList.add("dz-grabbing");
+  method = "pointer";
+  announce("Picked up " + item.querySelector(".title").textContent + ", position " + (startIndex + 1) + " of " + rows.length + ".");
+
+  item.addEventListener("pointermove", onMove);
+  item.addEventListener("pointerup", onUp);
+  item.addEventListener("pointercancel", onUp);
+  refresh();
+});
+
+function onMove(e){
+  if (!drag) return;
+  const dy = e.clientY - drag.startY;
+  drag.item.style.transform = "translateY(" + dy + "px)";  // the held row follows 1:1
+
+  const n = drag.rows.length;
+  const target = Math.max(0, Math.min(n - 1, drag.startIndex + Math.round(dy / drag.rowH)));
+  if (target !== drag.targetIndex){
+    drag.targetIndex = target;
+    shiftOthers();
+    announce("Position " + (target + 1) + " of " + n + ".");
+  }
+  refresh();
+}
+
+// shift the rows between start and target by one row-height to open the gap (preview only)
+function shiftOthers(){
+  const { rows, startIndex, targetIndex, item, rowH } = drag;
+  rows.forEach((r, i) => {
+    if (r === item) return;
+    let shift = 0;
+    if (startIndex < targetIndex && i > startIndex && i <= targetIndex) shift = -rowH;      // dragging down
+    else if (startIndex > targetIndex && i >= targetIndex && i < startIndex) shift = rowH;  // dragging up
+    r.style.transform = shift ? "translateY(" + shift + "px)" : "";
+  });
+}
+
+function onUp(e){
+  if (!drag) return;
+  const { item, startIndex, targetIndex } = drag;
+  try { item.releasePointerCapture(e.pointerId); } catch (_) {}
+  item.removeEventListener("pointermove", onMove);
+  item.removeEventListener("pointerup", onUp);
+  item.removeEventListener("pointercancel", onUp);
+  document.body.classList.remove("dz-grabbing");
+
+  if (targetIndex !== startIndex){                         // COMMIT: splice-reorder the real array
+    const [moved] = data.splice(startIndex, 1);
+    data.splice(targetIndex, 0, moved);
+    moves++; lastFrom = startIndex; lastTo = targetIndex;
+    announce(moved.title + " moved to position " + (targetIndex + 1) + " of " + data.length + ".");
+  } else {
+    announce("Dropped in place.");
+  }
+  const focusId = +item.dataset.id;
+  drag = null;
+  render(focusId);                                         // rebuild from array — no flash
+}
+
+// ---- KEYBOARD FALLBACK ----
+list.addEventListener("keydown", e => {
+  const item = e.target.closest(".drag-item");
+  if (!item) return;
+  const rows = [...list.children], i = rows.indexOf(item);
+  let j = i;
+  if      (e.key === "ArrowUp")   j = i - 1;
+  else if (e.key === "ArrowDown") j = i + 1;
+  else if (e.key === "Home")      j = 0;
+  else if (e.key === "End")       j = rows.length - 1;
+  else return;
+  e.preventDefault();
+  if (j < 0 || j >= rows.length || j === i) return;
+
+  const [moved] = data.splice(i, 1);                       // same splice as the drop
+  data.splice(j, 0, moved);
+  moves++; method = "keyboard"; lastFrom = i; lastTo = j;
+  announce(moved.title + " moved to position " + (j + 1) + " of " + data.length + ".");
+  render(moved.id);
+});
+
+// ---- read-out: a pure function of the current state ----
+function refresh(){
+  const dragging = !!drag;
+  roStateBig.textContent = dragging ? "Dragging" : "Resting";
+  roMovesBig.textContent = moves + (moves === 1 ? " move" : " moves");
+  roOrder.textContent    = data.map(d => d.id).join(" ");
+  roDrag.textContent     = dragging ? "yes" : "no";
+  roDrag.className       = "pill " + (dragging ? "a" : "g");
+  roGrab.textContent     = dragging ? "#" + drag.item.dataset.id : "—";
+  roFromTo.textContent   = dragging
+      ? (drag.startIndex + 1) + " → " + (drag.targetIndex + 1)
+      : (lastFrom != null ? (lastFrom + 1) + " → " + (lastTo + 1) : "—");
+  roMethod.textContent   = method;
+  roMoves.textContent    = moves;
+}
+
+// ---- controls ----
+resetBtn.addEventListener("click", () => {
+  data = SEED.map(x => ({ ...x }));
+  moves = 0; method = "—"; lastFrom = lastTo = null;
+  announce("Order reset.");
+  render();
+});
+shuffleBtn.addEventListener("click", () => {
+  for (let i = data.length - 1; i > 0; i--){                // Fisher–Yates
+    const j = Math.floor(Math.random() * (i + 1));
+    [data[i], data[j]] = [data[j], data[i]];
+  }
+  method = "shuffle"; lastFrom = lastTo = null;
+  announce("List shuffled.");
+  render();
+});
+
+// first paint
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a drag-to-reorder list is",
+   why:"Rank a to-do list, arrange a playlist queue, reorder a Kanban card within its column, set the order of columns in a table — again and again you meet the same object: a list whose order you set by dragging. It exists because dragging is the most direct way to say 'this goes above that', and because you want to see the new order forming as you drag, not only after you let go. The layout is nothing — rows in a column. Everything worth learning is the behaviour: capturing the pointer, tracking the held row, computing where it will land, shifting the other rows to preview it, and then actually reordering the data. This walkthrough builds all of it from zero, no library, and adds a real keyboard path so it is not mouse-only.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">a list whose order YOU set<br><br>[A]<br>[B] &#8592; grab &amp; drag&#8230;<br>[C]<br><br>others slide to open a gap<br>release &#8594; array reorders to match<br>+ &#8593;/&#8595; keyboard &amp; ARIA</div>',
+   code:"// a sortable list = ONE array +\n//   render rows from it.\n// easy part: rows in a column.\n// real part: capture pointer, follow it,\n//   find target slot, shift others,\n//   splice-reorder the array, re-render,\n//   keyboard + ARIA." },
+ { title:"2. The array is the source of truth",
+   why:"The one idea the whole widget hangs on: the order lives in a plain array of objects, and the DOM is RENDERED from that array — never the other way round. You never read the order back out of the DOM. This means there is exactly one place order can change (the array) and one direction data flows (array to screen), so the picture and the data can never drift apart. Each row is a real focusable element with a role, a tabindex and an aria-label that states its position, plus a data-id so any handler can map a clicked row back to its object. Get this contract right and every later step is a small edit to the array followed by a re-render.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">data = [ {id:1}, {id:2}, {id:3} &#8230; ]<br>&#8595; render()<br>[1][2][3][4][5][6]<br><br>ONE source of truth (the array)<br>DOM is a picture of it, never the reverse<br>reorder = edit array &#8594; re-render</div>',
+   code:"let data = [\n  { id:1, title:'Draft the launch email' },\n  { id:2, title:'Fix the checkout bug'   },\n  /* …4 more… */\n];\nfunction render(focusId){\n  list.innerHTML = data.map((it,i) => rowHTML(it,i)).join('');\n  if (focusId != null)\n    list.querySelector(`[data-id=\"${focusId}\"]`)?.focus();\n}\n// DOM order ALWAYS equals data order." },
+ { title:"3. Grab it — pointerdown + setPointerCapture",
+   why:"A drag starts on pointerdown. One delegated listener on the list finds the row via closest('.drag-item') and opens a drag-state object holding the element, its start index, the pointer's start Y, and the row height (measured from two real rows so nothing is hard-coded). The critical line is setPointerCapture(pointerId): it retargets every following pointermove and the pointerup to THIS element, even when the pointer moves off the row or off the list entirely — no more losing the drag because you moved too fast. Pointer Events also mean this same code runs for mouse, touch and pen; you never write separate mouse and touch handlers again. Add a dragging class to lift the row and mark the rest so only they animate.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointerdown on a row &#8594;<br>drag = { item, startIndex, startY, rowH }<br><br>item.setPointerCapture(pointerId)<br>&#8593; drag survives leaving the row<br><br>one code path: mouse &middot; touch &middot; pen</div>',
+   code:"let drag = null;\nlist.addEventListener('pointerdown', e => {\n  const item = e.target.closest('.drag-item');\n  if (!item || !e.isPrimary) return;\n  const rows = [...list.children];\n  const rowH = rows[1].getBoundingClientRect().top\n             - rows[0].getBoundingClientRect().top; // height+gap\n  drag = { item, rows, rowH, startY:e.clientY,\n           startIndex: rows.indexOf(item),\n           targetIndex: rows.indexOf(item) };\n  item.setPointerCapture(e.pointerId);  // ← the key line\n  item.classList.add('dragging');\n});" },
+ { title:"4. Follow the pointer — pointermove + transform",
+   why:"With the pointer captured, attach pointermove to the dragged element. The maths is trivial: dy = clientY - startY, the vertical distance you have dragged. The held row follows by writing transform: translateY(dy). Use a transform, not top or margin or reordering the DOM, for a concrete reason — transforms are composited on the GPU and do not trigger layout or paint of the rest of the page, which is what keeps the drag at 60fps even with a long list. The dragged row has no CSS transition, so it tracks your finger exactly; the animation belongs only to the OTHER rows, which glide as they make room.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">dy = clientY &#8722; startY<br>item.style.transform = translateY(dy)<br><br>transform &#8594; GPU, no layout &#8594; smooth<br>dragged row: NO transition (1:1 tracking)<br>other rows: transition (they glide)</div>',
+   code:"item.addEventListener('pointermove', e => {\n  if (!drag) return;\n  const dy = e.clientY - drag.startY;\n  drag.item.style.transform =\n    `translateY(${dy}px)`;   // follows 1:1, no transition\n  updateTarget(dy);          // step 5\n});" },
+ { title:"5. Where will it land? — target index from pointer Y",
+   why:"The heart of the whole thing, and simpler than people expect. You do not compare the pointer against every row's rectangle. You ask one question: how many WHOLE rows have I travelled from where I started? That is Math.round(dy / rowHeight). Add it to the start index and clamp to the list bounds, and you have the target slot the item would drop into right now. Because you round, the target flips to the next slot once you have dragged past a row's midpoint — which is exactly the 'it swaps when I'm halfway over the next one' feel every good sortable has. Only react when the computed target actually changes, so you shift rows once per crossing, not once per pixel.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">target = startIndex + round(dy / rowH)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(clamped to 0 &#8230; n&#8722;1)<br><br>dy = 0 &#8594; +0 &nbsp; dy = 1.5&times;rowH &#8594; +2<br>round() &#8594; flips past the MIDPOINT<br>act only when target changes</div>',
+   code:"function updateTarget(dy){\n  const n = drag.rows.length;\n  const target = Math.max(0, Math.min(n - 1,\n    drag.startIndex + Math.round(dy / drag.rowH)));\n  if (target !== drag.targetIndex){\n    drag.targetIndex = target;\n    shiftOthers();          // step 6\n  }\n}" },
+ { title:"6. Open the gap — shift the other rows live",
+   why:"Nothing in the array has moved yet — the reorder so far is a PREVIEW painted entirely with transforms. Every row that sits between the start slot and the current target slides by exactly one row-height to open a hole where the item will drop: drag downward and the rows you passed slide up; drag upward and they slide down; every other row sits still. Those rows carry a transition on transform, so each one glides rather than snaps, and the empty slot visibly opens and closes as you move. This is the moment that makes a sortable feel alive — you are shown the outcome before you commit to it, and you can change your mind for free.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drag DOWN &#8594; passed rows slide UP<br>drag UP &nbsp;&#8594; passed rows slide DOWN<br><br>[1]&nbsp;&nbsp;[1]&#8593;<br>[2]&#8595; &#8594; [ &nbsp;] &#8592; gap opens here<br>[3]&nbsp;&nbsp;[3]<br><br>pure transform + transition = preview</div>',
+   code:"function shiftOthers(){\n  const { rows, startIndex, targetIndex, item, rowH } = drag;\n  rows.forEach((r, i) => {\n    if (r === item) return;\n    let shift = 0;\n    if (startIndex < targetIndex && i > startIndex && i <= targetIndex)\n      shift = -rowH;                 // dragging down\n    else if (startIndex > targetIndex && i >= targetIndex && i < startIndex)\n      shift =  rowH;                 // dragging up\n    r.style.transform = shift ? `translateY(${shift}px)` : '';\n  });\n}" },
+ { title:"7. Drop — splice-reorder the real array",
+   why:"On pointerup the preview becomes truth. Release the pointer capture, then do the single operation this whole widget exists to perform: pull the dragged item out of its start slot and re-insert it at the target — data.splice(from, 1) to remove it, then data.splice(to, 0, moved) to drop it in. THAT is the reorder; every transform before this was theatre for the eye. Guard the no-op case: if the target equals the start you dropped the item back where it began, so you change nothing — that was a click, not a move. Remove the move/up listeners you added on pointerdown so nothing leaks.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointerup &#8594; commit<br><br>const [moved] = data.splice(from, 1)<br>data.splice(to, 0, moved)<br><br>from === to ? &#8594; nothing changed (a click)<br>the array is now the new order</div>',
+   code:"function onUp(e){\n  const { item, startIndex, targetIndex } = drag;\n  item.releasePointerCapture(e.pointerId);\n  if (targetIndex !== startIndex){\n    const [moved] = data.splice(startIndex, 1); // pull out\n    data.splice(targetIndex, 0, moved);         // put at target\n  }\n  const focusId = +item.dataset.id;\n  drag = null;\n  render(focusId);                              // step 8\n}" },
+ { title:"8. Re-render from the array — with no flash",
+   why:"Right after the splice there is a mismatch: the rows still wear their preview transforms and the DOM is still in the OLD order — only the array is new. Resolve both at once by re-rendering the list from data. The fresh rows are created in the new order with no transforms at all, so they appear precisely where the preview had already placed them — there is no jump, because you never moved anything back. Re-rendering from the one source of truth is exactly what guarantees the DOM can never disagree with the data. Then restore focus to the row you moved, by its stable id, so keyboard users are not dumped back to the top.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">after splice:<br>array = NEW order, DOM = OLD + transforms<br>&#8595; render() from the array<br>DOM = NEW order, ZERO transforms<br><br>preview already showed final spot &#8594; seamless<br>re-focus the moved row by id</div>',
+   code:"function render(focusId){\n  list.innerHTML = data.map((it,i) => rowHTML(it,i)).join('');\n  // fresh rows: new order, no leftover transforms\n  if (focusId != null)\n    list.querySelector(`[data-id=\"${focusId}\"]`)?.focus();\n}\n// picture == data, guaranteed, every drop." },
+ { title:"9. Keyboard fallback — ↑ / ↓ move the focused row",
+   why:"A list you can only reorder by dragging excludes keyboard and screen-reader users entirely — and because the array is already the source of truth, fixing that is tiny. Focus a row and press Up or Down: run the EXACT same splice the drop runs, only the indices come from the key instead of the pointer, then re-render and keep focus on the moved row so repeated presses walk it up or down the list. Home and End send it straight to the ends. You are not writing a second reorder engine — you are feeding the same one a different input, which is the whole payoff of keeping the logic in the array rather than in the drag.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">focus a row &#8594; &#8593;/&#8595; move it<br>Home / End &#8594; jump to the ends<br><br>SAME splice as the drop,<br>indices from the keyboard<br><br>focus follows the moved row</div>',
+   code:"list.addEventListener('keydown', e => {\n  const item = e.target.closest('.drag-item');\n  if (!item) return;\n  const rows = [...list.children], i = rows.indexOf(item);\n  let j = i;\n  if      (e.key === 'ArrowUp')   j = i - 1;\n  else if (e.key === 'ArrowDown') j = i + 1;\n  else if (e.key === 'Home')      j = 0;\n  else if (e.key === 'End')       j = rows.length - 1;\n  else return;\n  e.preventDefault();\n  if (j < 0 || j >= rows.length || j === i) return;\n  const [moved] = data.splice(i, 1);\n  data.splice(j, 0, moved);   // same splice\n  render(moved.id);\n});" },
+ { title:"10. ARIA + touch — the honest finish",
+   why:"The list looks reorderable to sighted mouse users; you have to make it real for everyone else too. Mark the container role=listbox with an aria-label, each row role=option with an aria-label that states its title and position, and pipe every meaningful change — picked up, now over slot k, dropped at slot k — through one visually-hidden aria-live=assertive region so a screen-reader user hears the reorder as it happens. touch-action:none on the rows is what lets a touch drag work on a phone instead of scrolling the page. Honour prefers-reduced-motion by dropping the shift transition. None of this alters how it looks — it is the line between a widget that only demos and one you can ship.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">role="listbox" + aria-label<br>each row: role="option"<br>&nbsp;&nbsp;aria-label="Task, position N of M"<br>one aria-live region speaks every move<br><br>touch-action:none &#8594; drag, don\'t scroll<br>prefers-reduced-motion &#8594; no shift anim</div>',
+   code:"<ul role='listbox' aria-label='Reorderable task list'>\n  <li role='option' tabindex='0'\n      aria-label='Draft the launch email, position 1 of 6'> … </li>\n</ul>\n<div id='live' class='sr-only' role='status' aria-live='assertive'></div>\n\nfunction announce(m){ live.textContent = m; }\n// pointerdown -> announce('Picked up X.')\n// updateTarget -> announce('Position k of n.')\n// drop / key   -> announce('X moved to position k of n.')\n/* CSS: .drag-item { touch-action:none } */" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3800); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
