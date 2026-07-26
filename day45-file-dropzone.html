@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 45 — File Dropzone / Upload Zone</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { min-height:460px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:24px;
+                display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:14px; }
+
+  /* ---- the dropzone ---- */
+  .dz-area {
+    position:relative; border:2px dashed #cbd5e1; border-radius:16px; background:#fff;
+    padding:32px 20px; text-align:center; cursor:pointer; user-select:none;
+    transition:border-color .18s, background .18s, box-shadow .18s, transform .12s;
+  }
+  .dz-area:hover { border-color:#a5b4fc; background:#fbfcff; }
+  .dz-area:focus-visible { outline:2px solid #6366f1; outline-offset:3px; }
+  .dz-area.dz-over {                         /* a drag is hovering over the zone */
+    border-color:#6366f1; background:#eef2ff; box-shadow:0 12px 30px rgba(79,70,229,.18); transform:scale(1.01);
+  }
+  .dz-area * { pointer-events:none; }        /* children never intercept the drag / click */
+  .dz-cloud { width:52px; height:52px; margin:0 auto 10px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+              background:#eef2ff; color:#4f46e5; font-size:26px; transition:transform .18s; }
+  .dz-area.dz-over .dz-cloud { transform:translateY(-3px) scale(1.08); }
+  .dz-title { font-weight:800; font-size:1rem; color:#0f172a; }
+  .dz-title b { color:#4f46e5; }
+  .dz-hint  { font-size:.78rem; color:#94a3b8; margin-top:4px; }
+
+  /* ---- file list ---- */
+  .dz-files { display:flex; flex-direction:column; gap:8px; }
+  .dz-empty { text-align:center; font-size:.8rem; color:#94a3b8; padding:8px; }
+  .dz-file {
+    display:flex; align-items:center; gap:12px; padding:10px 12px; background:#fff;
+    border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.05);
+    animation:fadeIn .25s ease-out;
+  }
+  .dz-file.error { border-color:#fecaca; background:#fff5f5; }
+  .dz-file.done  { border-color:#bbf7d0; }
+  .dz-ic { width:40px; height:40px; flex:none; border-radius:9px; overflow:hidden; display:flex; align-items:center; justify-content:center;
+           background:#eef2ff; }
+  .dz-thumb { width:100%; height:100%; object-fit:cover; }
+  .dz-ext { font-size:11px; font-weight:800; color:#4f46e5; letter-spacing:.02em; }
+  .dz-file.error .dz-ic { background:#fee2e2; }
+  .dz-file.error .dz-ext { color:#dc2626; }
+  .dz-meta { flex:1; min-width:0; }
+  .dz-name { font-weight:700; font-size:.9rem; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dz-sub  { font-size:.74rem; color:#94a3b8; font-weight:600; margin-top:1px; }
+  .dz-sub .dz-ok  { color:#059669; }
+  .dz-sub .dz-err { color:#dc2626; }
+  .dz-bar  { height:5px; background:#eef2ff; border-radius:999px; margin-top:6px; overflow:hidden; }
+  .dz-fill { height:100%; width:0; background:linear-gradient(90deg,#6366f1,#a855f7); border-radius:999px; transition:width .12s linear; }
+  .dz-file.done .dz-fill { background:linear-gradient(90deg,#10b981,#14b8a6); }
+  .dz-x {
+    flex:none; width:26px; height:26px; border:none; border-radius:8px; cursor:pointer;
+    background:#f1f5f9; color:#64748b; font-size:13px; font-weight:700; line-height:1;
+    display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s;
+  }
+  .dz-x:hover { background:#fee2e2; color:#dc2626; }
+
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover:not(:disabled) { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.5; cursor:not-allowed; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.r { background:#ffe4e6; color:#be123c; } .pill.a { background:#fef3c7; color:#b45309; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.06em; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .dz-file { animation:none; }
+    .dz-area, .dz-cloud, .dz-fill { transition:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 45</div>
+      <h1 class="text-xl font-bold">&#8593; File Dropzone / Upload Zone — Drag Files Onto a Box and It <em>Lights Up</em>, Drop Them and It Reads the Real <strong>DataTransfer.files</strong>; Click the Same Box to <strong>Browse</strong> via a Hidden <code>&lt;input type=file&gt;</code>. Each File Is <strong>Validated</strong> (Type + Size, With a Reason When It's Rejected), Listed With Its Name and Size, Given a <strong>Progress Bar</strong> and a <strong>&#10005; Remove</strong> Button, and Images Get a <strong>Thumbnail Preview</strong> Read With <code>FileReader</code>. The Browser's Own "Open the File" Default Is Killed With <code>preventDefault</code>. No Library.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Drag files onto the box and it <span class="text-indigo-600">lights up</span>; drop them and they upload — or click it to browse. Same zone, two ways in.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A file dropzone is the thing you meet everywhere you upload something: a Gmail attachment, a profile photo, a CSV import, a Figma asset. The whole trick is that a browser <em>already</em> knows what to do when you drop a file on a page &mdash; it <strong>opens the file</strong> and throws your app away &mdash; so step one is telling it "no, I'll handle this" with <code>preventDefault</code> on the drag events. Then it becomes friendly: <strong>dragenter/dragover highlight</strong> the zone so you know it will accept the drop, <strong>drop reads <code>e.dataTransfer.files</code></strong>, and because dropping is awkward on a laptop the same box is <strong>clickable</strong> and forwards to a hidden <code>&lt;input type="file"&gt;</code>. Every file is <strong>validated</strong> for type and size (and told why if it's rejected), listed with its name and size, given a <strong>progress bar</strong> and a <strong>&#10005;</strong> to remove it, and images get a <strong>thumbnail</strong> read straight from the file with <code>FileReader</code> &mdash; no upload needed to preview. Try it: drag a few files in (or click), watch the read-out on the right update live.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wide">Upload files</span>
+              <span class="text-xs text-slate-500">Drag files onto the box &middot; or click it to browse. Images &amp; PDF, up to 5&nbsp;MB each.</span>
+            </div>
+            <div class="demo-frame">
+              <div class="dz-area" id="dzArea" tabindex="0" role="button" aria-label="Drop files here or press Enter to browse">
+                <div class="dz-cloud" aria-hidden="true">&#8682;</div>
+                <div class="dz-title">Drag &amp; drop files here, or <b>click to browse</b></div>
+                <div class="dz-hint">PNG, JPG, GIF, WEBP, SVG or PDF &middot; max 5&nbsp;MB each</div>
+              </div>
+              <input type="file" id="dzInput" multiple accept="image/*,application/pdf,.pdf" class="sr-only" aria-hidden="true" tabindex="-1" />
+
+              <div class="dz-files" id="dzFiles"><!-- file rows injected by JS --></div>
+
+              <div class="flex items-center justify-center gap-2 mt-1">
+                <button class="btn-ghost" id="dzClear" type="button" disabled>Clear all</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Dropzone state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roStateBig" class="text-lg font-bold text-slate-800">Idle</span>
+                <span id="roCountBig" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">0 files</span>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">dragging over</span><span id="roDrag" class="pill g">no</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">accepted</span><span id="roAccept" class="pill g">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">rejected</span><span id="roReject" class="pill">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">uploading</span><span id="roUp" class="pill">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">total size</span><span id="roSize" class="pill mono">0 B</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last action</span><span id="roLast" class="pill">&mdash;</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure function of the dropzone's state. Drag a file over the box and <em>dragging over</em> flips to <span class="pill a" style="padding:1px 7px">yes</span>; drop it and it joins <em>accepted</em> with a live progress bar, or bounces to <em>rejected</em> with a reason if it's the wrong type or over 5&nbsp;MB. Everything you see &mdash; the list, the bars, the counts &mdash; is rendered from one array of file objects.</p>
+              <div class="sr-only" id="dzLive" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Attach a file to an email, set a profile picture, import a spreadsheet, upload a design asset &mdash; the same object every time: a zone that accepts files two ways and gives instant feedback. The layout is trivial &mdash; a dashed box and a list. The craft is the behaviour: <strong>stopping the browser's default</strong> so a drop doesn't navigate away, <strong>highlighting</strong> on drag so it's obvious the drop will land, reading the real <strong>DataTransfer.files</strong>, a <strong>click-to-browse</strong> fallback through a hidden input, honest <strong>validation</strong> with a reason, a per-file <strong>progress</strong> UI, and <strong>FileReader</strong> thumbnails so images preview before they ever leave the page. Get those right and you have a real uploader, no dependency needed.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a file dropzone works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A dropzone is a box plus a hidden file input, and the behaviour is everything: <strong>stop the browser</strong> from opening a dropped file with <code>preventDefault</code>, <strong>highlight</strong> the box on <code>dragenter</code>/<code>dragover</code>, read the files out of <code>e.dataTransfer.files</code> on <code>drop</code>, add a <strong>click-to-browse</strong> path through a hidden <code>&lt;input type="file"&gt;</code>, <strong>validate</strong> each file's type and size, then render a list with a <strong>progress bar</strong>, a <strong>&#10005;</strong> to remove, and a <code>FileReader</code> <strong>thumbnail</strong> for images. We build all of it from scratch, one piece at a time, no framework and no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup &mdash; a box and a hidden file input</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two elements do all the work. A visible <code>.dz-area</code> is the drop target and the click target; alongside it sits a real <code>&lt;input type="file" multiple&gt;</code> that we <em>hide</em> (visually, not with <code>display:none</code>, so it still works) and drive programmatically. The <code>accept</code> attribute hints the OS file picker at what to show. A small but important CSS line: set <code>pointer-events:none</code> on the box's children so a drag or click never gets intercepted by the icon or the text inside &mdash; the events always resolve to the box itself.</p>
+        <div class="relative"><pre>&lt;div class="dz-area" id="zone" tabindex="0" role="button"
+     aria-label="Drop files here or press Enter to browse"&gt;
+  &lt;div class="dz-cloud"&gt;&#8682;&lt;/div&gt;
+  &lt;div&gt;Drag &amp; drop files here, or &lt;b&gt;click to browse&lt;/b&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;input type="file" id="picker" multiple
+       accept="image/*,application/pdf" class="sr-only"&gt;
+&lt;div id="list"&gt;&lt;/div&gt;   &lt;!-- file rows render here --&gt;
+
+/* CSS: .dz-area * { pointer-events:none } — kids never steal the drop */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Stop the browser opening the file &mdash; preventDefault</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the one line without which nothing else matters. A browser's <em>default</em> reaction to a file dropped anywhere on the page is to navigate to it &mdash; your app vanishes and you're staring at a raw JPEG. To claim the drop you must call <code>e.preventDefault()</code> on <strong>both</strong> <code>dragover</code> and <code>drop</code> (dragover too, or the drop is never even offered to you). Do it on the zone, and also on the whole <code>window</code>, so a near-miss that lands just outside the box doesn't blow the page away either.</p>
+        <div class="relative"><pre>const zone = document.getElementById("zone");
+
+// on the zone: claim every drag phase
+["dragenter","dragover","dragleave","drop"].forEach(evt =&gt;
+  zone.addEventListener(evt, e =&gt; { e.preventDefault(); e.stopPropagation(); })
+);
+
+// safety net: a drop OUTSIDE the zone must not navigate away either
+["dragover","drop"].forEach(evt =&gt;
+  window.addEventListener(evt, e =&gt; e.preventDefault())
+);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Light it up &mdash; highlight on drag, and a depth counter</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Feedback is what makes a dropzone feel alive: while a drag hovers, the box should glow so the user knows the drop will be accepted. Add a class on <code>dragenter</code>/<code>dragover</code> and remove it on <code>dragleave</code>/<code>drop</code>. The catch: <code>dragleave</code> also fires every time the pointer crosses from the box onto a <em>child</em> element, so a naive listener flickers. The fix is a small <strong>depth counter</strong> &mdash; increment on enter, decrement on leave, and only un-highlight when it hits zero (we set <code>pointer-events:none</code> on children in step 1, which also helps).</p>
+        <div class="relative"><pre>let depth = 0;
+zone.addEventListener("dragenter", () =&gt; {
+  depth++; zone.classList.add("dz-over");
+});
+zone.addEventListener("dragover",  () =&gt; zone.classList.add("dz-over"));
+zone.addEventListener("dragleave", () =&gt; {
+  depth--;                        // crossing onto a child fires dragleave too
+  if (depth &lt;= 0) { depth = 0; zone.classList.remove("dz-over"); }
+});
+// (drop resets depth = 0 and removes the class — next step)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Read the drop &mdash; e.dataTransfer.files</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The payload of a drop lives on the event: <code>e.dataTransfer.files</code>, a <code>FileList</code> of real <code>File</code> objects (each with <code>.name</code>, <code>.size</code>, <code>.type</code>). A <code>FileList</code> is array-<em>like</em>, not an array, so spread it into a real array with <code>[...files]</code> before you map over it. We reset the highlight, clear the depth counter, and hand the files to one shared <code>handleFiles()</code> &mdash; the same function the click-to-browse path will call, so both routes converge on identical logic.</p>
+        <div class="relative"><pre>zone.addEventListener("drop", e =&gt; {
+  depth = 0;
+  zone.classList.remove("dz-over");
+  handleFiles(e.dataTransfer.files);   // a FileList of File objects
+});
+
+function handleFiles(fileList) {
+  [...fileList].forEach(addFile);      // spread: FileList → real array
+  render();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Click-to-browse &mdash; the hidden input fallback</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Dragging is fine on a desktop but hopeless on a phone and awkward with a trackpad, so every real dropzone doubles as a plain file picker. You can't style a native file input, so we hide the real one and forward clicks: clicking the box calls <code>picker.click()</code>, which opens the OS dialog; when files are chosen the input's <code>change</code> fires and we push <code>picker.files</code> through the very same <code>handleFiles()</code>. Reset <code>picker.value = ""</code> afterwards so picking the <em>same</em> file twice still triggers <code>change</code>. Wire <kbd>Enter</kbd>/<kbd>Space</kbd> on the box too, since it's keyboard-focusable.</p>
+        <div class="relative"><pre>const picker = document.getElementById("picker");
+
+zone.addEventListener("click", () =&gt; picker.click());   // box → dialog
+zone.addEventListener("keydown", e =&gt; {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); picker.click(); }
+});
+
+picker.addEventListener("change", () =&gt; {
+  handleFiles(picker.files);   // SAME path as drop
+  picker.value = "";           // so re-picking the same file still fires
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Validate &mdash; type + size, with a reason</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Never trust what gets dropped. Check the <code>File.type</code> (a MIME string like <code>image/png</code>) against an allow-list, and fall back to the file <em>extension</em> because some files arrive with an empty <code>type</code>. Check <code>File.size</code> (in bytes) against a maximum. The important UX detail: a rejected file should not silently disappear &mdash; return a human <em>reason</em> ("Unsupported type", "Too large &mdash; 5&nbsp;MB max") and show it on the row, so the user knows what to fix. Note this is client-side convenience only; a real server must re-validate.</p>
+        <div class="relative"><pre>const OK_MIME = /^image\/(png|jpe?g|gif|webp|svg\+xml)$|^application\/pdf$/;
+const OK_EXT  = ["png","jpg","jpeg","gif","webp","svg","pdf"];
+const MAX     = 5 * 1024 * 1024;           // 5 MB in bytes
+
+function validate(file) {
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const typeOk = OK_MIME.test(file.type) || OK_EXT.includes(ext);
+  if (!typeOk)          return "Unsupported type — images or PDF only";
+  if (file.size &gt; MAX)  return "Too large — 5 MB max";
+  if (file.size === 0)  return "Empty file";
+  return null;                              // null === valid
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">State is the source of truth &mdash; add &amp; render</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep every file the widget knows about in one <code>items</code> array of plain objects, and <em>render the list from it</em> &mdash; never poke the DOM directly. Each entry carries the raw <code>File</code>, its display fields, a <code>status</code> (<code>"uploading" | "done" | "error"</code>), a <code>progress</code> number, and a slot for a thumbnail. A stable <code>id</code> lets a remove button find its object later. Format the byte count into KB/MB for humans. Every later feature &mdash; progress, thumbnails, removal &mdash; is just an edit to this array followed by a re-render.</p>
+        <div class="relative"><pre>let items = [], seq = 0;
+
+function addFile(file) {
+  const error = validate(file);
+  items.push({
+    id: ++seq, file, name: file.name, size: file.size,
+    status: error ? "error" : "uploading",
+    error, progress: 0, thumb: null,
+    isImage: /^image\//.test(file.type) &amp;&amp; file.type !== "image/svg+xml"
+  });
+}
+function fmtSize(b) {
+  if (b &lt; 1024)        return b + " B";
+  if (b &lt; 1048576)     return (b / 1024).toFixed(1) + " KB";
+  return (b / 1048576).toFixed(2) + " MB";
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Progress bar &mdash; the simulated upload</h3></div>
+        <p class="text-sm text-slate-600 mb-3">In a real app you'd send the file with <code>fetch</code> and read <code>XMLHttpRequest.upload.onprogress</code> for the real byte-count; here we simulate it with a timer so the UI is complete and honest about what it represents. On a valid file, start an interval that bumps <code>progress</code> toward 100, re-rendering each tick so the bar animates; when it reaches 100 flip <code>status</code> to <code>"done"</code> and clear the timer. Keep the timers keyed by id so removing a file mid-upload can cancel its timer &mdash; no orphaned intervals writing to a row that's gone.</p>
+        <div class="relative"><pre>const timers = {};
+
+function startUpload(it) {                   // swap for real fetch/XHR progress
+  timers[it.id] = setInterval(() =&gt; {
+    it.progress = Math.min(100, it.progress + 6 + Math.random() * 10);
+    if (it.progress &gt;= 100) {
+      it.progress = 100; it.status = "done";
+      clearInterval(timers[it.id]); delete timers[it.id];
+    }
+    render();
+  }, 120);
+}
+// &lt;div class="dz-bar"&gt;&lt;div class="dz-fill" style="width:${it.progress}%"&gt;&lt;/div&gt;&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Thumbnails &mdash; preview images with FileReader</h3></div>
+        <p class="text-sm text-slate-600 mb-3">You can show an image before it's uploaded anywhere, because the file's bytes are already in the browser. A <code>FileReader</code> reads a <code>File</code> and, with <code>readAsDataURL</code>, hands you a <code>data:</code> URL you can drop straight into an <code>&lt;img src&gt;</code>. It's asynchronous &mdash; the result arrives in <code>onload</code> &mdash; so store it on the item and re-render when it lands. (For big images <code>URL.createObjectURL(file)</code> is lighter, but then you must <code>revokeObjectURL</code> to avoid a leak; <code>readAsDataURL</code> is the simplest correct choice here.) Non-images just show an extension badge.</p>
+        <div class="relative"><pre>function loadThumb(it) {
+  if (!it.isImage) return;                   // only images get a preview
+  const reader = new FileReader();
+  reader.onload = e =&gt; { it.thumb = e.target.result; render(); };
+  reader.readAsDataURL(it.file);             // → "data:image/png;base64,…"
+}
+// in render(): it.thumb
+//   ? `&lt;img class="thumb" src="${it.thumb}"&gt;`
+//   : `&lt;span class="ext"&gt;${ext.toUpperCase()}&lt;/span&gt;`</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Remove &mdash; &#10005; a file, and re-render from state</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Each row gets a <code>&#10005;</code> button carrying its file's <code>data-id</code>. Because the list is rendered fresh every time, don't bind a handler per button &mdash; use one <strong>delegated</strong> listener on the container that reads the id off the clicked button. Removing means: cancel that file's upload timer if it's still running, filter it out of the <code>items</code> array, and re-render. The array is the single source of truth, so the DOM and the data can never disagree &mdash; and an <code>aria-live</code> line announcing "X added / rejected / removed" keeps it usable without sight.</p>
+        <div class="relative"><pre>list.addEventListener("click", e =&gt; {
+  const btn = e.target.closest("[data-id]");
+  if (!btn) return;
+  removeItem(+btn.dataset.id);
+});
+function removeItem(id) {
+  if (timers[id]) { clearInterval(timers[id]); delete timers[id]; }
+  items = items.filter(it =&gt; it.id !== id);   // edit the array…
+  render();                                    // …then re-render
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#127881; Day 45 of DesignFromZero done.</h3><p class="text-sm text-indigo-700 mt-2">You built a real <strong>file dropzone</strong> from scratch &mdash; no library. You learned the one thing everyone forgets (<strong>the browser opens a dropped file unless you <code>preventDefault</code></strong>) and the mechanics that make an uploader feel right: <strong>highlight</strong> on drag with a depth counter, read <strong>e.dataTransfer.files</strong> on drop, a <strong>click-to-browse</strong> fallback through a hidden <code>&lt;input type="file"&gt;</code>, honest <strong>validation</strong> with a reason, a per-file <strong>progress bar</strong>, <strong>FileReader</strong> thumbnails that preview images with zero upload, and a <strong>&#10005; remove</strong> driven by one delegated handler over an array that is the single source of truth. <strong>&#128073; Tomorrow &mdash; Day 46: Trello board (horizontal scroll lanes with drag-and-drop cards across columns).</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== FILE DROPZONE =====
+const zone    = document.getElementById("dzArea");
+const picker  = document.getElementById("dzInput");
+const listEl  = document.getElementById("dzFiles");
+const clearBtn= document.getElementById("dzClear");
+const liveEl  = document.getElementById("dzLive");
+// read-out
+const roStateBig = document.getElementById("roStateBig");
+const roCountBig = document.getElementById("roCountBig");
+const roDrag     = document.getElementById("roDrag");
+const roAccept   = document.getElementById("roAccept");
+const roReject   = document.getElementById("roReject");
+const roUp       = document.getElementById("roUp");
+const roSize     = document.getElementById("roSize");
+const roLast     = document.getElementById("roLast");
+
+// validation rules
+const OK_MIME = /^image\/(png|jpe?g|gif|webp|svg\+xml)$|^application\/pdf$/;
+const OK_EXT  = ["png","jpg","jpeg","gif","webp","svg","pdf"];
+const MAX     = 5 * 1024 * 1024;
+
+// STATE — the single source of truth
+let items = [];        // { id, file, name, size, status, error, progress, thumb, isImage }
+let seq = 0;
+let depth = 0;         // drag-enter/leave depth counter (avoids child-flicker)
+let dragging = false;
+const timers = {};     // per-file simulated-upload intervals
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const extOf = name => (name.split(".").pop() || "").toLowerCase();
+
+function fmtSize(b){
+  if (b < 1024)        return b + " B";
+  if (b < 1024*1024)   return (b/1024).toFixed(1) + " KB";
+  return (b/(1024*1024)).toFixed(2) + " MB";
+}
+function validate(file){
+  const typeOk = OK_MIME.test(file.type) || OK_EXT.includes(extOf(file.name));
+  if (!typeOk)          return "Unsupported type — images or PDF only";
+  if (file.size > MAX)  return "Too large — 5 MB max";
+  if (file.size === 0)  return "Empty file";
+  return null;
+}
+function announce(msg){ liveEl.textContent = msg; roLast.textContent = msg; }
+
+// ---- STOP the browser default (the critical bit) ----
+["dragenter","dragover","dragleave","drop"].forEach(evt =>
+  zone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); })
+);
+// a drop that lands outside the zone must not navigate away either
+["dragover","drop"].forEach(evt =>
+  window.addEventListener(evt, e => e.preventDefault())
+);
+
+// ---- HIGHLIGHT while dragging ----
+zone.addEventListener("dragenter", () => { depth++; setDrag(true); });
+zone.addEventListener("dragover",  () => setDrag(true));
+zone.addEventListener("dragleave", () => { depth--; if (depth <= 0){ depth = 0; setDrag(false); } });
+
+function setDrag(on){
+  dragging = on;
+  zone.classList.toggle("dz-over", on);
+  refresh();
+}
+
+// ---- READ the drop ----
+zone.addEventListener("drop", e => {
+  depth = 0; setDrag(false);
+  handleFiles(e.dataTransfer.files);
+});
+
+// ---- CLICK-TO-BROWSE fallback ----
+zone.addEventListener("click", () => picker.click());
+zone.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " "){ e.preventDefault(); picker.click(); }
+});
+picker.addEventListener("change", () => {
+  handleFiles(picker.files);   // SAME path as drop
+  picker.value = "";           // so re-picking the same file still fires change
+});
+
+// ---- ingest ----
+function handleFiles(fileList){
+  const files = [...fileList];               // FileList → real array
+  if (!files.length) return;
+  let ok = 0, bad = 0;
+  files.forEach(f => { addFile(f) ? ok++ : bad++; });
+  render();
+  announce(
+    (ok ? ok + " file" + (ok>1?"s":"") + " added" : "") +
+    (ok && bad ? ", " : "") +
+    (bad ? bad + " rejected" : "")
+  );
+}
+function addFile(file){
+  const error = validate(file);
+  const it = {
+    id: ++seq, file, name: file.name, size: file.size,
+    status: error ? "error" : "uploading",
+    error, progress: 0, thumb: null,
+    isImage: /^image\//.test(file.type) && file.type !== "image/svg+xml"
+  };
+  items.push(it);
+  if (!error){
+    loadThumb(it);
+    startUpload(it);
+  }
+  return !error;
+}
+
+// ---- image thumbnail (FileReader) ----
+function loadThumb(it){
+  if (!it.isImage) return;
+  const reader = new FileReader();
+  reader.onload = e => { it.thumb = e.target.result; render(); };
+  reader.onerror = () => {};
+  reader.readAsDataURL(it.file);             // → data: URL for <img src>
+}
+
+// ---- simulated upload progress ----
+function startUpload(it){
+  timers[it.id] = setInterval(() => {
+    it.progress = Math.min(100, it.progress + 6 + Math.random()*10);
+    if (it.progress >= 100){
+      it.progress = 100; it.status = "done";
+      clearInterval(timers[it.id]); delete timers[it.id];
+    }
+    render();
+  }, 120);
+}
+
+// ---- remove (delegated) ----
+listEl.addEventListener("click", e => {
+  const btn = e.target.closest("[data-id]");
+  if (!btn) return;
+  removeItem(+btn.dataset.id);
+});
+function removeItem(id){
+  const it = items.find(x => x.id === id);
+  if (timers[id]){ clearInterval(timers[id]); delete timers[id]; }
+  items = items.filter(x => x.id !== id);
+  announce((it ? "Removed " + it.name : "Removed") );
+  render();
+}
+clearBtn.addEventListener("click", () => {
+  Object.keys(timers).forEach(k => { clearInterval(timers[k]); delete timers[k]; });
+  items = [];
+  announce("Cleared all files.");
+  render();
+});
+
+// ---- one icon cell per file ----
+function fileIcon(it){
+  if (it.thumb) return '<img class="dz-thumb" src="' + it.thumb + '" alt="">';
+  const ext = extOf(it.name) || "?";
+  return '<span class="dz-ext">' + esc(ext.toUpperCase()) + '</span>';
+}
+
+// ---- render the whole list from state ----
+function render(){
+  if (!items.length){
+    listEl.innerHTML = '<div class="dz-empty">No files yet — drop some above or click to browse.</div>';
+  } else {
+    listEl.innerHTML = items.map(it => {
+      const sub = it.status === "error"
+        ? '<span class="dz-err">' + esc(it.error) + '</span>'
+        : fmtSize(it.size) + (it.status === "done"
+            ? ' · <span class="dz-ok">Uploaded</span>'
+            : ' · ' + Math.round(it.progress) + '%');
+      const bar = it.status === "error" ? ""
+        : '<div class="dz-bar"><div class="dz-fill" style="width:' + it.progress + '%"></div></div>';
+      return (
+        '<div class="dz-file ' + it.status + '">' +
+          '<div class="dz-ic">' + fileIcon(it) + '</div>' +
+          '<div class="dz-meta">' +
+            '<div class="dz-name" title="' + esc(it.name) + '">' + esc(it.name) + '</div>' +
+            '<div class="dz-sub">' + sub + '</div>' +
+            bar +
+          '</div>' +
+          '<button class="dz-x" data-id="' + it.id + '" title="Remove" aria-label="Remove ' + esc(it.name) + '">&#10005;</button>' +
+        '</div>'
+      );
+    }).join("");
+  }
+  refresh();
+}
+
+// ---- read-out: a pure function of state ----
+function refresh(){
+  const total = items.length;
+  const accepted = items.filter(i => i.status !== "error").length;
+  const rejected = items.filter(i => i.status === "error").length;
+  const uploading = items.filter(i => i.status === "uploading").length;
+  const bytes = items.filter(i => i.status !== "error").reduce((s,i) => s + i.size, 0);
+
+  roStateBig.textContent = dragging ? "Drop it!" : (uploading ? "Uploading" : (total ? "Ready" : "Idle"));
+  roCountBig.textContent = total + (total === 1 ? " file" : " files");
+  roDrag.textContent = dragging ? "yes" : "no";
+  roDrag.className   = "pill " + (dragging ? "a" : "g");
+  roAccept.textContent = accepted;
+  roReject.textContent = rejected;
+  roReject.className   = "pill " + (rejected ? "r" : "");
+  roUp.textContent   = uploading;
+  roUp.className     = "pill " + (uploading ? "a" : "");
+  roSize.textContent = fmtSize(bytes);
+  clearBtn.disabled  = total === 0;
+}
+
+// first paint
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a file dropzone is",
+   why:"Attach a file to an email, set a profile photo, import a CSV, upload a design asset — again and again you meet the same object: a box you can drop files onto, that also opens a file picker when you click it, and that shows you what it took. It exists because dropping is the most direct 'here, take this' gesture, and because people need instant feedback that the file was accepted, is the right type, isn't too big, and is actually uploading. The layout is nothing — a dashed box and a list. Everything worth learning is the behaviour: stopping the browser's default, highlighting on drag, reading the dropped files, a click fallback, validation, progress, and previews. This walkthrough builds all of it from zero, no library.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">a box that accepts files TWO ways<br><br>&#8682; &nbsp;drag &amp; drop here<br>&nbsp;&nbsp;&nbsp;— or click to browse —<br><br>&#8595;<br>[img] photo.png &nbsp;1.2 MB &nbsp;&#9646;&#9646;&#9646;&#9646; 80%&nbsp;&#10005;<br>[PDF] report.pdf &nbsp;too large &#10005;</div>',
+   code:"// a dropzone = a box + a hidden <input type=file>\n// easy part: the dashed box + a list.\n// real part: preventDefault, highlight on drag,\n//   read dataTransfer.files, click-to-browse,\n//   validate type+size, progress bar,\n//   FileReader thumbnails, remove." },
+ { title:"2. preventDefault — or the browser eats your app",
+   why:"This is the single most-forgotten line in front-end. A browser's built-in reaction to a file dropped anywhere on the page is to NAVIGATE to that file — your whole app is replaced by a raw image or a PDF viewer. To take control of the drop you must call e.preventDefault() on dragover AND on drop; dragover especially, because if you don't cancel it the browser never even offers you the drop event. Do it on the zone, and as a safety net on the whole window too, so a drag that lands a few pixels outside the box doesn't destroy the page either. Get this wrong and nothing else you build will ever run.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drop a file, do NOTHING &#8594;<br>browser NAVIGATES to it &#128561; app gone<br><br>e.preventDefault() on:<br>&nbsp;&nbsp;dragover &nbsp;(or no drop is offered)<br>&nbsp;&nbsp;drop &nbsp;&nbsp;&nbsp;&nbsp;(claim the payload)<br>+ on window = safety net</div>',
+   code:"[\"dragenter\",\"dragover\",\"dragleave\",\"drop\"].forEach(evt =>\n  zone.addEventListener(evt, e => {\n    e.preventDefault();   // ← claim it\n    e.stopPropagation();\n  })\n);\n// also on window, so a near-miss drop\n// doesn't navigate the whole page away:\n[\"dragover\",\"drop\"].forEach(evt =>\n  window.addEventListener(evt, e => e.preventDefault())\n);" },
+ { title:"3. Highlight on drag — and the depth-counter trap",
+   why:"A dropzone should visibly react while a file hovers over it, so the user is sure the drop will be accepted. You add a highlight class on dragenter/dragover and remove it on dragleave/drop. The trap that catches everyone: dragleave ALSO fires the instant the pointer moves from the box onto a child element inside it, so a naive add/remove flickers madly. Two fixes stack cleanly — set pointer-events:none on the children so they don't generate their own drag events, and keep a small depth counter (enter +1, leave −1) that only clears the highlight when it returns to zero. Then the glow is rock-steady.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">dragenter &#8594; depth++ &#8594; glow ON<br>dragleave &#8594; depth&#8722;&#8722;<br>&nbsp;&nbsp;&nbsp;only depth==0 &#8594; glow OFF<br><br>without the counter:<br>crossing a child &#8594; leave fires &#8594; FLICKER</div>',
+   code:"let depth = 0;\nzone.addEventListener(\"dragenter\", () => {\n  depth++; zone.classList.add(\"dz-over\");\n});\nzone.addEventListener(\"dragover\", () =>\n  zone.classList.add(\"dz-over\"));\nzone.addEventListener(\"dragleave\", () => {\n  depth--;                     // child crossings fire leave too\n  if (depth <= 0) { depth = 0; zone.classList.remove(\"dz-over\"); }\n});\n/* CSS: .dz-area * { pointer-events:none } */" },
+ { title:"4. Read the drop — e.dataTransfer.files",
+   why:"When the drop finally lands, the files are hanging off the event at e.dataTransfer.files. That's a FileList — an array-LIKE collection of real File objects, each of which already knows its .name, .size (in bytes) and .type (a MIME string). Because a FileList isn't a true array, you spread it into one with [...files] before mapping. Reset the highlight and the depth counter, then hand the files to a single shared handleFiles() function — the same one your click-to-browse path will call — so a drop and a pick run identical code and can never drift apart.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drop &#8594; e.dataTransfer.files<br>&nbsp;&nbsp;= FileList [ File, File, &#8230; ]<br><br>File: { name, size (bytes), type (MIME) }<br>[...files] &#8594; real array &#8594; handleFiles()<br><br>drop &amp; browse converge here</div>',
+   code:"zone.addEventListener(\"drop\", e => {\n  depth = 0;\n  zone.classList.remove(\"dz-over\");\n  handleFiles(e.dataTransfer.files);  // a FileList\n});\n\nfunction handleFiles(fileList) {\n  [...fileList].forEach(addFile);     // spread → array\n  render();\n}" },
+ { title:"5. Click-to-browse — the hidden input fallback",
+   why:"Drag-and-drop is a nice-to-have, not the whole feature: it's clumsy on a trackpad and impossible on a phone, so every real uploader is ALSO a plain file picker. You can't restyle a native file input, so the pattern is to hide the real one and drive it: clicking the box calls picker.click() to open the OS dialog, and the input's change event pushes picker.files through the exact same handleFiles() as the drop. Two details matter — reset picker.value to '' afterwards so choosing the same file again still fires change, and wire Enter/Space on the focusable box so keyboard users can open the dialog too.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">click box &#8594; picker.click() &#8594; OS dialog<br>choose files &#8594; input \"change\"<br>&#8594; SAME handleFiles()<br><br>picker.value = \"\" &#8594; re-pick same file works<br>Enter / Space &#8594; open dialog (keyboard)</div>',
+   code:"zone.addEventListener(\"click\", () => picker.click());\nzone.addEventListener(\"keydown\", e => {\n  if (e.key === \"Enter\" || e.key === \" \") {\n    e.preventDefault(); picker.click();\n  }\n});\npicker.addEventListener(\"change\", () => {\n  handleFiles(picker.files);  // same path as drop\n  picker.value = \"\";          // re-pick same file still fires\n});" },
+ { title:"6. Validate — type + size, with a reason",
+   why:"Never trust what lands. Two cheap client-side checks stop most mistakes: is the type allowed, and is it under the size limit. Check File.type against an allow-list of MIME strings, but fall back to the filename EXTENSION because some files (and some OSes) hand you an empty type. Check File.size (bytes) against your max. The UX rule that separates a good dropzone from a bad one: a rejected file must not vanish silently — return a human-readable REASON and show it on the row, so the user knows to shrink the image or pick a PNG. Remember this is convenience only; the server must re-validate, since anything client-side can be bypassed.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">validate(file):<br>&nbsp;&nbsp;type in allow-list? &nbsp;(MIME or .ext)<br>&nbsp;&nbsp;size &#8804; 5 MB?<br><br>fail &#8594; return a REASON, don\'t drop silently<br>\"Unsupported type\" / \"Too large — 5 MB max\"<br><br>client-side = convenience; server re-checks</div>',
+   code:"const OK_MIME = /^image\\/(png|jpe?g|gif|webp|svg\\+xml)$|^application\\/pdf$/;\nconst OK_EXT  = [\"png\",\"jpg\",\"jpeg\",\"gif\",\"webp\",\"svg\",\"pdf\"];\nconst MAX     = 5 * 1024 * 1024;   // 5 MB\n\nfunction validate(file) {\n  const ext = (file.name.split(\".\").pop() || \"\").toLowerCase();\n  const typeOk = OK_MIME.test(file.type) || OK_EXT.includes(ext);\n  if (!typeOk)         return \"Unsupported type — images or PDF only\";\n  if (file.size > MAX) return \"Too large — 5 MB max\";\n  if (file.size === 0) return \"Empty file\";\n  return null;                     // valid\n}" },
+ { title:"7. State is the source of truth",
+   why:"Just like a sortable list, the dropzone keeps everything it knows in ONE array of plain objects and renders the DOM from it — never the reverse. Each entry wraps the raw File plus the fields the UI needs: name, size, a status ('uploading' | 'done' | 'error'), a progress number, a thumbnail slot, and a stable id so a remove button can find its object later. Add a file = push an object and re-render; every other feature (progress, thumbnail, removal) is just an edit to this array followed by a render. Because there's exactly one place the truth lives, the list on screen can never disagree with the data behind it.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">items = [ { id, file, name, size,<br>&nbsp;&nbsp;status, progress, thumb, error } &#8230; ]<br>&#8595; render()<br>the file list on screen<br><br>ONE array = source of truth<br>add / progress / remove = edit array &#8594; render</div>',
+   code:"let items = [], seq = 0;\nfunction addFile(file) {\n  const error = validate(file);\n  items.push({\n    id: ++seq, file, name: file.name, size: file.size,\n    status: error ? \"error\" : \"uploading\",\n    error, progress: 0, thumb: null,\n    isImage: /^image\\//.test(file.type)\n  });\n}\n// render() rebuilds the whole list from `items`." },
+ { title:"8. Progress bar — the upload feedback",
+   why:"Uploading a file takes time, and a bar that fills is the reassurance users expect. In a real app you'd POST the file with fetch and read the real byte-progress from XMLHttpRequest.upload.onprogress; here we simulate it with a timer so the component is complete without a backend. On a valid file, start an interval that nudges progress toward 100 and re-renders each tick so the bar animates; at 100 flip status to 'done' and clear the timer. Key the timers by file id so that if the user removes a file mid-upload you can cancel exactly its timer — otherwise a stray interval keeps writing to a row that no longer exists.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">start &#8594; interval bumps progress &#8594; render<br>&#9646;&#9646;&#9646;&#9647;&#9647; 40% &#8594; &#9646;&#9646;&#9646;&#9646;&#9646; 100% &#8594; \"done\"<br><br>real app: XHR.upload.onprogress<br>timers keyed by id &#8594; cancel on remove</div>',
+   code:"const timers = {};\nfunction startUpload(it) {\n  timers[it.id] = setInterval(() => {\n    it.progress = Math.min(100, it.progress + 6 + Math.random()*10);\n    if (it.progress >= 100) {\n      it.progress = 100; it.status = \"done\";\n      clearInterval(timers[it.id]); delete timers[it.id];\n    }\n    render();\n  }, 120);\n}\n// bar: <div class=\"fill\" style=\"width:${it.progress}%\">" },
+ { title:"9. Thumbnails — preview images with FileReader",
+   why:"You can show a picture the instant it's dropped, before it's uploaded anywhere, because its bytes are already sitting in the browser. A FileReader reads a File; readAsDataURL gives you back a data: URL — a base64 string you can put straight into an <img src>. It's asynchronous: the result arrives in the onload callback, so you store it on the item and re-render when it lands. For very large images URL.createObjectURL(file) is lighter on memory, but then you owe a revokeObjectURL to avoid a leak; readAsDataURL is the simplest correct choice for a demo. Files that aren't images just show an extension badge instead.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">FileReader.readAsDataURL(file)<br>&#8594; onload &#8594; \"data:image/png;base64,&#8230;\"<br>&#8594; &lt;img src=that&gt;<br><br>preview with ZERO upload<br>non-images &#8594; [PDF] ext badge</div>',
+   code:"function loadThumb(it) {\n  if (!it.isImage) return;      // only images preview\n  const reader = new FileReader();\n  reader.onload = e => {\n    it.thumb = e.target.result; // a data: URL\n    render();\n  };\n  reader.readAsDataURL(it.file);\n}\n// render: it.thumb ? <img src=it.thumb> : <span>EXT</span>" },
+ { title:"10. Remove + announce — the honest finish",
+   why:"Each row carries a ✕ button tagged with its file's data-id. Because the list re-renders constantly, don't attach a listener to every button — use ONE delegated listener on the container that reads the id off whatever button was clicked. Removing is three steps: cancel that file's upload timer if it's still ticking, filter it out of the items array, and re-render — the array stays the single source of truth so the DOM follows automatically. Finish it honestly: pipe 'N added / N rejected / removed X' through a visually-hidden aria-live region, keep the box keyboard-focusable with a role and label, and honour prefers-reduced-motion. That's the line between a demo and something you'd ship.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one delegated click on the list<br>&#8594; read data-id &#8594; removeItem(id)<br>&nbsp;&nbsp;cancel timer &#183; filter array &#183; render<br><br>aria-live: \"2 added, 1 rejected\"<br>box: role=button, tabindex=0, Enter/Space</div>',
+   code:"list.addEventListener(\"click\", e => {\n  const btn = e.target.closest(\"[data-id]\");\n  if (!btn) return;\n  removeItem(+btn.dataset.id);\n});\nfunction removeItem(id) {\n  if (timers[id]) { clearInterval(timers[id]); delete timers[id]; }\n  items = items.filter(it => it.id !== id);\n  render();\n}\n// announce(msg): liveRegion.textContent = msg;" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },3800); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>

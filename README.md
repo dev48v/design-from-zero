@@ -51,6 +51,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 42 — Image Lightbox](https://dev48v.infy.uk/design/day42-image-lightbox.html) — `day42-image-lightbox.html`
 - [DesignFromZero · Day 43 — OTP / Verification-Code Input](https://dev48v.infy.uk/design/day43-otp-input.html) — `day43-otp-input.html`
 - [DesignFromZero · Day 44 — Drag-to-Reorder Sortable List](https://dev48v.infy.uk/design/day44-drag-to-reorder.html) — `day44-drag-to-reorder.html`
+- [DesignFromZero · Day 45 — File Dropzone / Upload Zone](https://dev48v.infy.uk/design/day45-file-dropzone.html) — `day45-file-dropzone.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk
