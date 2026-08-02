@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 51 — FAB &amp; Speed-Dial</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:18px;
+                display:flex; flex-direction:column; align-items:center; gap:14px; }
+
+  /* ===== THE STAGE — a little app screen the FAB lives on ===== */
+  .stage { position:relative; width:100%; max-width:820px; height:460px; border-radius:16px; overflow:hidden;
+           background:#f8fafc; border:1px solid #e2e8f0;
+           box-shadow:inset 0 1px 0 #fff, 0 18px 40px rgba(15,23,42,.12); }
+  .app-bar { height:54px; background:linear-gradient(90deg,#4f46e5,#6366f1); color:#fff;
+             display:flex; align-items:center; gap:12px; padding:0 16px; font-weight:800; letter-spacing:.01em; }
+  .app-bar .bars { width:20px; height:14px; position:relative; flex:0 0 auto; }
+  .app-bar .bars span { position:absolute; left:0; right:0; height:2px; background:#fff; border-radius:2px; }
+  .app-bar .bars span:nth-child(1){ top:0; } .app-bar .bars span:nth-child(2){ top:6px; } .app-bar .bars span:nth-child(3){ top:12px; }
+  .app-content { padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .app-row { height:54px; background:#fff; border:1px solid #eef2f7; border-radius:12px;
+             display:flex; align-items:center; gap:12px; padding:0 14px; }
+  .app-avatar { width:34px; height:34px; border-radius:50%; flex:0 0 auto;
+                background:linear-gradient(135deg,#c7d2fe,#a5b4fc); }
+  .app-lines { flex:1; display:flex; flex-direction:column; gap:7px; }
+  .app-line { height:9px; border-radius:6px; background:#e2e8f0; }
+  .app-line.short { width:45%; background:#eef2f7; }
+  .stage-hint { position:absolute; left:50%; top:66px; transform:translateX(-50%); z-index:2;
+                font-size:11px; font-weight:700; letter-spacing:.02em; color:#64748b;
+                background:rgba(255,255,255,.82); border:1px solid #e2e8f0; border-radius:999px; padding:4px 12px;
+                pointer-events:none; user-select:none; }
+
+  /* ---- the scrim ---- */
+  .scrim { position:absolute; inset:0; z-index:4; background:rgba(15,23,42,.34);
+           opacity:0; pointer-events:none; transition:opacity .25s ease; }
+  .scrim.show { opacity:1; pointer-events:auto; }
+
+  /* ---- the FAB stack ---- */
+  .fab-wrap { position:absolute; bottom:22px; z-index:5; display:flex; flex-direction:column; gap:14px; }
+  .fab-wrap.pos-br { right:22px; align-items:flex-end; }
+  .fab-wrap.pos-bl { left:22px;  align-items:flex-start; }
+
+  .sd-actions { display:flex; flex-direction:column; gap:12px; }
+  .fab-wrap.pos-br .sd-actions { align-items:flex-end; }
+  .fab-wrap.pos-bl .sd-actions { align-items:flex-start; }
+
+  .sd-item { display:flex; align-items:center; gap:10px;
+             opacity:0; transform:translateY(12px) scale(.8); transform-origin:center bottom;
+             pointer-events:none; transition:opacity .2s ease, transform .2s cubic-bezier(.2,.9,.3,1.3); }
+  .fab-wrap.pos-br .sd-item { flex-direction:row-reverse; }   /* label on the left */
+  .fab-wrap.pos-bl .sd-item { flex-direction:row; }           /* label on the right */
+  .fab-wrap.open .sd-item { opacity:1; transform:none; pointer-events:auto; }
+
+  .sd-btn { width:44px; height:44px; border-radius:14px; flex:0 0 auto;
+            background:#fff; color:#4338ca; border:1px solid #e2e8f0; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 3px 10px rgba(15,23,42,.15); transition:transform .12s ease, background .12s ease; }
+  .sd-btn:hover { background:#eef2ff; transform:translateY(-1px); }
+  .sd-btn svg { width:20px; height:20px; }
+  .sd-label { background:#0f172a; color:#fff; font-size:12px; font-weight:700; white-space:nowrap;
+              padding:5px 10px; border-radius:8px; box-shadow:0 2px 6px rgba(15,23,42,.2); }
+
+  .fab { height:56px; min-width:56px; border-radius:18px; border:none; cursor:pointer;
+         background:linear-gradient(135deg,#4f46e5,#6366f1); color:#fff;
+         display:flex; align-items:center; justify-content:center; gap:10px; padding:0;
+         box-shadow:0 8px 20px rgba(79,70,229,.45); transition:min-width .28s cubic-bezier(.2,.8,.2,1), padding .28s cubic-bezier(.2,.8,.2,1), box-shadow .2s ease; }
+  .fab:hover { box-shadow:0 10px 26px rgba(79,70,229,.55); }
+  .fab.extended { padding:0 22px; }
+  .fab-icon { width:24px; height:24px; flex:0 0 auto; transition:transform .3s cubic-bezier(.2,.8,.2,1.4); }
+  .fab.open .fab-icon { transform:rotate(135deg); }   /* plus morphs into a close x */
+  .fab-text { font-weight:800; font-size:14px; letter-spacing:.01em; white-space:nowrap;
+              max-width:0; opacity:0; overflow:hidden; transition:max-width .28s cubic-bezier(.2,.8,.2,1), opacity .2s ease; }
+  .fab.extended .fab-text { max-width:120px; opacity:1; }
+
+  /* ---- controls ---- */
+  .ctl { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-ghost.on { background:#eef2ff; border-color:#a5b4fc; color:#4338ca; }
+  .btn-solid { background:#4f46e5; color:#fff; border:1px solid #4f46e5; border-radius:10px; padding:8px 16px; font-weight:800; font-size:13px; cursor:pointer; }
+  .btn-solid:hover { background:#4338ca; }
+  .ctl-label { font-size:12px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+
+  /* ---- sliders ---- */
+  .sliders { width:100%; max-width:820px; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px 22px; }
+  @media (max-width:640px){ .sliders { grid-template-columns:1fr; } }
+  .slider-row { display:flex; flex-direction:column; gap:5px; }
+  .slider-top { display:flex; align-items:baseline; justify-content:space-between; }
+  .slider-name { font-size:12px; font-weight:800; color:#475569; }
+  .slider-val  { font-size:12px; font-weight:800; color:#4338ca; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:#6366f1; height:6px; cursor:pointer; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.04em; }
+  .prog-track { height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+  .prog-fill  { height:100%; background:linear-gradient(90deg,#6366f1,#a855f7); border-radius:999px; transition:width .18s ease; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none; }
+    .sd-item, .fab, .fab-icon, .fab-text, .scrim, .prog-fill { transition-duration:.001s !important; }
+    .sd-item { transform:none; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 51</div>
+      <h1 class="text-xl font-bold">Floating Action Button &mdash; a single <strong>high-emphasis action</strong> lifted off the page into a rounded button <strong>pinned to a corner</strong>, always in reach. Tap it and it becomes a <strong>speed-dial</strong>: the <code>+</code> <strong>morphs</strong> into a close <code>&times;</code>, a <strong>scrim</strong> drops over the screen to focus attention, and a short stack of <strong>labelled sub-actions</strong> fans out with a <strong>staggered</strong> spring. It can anchor <strong>bottom-right</strong> or <strong>bottom-left</strong>, and swap to an <strong>extended</strong> shape that pairs the icon with a word. Built as a real <code>&lt;button&gt;</code> with <code>aria-expanded</code>, a <code>role=&quot;menu&quot;</code> of items, <strong>Escape</strong>-to-close and <strong>managed focus</strong> &mdash; the primary-action affordance you have tapped a thousand times, rebuilt from scratch in one file.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">The corner button that fans out &mdash; <span class="text-indigo-600">compose, create, add, share</span>.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A <strong>FAB</strong> promotes the one action a screen is really about &mdash; the new mail, the new event, the new post &mdash; into a button that floats above the content, pinned to a corner so it never scrolls away. A <strong>speed-dial</strong> gives that one button a small menu: press it and it <strong>morphs</strong> its plus into an <code>&times;</code>, throws a <strong>scrim</strong> over the screen to say &ldquo;pick one&rdquo;, and <strong>staggers</strong> a handful of labelled mini-buttons into view. Try it on the phone mock-up: <strong>tap the button</strong> to open and close, then use the controls to move it <strong>bottom-left</strong>, switch on the <strong>extended</strong> shape, dial the <strong>number of actions</strong>, and flip the trigger between <strong>click</strong> and <strong>hover</strong>. It is a real <code>&lt;button&gt;</code>: <kbd>Tab</kbd> to it, <kbd>Enter</kbd> to open, <kbd>&uarr;</kbd><kbd>&darr;</kbd> through the items, <kbd>Esc</kbd> to close.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="ctl mb-3">
+              <button class="btn-solid" id="toggleBtn" type="button">Open speed-dial</button>
+              <button class="btn-ghost" id="resetBtn" type="button">Reset</button>
+            </div>
+
+            <div class="ctl mb-3">
+              <span class="ctl-label">Position</span>
+              <button class="btn-ghost on" data-pos="br" type="button">Bottom-right</button>
+              <button class="btn-ghost"    data-pos="bl" type="button">Bottom-left</button>
+            </div>
+
+            <div class="ctl mb-4">
+              <span class="ctl-label">Options</span>
+              <button class="btn-ghost" id="extBtn" type="button" aria-pressed="false">Extended FAB</button>
+              <span class="ctl-label" style="margin-left:6px;">Trigger</span>
+              <button class="btn-ghost on" data-trig="click" type="button">Click</button>
+              <button class="btn-ghost"    data-trig="hover" type="button">Hover</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="stage" id="stage">
+                <div class="app-bar"><span class="bars"><span></span><span></span><span></span></span>Inbox</div>
+                <div class="app-content">
+                  <div class="app-row"><div class="app-avatar"></div><div class="app-lines"><div class="app-line"></div><div class="app-line short"></div></div></div>
+                  <div class="app-row"><div class="app-avatar"></div><div class="app-lines"><div class="app-line"></div><div class="app-line short"></div></div></div>
+                  <div class="app-row"><div class="app-avatar"></div><div class="app-lines"><div class="app-line"></div><div class="app-line short"></div></div></div>
+                  <div class="app-row"><div class="app-avatar"></div><div class="app-lines"><div class="app-line"></div><div class="app-line short"></div></div></div>
+                </div>
+
+                <div class="stage-hint">Tap the button to open the speed-dial</div>
+                <div class="scrim" id="scrim"></div>
+
+                <div class="fab-wrap pos-br" id="fabWrap">
+                  <div class="sd-actions" id="sdActions" role="menu" aria-label="Quick actions"></div>
+                  <button class="fab" id="fab" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="sdActions" aria-label="Open quick actions">
+                    <svg class="fab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                    <span class="fab-text" id="fabText">Create</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="sliders">
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Number of actions</span><span class="slider-val" id="valCount">4</span></div>
+                  <input type="range" id="sCount" min="2" max="5" step="1" value="4" aria-label="Number of speed-dial actions" />
+                </div>
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Stagger delay (per item)</span><span class="slider-val" id="valStag">40ms</span></div>
+                  <input type="range" id="sStag" min="0" max="90" step="5" value="40" aria-label="Stagger delay between items" />
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">The whole thing is <strong>one <code>&lt;button&gt;</code> and a list</strong>. Opening flips a single boolean: it sets <code>aria-expanded</code>, adds an <code>.open</code> class that the CSS animates, shows the <strong>scrim</strong>, and walks the items setting a <code>transition-delay</code> so they cascade &mdash; nearest the FAB first on the way out, top-down on the way back. The plus never gets swapped for an &times; glyph; the same icon just <strong>rotates 135&deg;</strong>. Click a mini-button, the scrim, or press <kbd>Esc</kbd> and it closes, returning focus to the FAB.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Live state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roStateBig" class="text-lg font-bold text-slate-800">Closed</span>
+                <span id="roPosBig" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">bottom-right</span>
+              </div>
+              <div class="text-right text-xs text-slate-400 font-semibold -mt-1">speed-dial</div>
+
+              <div class="mt-3">
+                <div class="prog-track"><div class="prog-fill" id="roCountFill" style="width:80%"></div></div>
+                <div class="text-right text-xs text-slate-400 font-semibold mt-1"><span id="roCount">4</span> actions in the dial</div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-expanded</span><span id="roAria" class="pill mono">false</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">position</span><span id="roPos" class="pill">BR</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">shape</span><span id="roShape" class="pill">regular</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">trigger</span><span id="roTrig" class="pill">click</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">stagger</span><span id="roStag" class="pill mono">40ms</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">focus</span><span id="roFocus" class="pill">FAB</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last action</span><span id="roLast" class="pill g">&mdash;</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure read-out of the widget&rsquo;s state. <strong>aria-expanded</strong> is the exact attribute a screen reader announces &mdash; watch it flip with the button. <strong>Focus</strong> shows where the keyboard is: on the FAB when closed, on a menu item when open, and back on the FAB after <kbd>Esc</kbd>. One boolean drives the class, the aria, the scrim and this whole card.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Gmail&rsquo;s compose, Google Maps&rsquo; add-a-place, Docs&rsquo; new file, almost every Android app&rsquo;s bottom-right circle &mdash; the same idea each time: <strong>one action, promoted</strong>. Keep it to a <strong>single primary action</strong> (or a tight speed-dial of related ones), <strong>anchor</strong> it to a thumb-friendly corner, <strong>morph</strong> the icon so open/closed is unmistakable, <strong>label</strong> the mini-buttons because an icon alone is a guess, and wire the <strong>a11y</strong> &mdash; a real button, <code>aria-expanded</code>, a menu of items, <kbd>Esc</kbd> and focus return. Get those and the corner button feels native, not bolted on.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a FAB &amp; speed-dial work</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A FAB is a <strong>button anchored to a corner</strong>; a speed-dial is that button plus a <strong>list of actions</strong> it reveals. We start from the <strong>markup and positioning</strong>, make the icon <strong>morph</strong> from plus to close, render the <strong>labelled sub-actions</strong>, drive everything from <strong>one open boolean</strong> wired to <code>aria-expanded</code>, add the <strong>staggered</strong> reveal, drop a <strong>scrim</strong> with tap-and-<kbd>Esc</kbd> dismissal, support <strong>bottom-right / bottom-left</strong>, add the <strong>extended</strong> shape, then finish with <strong>keyboard &amp; focus</strong> and the design rules for <strong>when to use one</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The FAB &mdash; a button pinned to a corner</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A FAB is not a special widget, it is a plain <code>&lt;button&gt;</code> taken out of the document flow and <strong>anchored</strong> to a corner of its container with <code>position:absolute</code> (or <code>fixed</code> for a whole page). Give it a comfortable tap size &mdash; 56px is the Material standard &mdash; a rounded shape and a lift-off shadow so it reads as floating above the content. Wrap it in a positioned container so the speed-dial items can stack relative to the same corner.</p>
+        <div class="relative"><pre>&lt;div class="fab-wrap pos-br"&gt;            &lt;!-- anchored bottom-right --&gt;
+  &lt;div class="sd-actions" role="menu"&gt;&lt;/div&gt;
+  &lt;button class="fab" aria-haspopup="menu"
+          aria-expanded="false" aria-controls="sdActions"&gt;
+    &lt;svg class="fab-icon"&gt;&hellip;plus&hellip;&lt;/svg&gt;
+  &lt;/button&gt;
+&lt;/div&gt;
+
+.fab-wrap { position:absolute; bottom:22px; z-index:5; }
+.fab-wrap.pos-br { right:22px; align-items:flex-end; }
+.fab { width:56px; height:56px; border-radius:18px;
+       box-shadow:0 8px 20px rgba(79,70,229,.45); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Morph the icon &mdash; a plus that spins into a close</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Open and closed must look different, and the cheapest, most delightful way is to <strong>reuse the same icon</strong>. A plus rotated 45&deg; is already an &times;; rotate a touch further for momentum. Keep a single <code>+</code> SVG and toggle a class that applies <code>transform:rotate(135deg)</code> with a spring easing. No icon swap, no second asset &mdash; one glyph, one transition.</p>
+        <div class="relative"><pre>&lt;svg class="fab-icon" viewBox="0 0 24 24"
+     stroke="currentColor" stroke-width="2.4"&gt;
+  &lt;path d="M12 5v14M5 12h14"/&gt;      &lt;!-- a plus --&gt;
+&lt;/svg&gt;
+
+.fab-icon { transition: transform .3s cubic-bezier(.2,.8,.2,1.4); }
+.fab.open .fab-icon { transform: rotate(135deg); } /* + -&gt; x */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">The sub-actions &mdash; labelled mini buttons</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A speed-dial is a short list of related actions, each a <strong>mini button plus a text label</strong> &mdash; an icon alone is a riddle. Render them from data so the count is adjustable. Each mini button is a <code>role="menuitem"</code>, starts <code>tabindex="-1"</code> (the roving-focus pattern), and carries an <code>aria-label</code>. Stack them in a column above the FAB; the label sits on the side away from the screen edge.</p>
+        <div class="relative"><pre>const ACTIONS = [
+  { id:'edit',  label:'Edit',      svg:'&hellip;' },
+  { id:'share', label:'Share',     svg:'&hellip;' },
+  { id:'photo', label:'Add photo', svg:'&hellip;' },
+];
+sdActions.innerHTML = ACTIONS.slice(0, count).map(a =&gt; `
+  &lt;div class="sd-item"&gt;
+    &lt;button class="sd-btn" role="menuitem" tabindex="-1"
+            data-id="${a.id}" aria-label="${a.label}"&gt;${a.svg}&lt;/button&gt;
+    &lt;span class="sd-label"&gt;${a.label}&lt;/span&gt;
+  &lt;/div&gt;`).join('');</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">One boolean drives everything</h3></div>
+        <p class="text-sm text-slate-600 mb-3">All the state is a single <code>open</code> flag. A <code>setOpen(v)</code> function is the one place that mutates it: it toggles the <code>.open</code> class (CSS animates the rest), writes <code>aria-expanded</code> so assistive tech is always correct, shows or hides the scrim, and moves focus. Everything else &mdash; a click on the FAB, the scrim, <kbd>Esc</kbd>, a menu item &mdash; just calls <code>setOpen</code>. Keep mutation in one function and the component stays honest.</p>
+        <div class="relative"><pre>let open = false;
+function setOpen(v, focusItem){
+  open = v;
+  fabWrap.classList.toggle('open', v);
+  fab.classList.toggle('open', v);
+  fab.setAttribute('aria-expanded', String(v));   // a11y truth
+  scrim.classList.toggle('show', v);
+  stagger(v);                                      // step 5
+  if (v &amp;&amp; focusItem) items()[0].focus();
+  else if (!v) fab.focus();                        // return focus
+}
+fab.addEventListener('click', () =&gt; setOpen(!open, true));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Stagger the reveal</h3></div>
+        <p class="text-sm text-slate-600 mb-3">All items appearing at once feels cheap; a <strong>cascade</strong> feels crafted. The <code>.open</code> class fades and springs each <code>.sd-item</code> from a small offset back to place &mdash; the CSS does the motion. To sequence them, set each item&rsquo;s <code>transition-delay</code> in JS: on the way <em>out</em>, the item nearest the FAB goes first; on the way <em>back</em>, reverse it so the row closest to the button is last to leave. Frame-independent, pure CSS transition, JS only picks the delays.</p>
+        <div class="relative"><pre>.sd-item { opacity:0; transform:translateY(12px) scale(.8);
+  transition:opacity .2s, transform .2s cubic-bezier(.2,.9,.3,1.3); }
+.fab-wrap.open .sd-item { opacity:1; transform:none; }
+
+function stagger(opening){
+  const list = items();                    // DOM order: top -&gt; bottom
+  list.forEach((el, i) =&gt; {
+    const order = opening ? (list.length - 1 - i) : i; // near-FAB first out
+    el.style.transitionDelay = (order * cfg.stagger) + 'ms';
+  });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The scrim &mdash; focus, and tap-to-dismiss</h3></div>
+        <p class="text-sm text-slate-600 mb-3">When the dial is open, a translucent <strong>scrim</strong> covers the screen. It does two jobs: it dims the busy content so the choices stand out, and it becomes one big <strong>dismiss target</strong> &mdash; a tap anywhere that is not an action closes the menu. Fade it with the same open state, and give it <code>pointer-events:none</code> when hidden so it never blocks the app underneath. Add <kbd>Esc</kbd> as the keyboard equivalent.</p>
+        <div class="relative"><pre>.scrim { position:absolute; inset:0; z-index:4;
+  background:rgba(15,23,42,.34); opacity:0; pointer-events:none;
+  transition:opacity .25s; }
+.scrim.show { opacity:1; pointer-events:auto; }
+
+scrim.addEventListener('click', () =&gt; setOpen(false));
+document.addEventListener('keydown', e =&gt; {
+  if (e.key === 'Escape' &amp;&amp; open) setOpen(false);   // Esc closes
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Positions &mdash; bottom-right or bottom-left</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A FAB lives in a bottom corner for thumb reach. Swapping corners is one class: <code>.pos-br</code> pins right and right-aligns the stack, <code>.pos-bl</code> pins left and left-aligns it. The only subtlety is the <strong>label side</strong> &mdash; it must sit toward the screen interior, away from the edge &mdash; which a <code>flex-direction</code> flip handles per position.</p>
+        <div class="relative"><pre>.fab-wrap.pos-br { right:22px; align-items:flex-end; }
+.fab-wrap.pos-bl { left:22px;  align-items:flex-start; }
+
+/* keep the label on the inner side, never off-screen */
+.fab-wrap.pos-br .sd-item { flex-direction:row-reverse; } /* label left */
+.fab-wrap.pos-bl .sd-item { flex-direction:row; }         /* label right */
+
+setPos('bl');  // fabWrap.className = 'fab-wrap pos-' + p;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The extended FAB &mdash; icon plus a word</h3></div>
+        <p class="text-sm text-slate-600 mb-3">When a screen has room and the action deserves a name, the <strong>extended</strong> FAB pairs the icon with a short label (&ldquo;Create&rdquo;, &ldquo;Compose&rdquo;). It is the same button that simply grows: reveal the text and let the width animate from the icon-only size. Animate <code>max-width</code> (not <code>width:auto</code>, which will not transition) so it slides open smoothly.</p>
+        <div class="relative"><pre>&lt;button class="fab"&gt;
+  &lt;svg class="fab-icon"&gt;&hellip;&lt;/svg&gt;
+  &lt;span class="fab-text"&gt;Create&lt;/span&gt;
+&lt;/button&gt;
+
+.fab-text { max-width:0; opacity:0; overflow:hidden;
+  transition:max-width .28s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+.fab.extended { padding:0 22px; }
+.fab.extended .fab-text { max-width:120px; opacity:1; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Keyboard &amp; focus &mdash; the a11y that makes it real</h3></div>
+        <p class="text-sm text-slate-600 mb-3">It only counts as a menu if the keyboard agrees. The FAB carries <code>aria-haspopup="menu"</code> and <code>aria-expanded</code>; the container is <code>role="menu"</code>, each item a <code>role="menuitem"</code>. On open, move focus to the first item; <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> roam with wraparound (the roving-tabindex pattern), <kbd>Esc</kbd> closes and <strong>returns focus to the FAB</strong> so the user is never dropped. Respect <code>prefers-reduced-motion</code> by collapsing the transitions.</p>
+        <div class="relative"><pre>sdActions.addEventListener('keydown', e =&gt; {
+  const list = items(); const i = list.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown'){ e.preventDefault();
+    list[(i + 1) % list.length].focus(); }
+  else if (e.key === 'ArrowUp'){ e.preventDefault();
+    list[(i - 1 + list.length) % list.length].focus(); }
+  else if (e.key === 'Escape'){ setOpen(false); }  // focus back to FAB
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">When to use one &mdash; and when not to</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A FAB is for the <strong>single most important action</strong> of a screen &mdash; the thing you came to do. Use it when there is a clear primary action (compose, create, add) and, at most, a tight speed-dial of closely related shortcuts. Do <strong>not</strong> make it a junk drawer of unrelated commands, do not float two FABs on one screen, do not hide destructive actions behind it, and never let it cover content the user needs (raise it above a snackbar). If the actions are many or equal in weight, a <strong>toolbar or menu</strong> is the honest choice. One promoted action, done unmistakably &mdash; that is the whole point.</p>
+        <div class="relative"><pre>// GOOD: one primary action, promoted
+&lt;button class="fab" aria-label="Compose"&gt;&hellip;&lt;/button&gt;
+
+// GOOD: a tight dial of related shortcuts
+[ Edit, Add photo, Share ]      // 2-5, all related
+
+// AVOID: a dumping ground / two FABs / hidden delete
+[ Settings, Help, Delete all, Log out, Print, ... ]  // use a menu
+
+if (matchMedia('(prefers-reduced-motion: reduce)').matches){
+  /* CSS already collapses the transitions */
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 51 of DesignFromZero done &mdash; the Floating Action Button.</h3><p class="text-sm text-indigo-700 mt-2">You built a <strong>FAB with a speed-dial</strong> from nothing: a plain <code>&lt;button&gt;</code> <strong>anchored</strong> to a corner, an icon that <strong>morphs</strong> plus-to-close with a single <code>rotate(135deg)</code>, a data-driven list of <strong>labelled sub-actions</strong>, <strong>one open boolean</strong> that toggles the class, writes <code>aria-expanded</code>, shows the <strong>scrim</strong> and moves focus, a <strong>staggered</strong> reveal via per-item <code>transition-delay</code>, tap-and-<kbd>Esc</kbd> <strong>dismissal</strong>, <strong>bottom-right / bottom-left</strong> positions with a smart label side, an <strong>extended</strong> shape that animates its width, and full <strong>keyboard &amp; focus</strong> &mdash; menu roles, arrow navigation, focus return, reduced motion. <strong>&#128075; The corner button that every app promotes its best action with, rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== FAB + SPEED-DIAL =====
+// --- the actions catalogue (inline SVG icons, no emoji) ---
+const ACTIONS = [
+  { id:"edit",  label:"Edit",      svg:'<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.4 6.6l3 3"/>' },
+  { id:"share", label:"Share",     svg:'<circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.1 10.9l7.8-4.6M8.1 13.1l7.8 4.6"/>' },
+  { id:"photo", label:"Add photo", svg:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.7"/><path d="M21 16l-5-5L6 19"/>' },
+  { id:"note",  label:"New note",  svg:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/>' },
+  { id:"star",  label:"Favourite", svg:'<path d="M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-2.9L6.4 20l1.1-6L3.1 9.9l6-.8z"/>' }
+];
+
+// --- config the controls poke ---
+const cfg = { count: 4, stagger: 40, position: "br", extended: false, trigger: "click" };
+
+// --- elements ---
+const fabWrap  = document.getElementById("fabWrap");
+const fab      = document.getElementById("fab");
+const fabText  = document.getElementById("fabText");
+const sdActions= document.getElementById("sdActions");
+const scrim    = document.getElementById("scrim");
+const toggleBtn= document.getElementById("toggleBtn");
+
+// --- state ---
+let open = false;
+let lastAction = "—";
+
+// --- helpers ---
+const items = () => Array.from(sdActions.querySelectorAll(".sd-btn"));
+
+// --- render the speed-dial from data ---
+function renderActions(){
+  sdActions.innerHTML = ACTIONS.slice(0, cfg.count).map(a => `
+    <div class="sd-item">
+      <button class="sd-btn" role="menuitem" tabindex="-1" data-id="${a.id}" aria-label="${a.label}" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${a.svg}</svg>
+      </button>
+      <span class="sd-label">${a.label}</span>
+    </div>`).join("");
+  items().forEach(btn => btn.addEventListener("click", () => {
+    lastAction = ACTIONS.find(a => a.id === btn.dataset.id).label;
+    setOpen(false);
+    paintReadout();
+  }));
+  paintReadout();
+}
+
+// --- stagger: pick a transition-delay per item ---
+function stagger(opening){
+  const els = Array.from(sdActions.querySelectorAll(".sd-item"));
+  els.forEach((el, i) => {
+    const order = opening ? (els.length - 1 - i) : i;   // nearest FAB leaves/arrives first
+    el.style.transitionDelay = (order * cfg.stagger) + "ms";
+  });
+}
+
+// --- the one function that flips state ---
+function setOpen(v, focusItem){
+  open = v;
+  fabWrap.classList.toggle("open", v);
+  fab.classList.toggle("open", v);
+  fab.setAttribute("aria-expanded", String(v));
+  fab.setAttribute("aria-label", v ? "Close quick actions" : "Open quick actions");
+  scrim.classList.toggle("show", v);
+  stagger(v);
+  toggleBtn.textContent = v ? "Close speed-dial" : "Open speed-dial";
+  if (v){
+    if (focusItem){ const list = items(); if (list[0]) list[0].focus(); }
+  } else {
+    if (document.activeElement && sdActions.contains(document.activeElement)) fab.focus();
+  }
+  paintReadout();
+}
+
+// --- FAB trigger (click) ---
+fab.addEventListener("click", () => setOpen(!open, true));
+toggleBtn.addEventListener("click", () => setOpen(!open, true));
+
+// --- hover trigger (optional) ---
+fabWrap.addEventListener("mouseenter", () => { if (cfg.trigger === "hover" && !open) setOpen(true, false); });
+fabWrap.addEventListener("mouseleave", () => { if (cfg.trigger === "hover" && open)  setOpen(false); });
+
+// --- dismiss: scrim, Esc, outside click ---
+scrim.addEventListener("click", () => setOpen(false));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && open) setOpen(false); });
+document.addEventListener("pointerdown", e => {
+  if (open && cfg.trigger === "click" && !fabWrap.contains(e.target) && !scrim.contains(e.target)) setOpen(false);
+});
+
+// --- keyboard navigation inside the menu ---
+sdActions.addEventListener("keydown", e => {
+  const list = items();
+  const i = list.indexOf(document.activeElement);
+  if (e.key === "ArrowDown"){ e.preventDefault(); list[(i + 1) % list.length].focus(); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+  else if (e.key === "Home"){ e.preventDefault(); list[0].focus(); }
+  else if (e.key === "End"){ e.preventDefault(); list[list.length - 1].focus(); }
+  else if (e.key === "Escape"){ e.preventDefault(); setOpen(false); }
+});
+sdActions.addEventListener("focusin", paintReadout);
+
+// --- controls: position ---
+document.querySelectorAll("[data-pos]").forEach(b => b.addEventListener("click", () => {
+  cfg.position = b.dataset.pos;
+  fabWrap.classList.toggle("pos-br", cfg.position === "br");
+  fabWrap.classList.toggle("pos-bl", cfg.position === "bl");
+  document.querySelectorAll("[data-pos]").forEach(x => x.classList.toggle("on", x === b));
+  paintReadout();
+}));
+
+// --- controls: extended toggle ---
+const extBtn = document.getElementById("extBtn");
+extBtn.addEventListener("click", () => {
+  cfg.extended = !cfg.extended;
+  fab.classList.toggle("extended", cfg.extended);
+  extBtn.classList.toggle("on", cfg.extended);
+  extBtn.setAttribute("aria-pressed", String(cfg.extended));
+  paintReadout();
+});
+
+// --- controls: trigger mode ---
+document.querySelectorAll("[data-trig]").forEach(b => b.addEventListener("click", () => {
+  cfg.trigger = b.dataset.trig;
+  document.querySelectorAll("[data-trig]").forEach(x => x.classList.toggle("on", x === b));
+  if (open) setOpen(false);
+  paintReadout();
+}));
+
+// --- controls: reset ---
+document.getElementById("resetBtn").addEventListener("click", () => {
+  setOpen(false);
+  lastAction = "—";
+  paintReadout();
+});
+
+// --- sliders: count + stagger ---
+const sCount = document.getElementById("sCount"), valCount = document.getElementById("valCount");
+const sStag  = document.getElementById("sStag"),  valStag  = document.getElementById("valStag");
+sCount.addEventListener("input", () => {
+  cfg.count = +sCount.value; valCount.textContent = cfg.count;
+  renderActions(); if (open) stagger(true);
+});
+sStag.addEventListener("input", () => {
+  cfg.stagger = +sStag.value; valStag.textContent = cfg.stagger + "ms";
+  stagger(open); paintReadout();
+});
+
+// --- read-out ---
+const roStateBig = document.getElementById("roStateBig");
+const roPosBig   = document.getElementById("roPosBig");
+const roCountFill= document.getElementById("roCountFill");
+const roCount    = document.getElementById("roCount");
+const roAria     = document.getElementById("roAria");
+const roPos      = document.getElementById("roPos");
+const roShape    = document.getElementById("roShape");
+const roTrig     = document.getElementById("roTrig");
+const roStag     = document.getElementById("roStag");
+const roFocus    = document.getElementById("roFocus");
+const roLast     = document.getElementById("roLast");
+function paintReadout(){
+  roStateBig.textContent = open ? "Open" : "Closed";
+  roPosBig.textContent   = cfg.position === "br" ? "bottom-right" : "bottom-left";
+  roCount.textContent    = cfg.count;
+  roCountFill.style.width= (cfg.count / 5 * 100) + "%";
+  roAria.textContent     = String(open);
+  roAria.className       = "pill mono " + (open ? "a" : "");
+  roPos.textContent      = cfg.position.toUpperCase();
+  roShape.textContent    = cfg.extended ? "extended" : "regular";
+  roTrig.textContent     = cfg.trigger;
+  roStag.textContent     = cfg.stagger + "ms";
+  const inMenu = document.activeElement && sdActions.contains(document.activeElement);
+  roFocus.textContent    = inMenu ? "menu item" : (open ? "menu" : "FAB");
+  roLast.textContent     = lastAction;
+  roLast.className        = "pill " + (lastAction === "—" ? "g" : "");
+}
+
+// --- reduced motion: instant, no stagger ---
+if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){
+  cfg.stagger = 0; sStag.value = 0; valStag.textContent = "0ms";
+}
+
+// --- go ---
+renderActions();
+paintReadout();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. What a FAB really is",
+   why:"A Floating Action Button is a design decision before it is a widget: it takes the ONE action a screen is really about — compose the mail, create the doc, add the place — and promotes it into a button that floats above the content, pinned to a corner so it is always in reach and never scrolls away. It is 'floating' because it is lifted off the surface with a shadow, 'action' because it is a verb not a link, and there is only ever one primary per screen. Get the mindset right and everything else follows: this button is precious real estate for the single most important thing.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">one screen &rarr; one primary action<br><br>[ content scrolls &hellip; ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( + )&nbsp;&larr; floats, pinned<br><br>lifted with a shadow &middot; always reachable</div>',
+   code:"/* A FAB is not a special element.\n   It is a plain <button>, anchored to a corner,\n   promoting the ONE primary action of a screen.\n   Floating (shadow) + Action (a verb) + Button. */" },
+ { title:"2. Anchoring to a corner",
+   why:"The FAB is taken out of the document flow and anchored with position:absolute inside its container (or fixed for a whole page). A bottom corner is chosen for thumb reach on a phone — bottom-right for right-handed defaults. A generous inset keeps it off the very edge and clear of the safe-area, the shadow sells the float, and a z-index puts it above the content but below any dialog. Because it is absolutely positioned, the speed-dial items can stack relative to the same corner without disturbing the page.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">.fab-wrap { position:absolute;<br>&nbsp;&nbsp;bottom:22px; right:22px; z-index:5 }<br><br>bottom corner = thumb zone<br>inset + shadow = floats, not glued</div>',
+   code:"<div class=\"fab-wrap pos-br\">\n  <button class=\"fab\">+</button>\n</div>\n\n.fab-wrap { position:absolute; bottom:22px; z-index:5; }\n.fab-wrap.pos-br { right:22px; align-items:flex-end; }\n.fab { width:56px; height:56px; border-radius:18px;\n       box-shadow:0 8px 20px rgba(79,70,229,.45); }" },
+ { title:"3. The speed-dial expansion",
+   why:"Sometimes one screen has a small family of related creation actions, so the FAB grows a SPEED-DIAL: press it and a short stack of sub-actions fans out above it. Each sub-action is a mini button with a text label. This is still one primary affordance — you are not adding a toolbar, you are giving the primary a shortcut menu of two to five closely related options. Keep it short and related; the moment it becomes a grab-bag of unrelated commands, it should have been a menu.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&nbsp;&nbsp;[Share]&nbsp;&nbsp;( s )<br>&nbsp;[Add photo]&nbsp;( p )<br>&nbsp;&nbsp;&nbsp;&nbsp;[Edit]&nbsp;&nbsp;( e )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( &times; )&nbsp;&larr; the FAB<br><br>2&ndash;5 related actions, each labelled</div>',
+   code:"sdActions.innerHTML = ACTIONS.slice(0, count)\n  .map(a => `\n    <div class=\"sd-item\">\n      <button class=\"sd-btn\" role=\"menuitem\"\n              aria-label=\"${a.label}\">${a.svg}</button>\n      <span class=\"sd-label\">${a.label}</span>\n    </div>`).join('');" },
+ { title:"4. Morphing plus to close",
+   why:"Open and closed must be unmistakable, and the classic trick is to reuse the plus. A plus is a vertical line crossed with a horizontal one; rotate it 45 degrees and it is already a close ×. Rotate a little further — 135 degrees — and it spins with satisfying momentum. So you keep one SVG plus and toggle a class that rotates it; there is no second icon, no swap, just a transform transition. The rotation also reads as 'this same button is now in its open state', reinforcing that × will undo the +.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">+ &nbsp;&mdash;rotate(135&deg;)&rarr;&nbsp; &times;<br><br>one icon, one transform<br>.fab.open .fab-icon { rotate(135deg) }<br>spring easing = momentum</div>',
+   code:"<svg class=\"fab-icon\"><path d=\"M12 5v14M5 12h14\"/></svg>\n\n.fab-icon { transition: transform .3s\n            cubic-bezier(.2,.8,.2,1.4); }\n.fab.open .fab-icon { transform: rotate(135deg); }" },
+ { title:"5. One boolean, one setter",
+   why:"The entire component is driven by a single open flag, and exactly one function is allowed to change it. setOpen(v) toggles the .open class so CSS animates the icon and items, writes aria-expanded so assistive tech is never out of sync, shows or hides the scrim, sets up the stagger, and manages focus. Every event — a click on the FAB, a tap on the scrim, Escape, choosing an item — funnels through setOpen. Centralising the mutation is what keeps the visual state, the ARIA and the focus from ever drifting apart.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">open = true/false<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; setOpen(v)<br>class &middot; aria-expanded &middot; scrim &middot; focus<br><br>every event &rarr; the same one setter</div>',
+   code:"function setOpen(v, focusItem){\n  open = v;\n  fabWrap.classList.toggle('open', v);\n  fab.classList.toggle('open', v);\n  fab.setAttribute('aria-expanded', String(v));\n  scrim.classList.toggle('show', v);\n  stagger(v);\n  if (v && focusItem) items()[0].focus();\n  else if (!v) fab.focus();\n}" },
+ { title:"6. Staggering the reveal",
+   why:"Items snapping in all at once looks cheap; a cascade looks designed. The CSS gives each .sd-item an entry transition — fade in and spring up from a small offset when the parent gets .open. To sequence them you set each item's transition-delay in JavaScript. On the way out you want the one nearest the FAB to appear first, so the menu unfurls from the button; on the way back you reverse the delays so the closest item is the last to leave. The motion is pure CSS and frame-independent — JS only chooses the delays.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">delay: &nbsp;top&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;120ms<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mid&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;80ms<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;near&nbsp;&nbsp;&nbsp;&nbsp;40ms<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( + )&nbsp;&larr; unfurls from here</div>',
+   code:"function stagger(opening){\n  const list = items();          // top -> bottom\n  list.forEach((el, i) => {\n    const order = opening\n      ? (list.length - 1 - i)     // near-FAB first out\n      : i;                        // top-down back in\n    el.style.transitionDelay = (order * cfg.stagger) + 'ms';\n  });\n}" },
+ { title:"7. The scrim & dismissal",
+   why:"An open speed-dial covers the screen with a translucent scrim. It dims the busy content so the choices pop, and it doubles as a giant dismiss target: a tap anywhere that is not an action closes the dial. It fades with the same open state and, crucially, gets pointer-events:none when hidden so it never intercepts clicks on the app beneath. Escape is the keyboard equivalent, and a click outside the FAB wrapper closes too. Good dismissal is invisible when it works and infuriating when it is missing.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">open &rarr; scrim fades in (dim + catch taps)<br><br>tap scrim &middot; press Esc &middot; click outside<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; setOpen(false)<br>hidden scrim: pointer-events:none</div>',
+   code:"scrim.addEventListener('click', () => setOpen(false));\ndocument.addEventListener('keydown', e => {\n  if (e.key === 'Escape' && open) setOpen(false);\n});\ndocument.addEventListener('pointerdown', e => {\n  if (open && !fabWrap.contains(e.target)) setOpen(false);\n});" },
+ { title:"8. Positions & the extended shape",
+   why:"A FAB belongs in a bottom corner for thumb reach, and swapping corners is one class: pos-br pins and right-aligns, pos-bl pins and left-aligns. The only subtlety is that the labels must sit toward the screen interior, never off the edge, which a flex-direction flip handles per side. Separately, when there is room and the action deserves a name, the EXTENDED FAB pairs the icon with a word like 'Create'. It is the same button that simply grows — reveal the text and animate max-width (width:auto will not transition) so it slides open.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pos-br: right + label on the left<br>pos-bl: left&nbsp; + label on the right<br><br>regular: ( + )<br>extended: ( + Create )&nbsp;&larr; animate max-width</div>',
+   code:".fab-wrap.pos-bl { left:22px; align-items:flex-start; }\n.fab-wrap.pos-br .sd-item { flex-direction:row-reverse; }\n\n.fab-text { max-width:0; opacity:0; overflow:hidden;\n  transition:max-width .28s, opacity .2s; }\n.fab.extended .fab-text { max-width:120px; opacity:1; }" },
+ { title:"9. Keyboard & focus",
+   why:"It is only a real menu if the keyboard agrees. The FAB advertises aria-haspopup='menu' and aria-expanded; the container is role='menu' and each item role='menuitem', all starting at tabindex -1 (roving focus). On open you move focus to the first item; Arrow Up and Down roam with wraparound; Home and End jump to the ends; Escape closes and — the part people forget — RETURNS focus to the FAB, so the user is never dropped into nowhere. A screen reader now announces 'Open quick actions, collapsed' and, after a press, 'expanded'. This is the difference between a demo and a component.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab &rarr; FAB &nbsp;(aria-expanded=false)<br>Enter &rarr; open, focus first item<br>&uarr; &darr; roam &middot; Home/End jump<br>Esc &rarr; close + focus back to FAB</div>',
+   code:"sdActions.addEventListener('keydown', e => {\n  const l = items(); const i = l.indexOf(document.activeElement);\n  if (e.key === 'ArrowDown'){ e.preventDefault();\n    l[(i+1) % l.length].focus(); }\n  if (e.key === 'ArrowUp'){ e.preventDefault();\n    l[(i-1+l.length) % l.length].focus(); }\n  if (e.key === 'Escape') setOpen(false);  // focus returns\n});" },
+ { title:"10. When to use one",
+   why:"The last lesson is restraint. A FAB is for the single most important action of a screen and, at most, a tight speed-dial of closely related shortcuts. Do not turn it into a junk drawer of unrelated commands, do not float two FABs on one screen, do not bury destructive actions like 'delete all' behind it, and never let it cover content the user needs — raise it above snackbars. If the actions are many, or equal in weight, a toolbar or an overflow menu is the honest pattern. The FAB earns its prominence precisely by being the one thing; spend it well and the corner button feels native rather than bolted on.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">USE:&nbsp; one primary &middot; tight related dial (2&ndash;5)<br>AVOID: junk drawer &middot; two FABs<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;hidden delete &middot; covering content<br>many / equal actions &rarr; use a menu</div>',
+   code:"// GOOD: one promoted action\n<button class=\"fab\" aria-label=\"Compose\">+</button>\n\n// GOOD: a tight, related dial\n[ Edit, Add photo, Share ]        // 2-5\n\n// AVOID: unrelated grab-bag -> use a menu\n[ Settings, Help, Delete all, Print, Log out ]" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4200); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
