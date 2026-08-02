@@ -53,6 +53,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 44 — Drag-to-Reorder Sortable List](https://dev48v.infy.uk/design/day44-drag-to-reorder.html) — `day44-drag-to-reorder.html`
 - [DesignFromZero · Day 45 — File Dropzone / Upload Zone](https://dev48v.infy.uk/design/day45-file-dropzone.html) — `day45-file-dropzone.html`
 - [DesignFromZero · Day 51 — FAB & Speed-Dial](https://dev48v.infy.uk/design/day51-fab.html) — `day51-fab.html`
+- [DesignFromZero · Day 52 — Chip / Tag Input](https://dev48v.infy.uk/design/day52-chip-input.html) — `day52-chip-input.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

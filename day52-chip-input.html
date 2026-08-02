@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 52 — Chip / Tag Input</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:22px;
+                display:flex; flex-direction:column; align-items:center; gap:16px; }
+
+  /* ===== THE CHIP FIELD ===== */
+  .chip-outer { position:relative; width:100%; max-width:560px; }
+  .chip-field { display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+                min-height:56px; padding:9px 10px; background:#fff; border:1.5px solid #e2e8f0;
+                border-radius:14px; cursor:text; transition:border-color .15s ease, box-shadow .15s ease; }
+  .chip-field:focus-within { border-color:#a5b4fc; box-shadow:0 0 0 4px rgba(99,102,241,.16); }
+  .chip-field.shake { animation: shake .32s ease; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 60%{transform:translateX(5px)} 80%{transform:translateX(-3px)} }
+
+  .chip { display:inline-flex; align-items:center; gap:5px; padding:5px 6px 5px 12px;
+          background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff; border-radius:999px;
+          font-size:13px; font-weight:700; white-space:nowrap; max-width:100%;
+          animation: chipIn .18s cubic-bezier(.2,.9,.3,1.3);
+          transition:background .12s ease, box-shadow .12s ease, color .12s ease; }
+  @keyframes chipIn { from { opacity:0; transform:translateY(4px) scale(.85); } to { opacity:1; transform:none; } }
+  .chip .chip-label { overflow:hidden; text-overflow:ellipsis; }
+  .chip.nav { background:#4f46e5; color:#fff; border-color:#4f46e5; box-shadow:0 3px 10px rgba(79,70,229,.42); outline:none; }
+  .chip.nav .chip-x { color:#e0e7ff; }
+  .chip-x { display:inline-flex; align-items:center; justify-content:center; width:19px; height:19px;
+            border:none; background:transparent; cursor:pointer; border-radius:50%; color:#818cf8;
+            font-size:17px; line-height:1; padding:0; transition:background .12s ease, color .12s ease; }
+  .chip-x:hover { background:rgba(79,70,229,.16); color:#3730a3; }
+  .chip.nav .chip-x:hover { background:rgba(255,255,255,.24); color:#fff; }
+
+  .chip-input { flex:1 1 120px; min-width:120px; border:none; outline:none; background:transparent;
+                font-size:14px; color:#0f172a; padding:5px 2px; font-family:inherit; }
+  .chip-input::placeholder { color:#94a3b8; }
+
+  /* ===== suggestions ===== */
+  .suggest { position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:20; margin:0;
+             list-style:none; padding:6px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+             box-shadow:0 16px 38px rgba(15,23,42,.18); max-height:236px; overflow:auto; }
+  .suggest[hidden] { display:none; }
+  .sug { display:flex; align-items:center; justify-content:space-between; gap:10px;
+         padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600; color:#334155; cursor:pointer; }
+  .sug:hover, .sug.active { background:#eef2ff; color:#4338ca; }
+  .sug .sug-hint { font-size:10px; font-weight:800; letter-spacing:.06em; color:#a5b4fc; text-transform:uppercase; }
+  .sug mark { background:#fde68a; color:inherit; border-radius:3px; padding:0 1px; }
+
+  .field-msg { min-height:18px; margin-top:9px; font-size:12px; font-weight:700; letter-spacing:.01em; }
+  .field-msg.ok  { color:#059669; }
+  .field-msg.err { color:#dc2626; }
+  .field-msg.mut { color:#94a3b8; }
+
+  /* ---- controls ---- */
+  .ctl { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-ghost.on { background:#eef2ff; border-color:#a5b4fc; color:#4338ca; }
+  .btn-solid { background:#4f46e5; color:#fff; border:1px solid #4f46e5; border-radius:10px; padding:8px 16px; font-weight:800; font-size:13px; cursor:pointer; }
+  .btn-solid:hover { background:#4338ca; }
+  .ctl-label { font-size:12px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+
+  /* ---- sliders ---- */
+  .sliders { width:100%; max-width:560px; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px 22px; }
+  @media (max-width:640px){ .sliders { grid-template-columns:1fr; } }
+  .slider-row { display:flex; flex-direction:column; gap:5px; }
+  .slider-top { display:flex; align-items:baseline; justify-content:space-between; }
+  .slider-name { font-size:12px; font-weight:800; color:#475569; }
+  .slider-val  { font-size:12px; font-weight:800; color:#4338ca; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:#6366f1; height:6px; cursor:pointer; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.04em; }
+  .prog-track { height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+  .prog-fill  { height:100%; background:linear-gradient(90deg,#6366f1,#a855f7); border-radius:999px; transition:width .18s ease; }
+  .values-box { background:#0f172a; color:#a5f3fc; border-radius:10px; padding:10px 12px; font-size:12px;
+                font-family:ui-monospace,Menlo,Consolas,monospace; word-break:break-word; line-height:1.5;
+                max-height:150px; overflow:auto; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none; }
+    .chip, .prog-fill, .chip-field { animation:none !important; transition-duration:.001s !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 52</div>
+      <h1 class="text-xl font-bold">Chip / Tag Input &mdash; one control that is <strong>a text box and a list at the same time</strong>. Type a word and press <kbd>Enter</kbd> or <kbd>,</kbd> and it hardens into a removable <strong>chip</strong>; <kbd>Backspace</kbd> on an empty field eats the last one; <kbd>&larr;</kbd> walks <strong>into</strong> the chips to <strong>navigate and delete</strong>; the <code>&times;</code> on any chip removes it; a <strong>paste splits on commas</strong> into many chips at once. It <strong>rejects duplicates</strong>, enforces a <strong>max</strong>, can <strong>validate</strong> each entry (e.g. emails), and offers an <strong>autocomplete</strong> list as a real <code>combobox</code> + <code>listbox</code>. Built from a plain <code>&lt;input&gt;</code> and an array, wired with <code>aria-expanded</code>, <code>aria-activedescendant</code> and a live region &mdash; the multi-value field behind every tag picker, recipient box and label editor, rebuilt from scratch in one file.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Type, comma, Enter &mdash; words become <span class="text-indigo-600">removable chips</span>.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A <strong>chip input</strong> lets someone enter <strong>many values in one field</strong> &mdash; tags, skills, recipients, labels. Each committed value becomes a small <strong>chip</strong> with an <code>&times;</code>; the caret keeps sitting after them, ready for the next. Try it: <strong>type a word</strong> and hit <kbd>Enter</kbd> or <kbd>,</kbd>; <strong>paste</strong> <code>alpha, beta, gamma</code> to add three at once; press <kbd>Backspace</kbd> in the empty box to delete the last; press <kbd>&larr;</kbd> to step <strong>into</strong> the chips and <kbd>&larr;</kbd><kbd>&rarr;</kbd> between them, <kbd>Delete</kbd> to remove; click any <code>&times;</code>. Use the controls to toggle the <strong>autocomplete</strong> list, allow or block <strong>duplicates</strong>, switch validation to <strong>email</strong>, and dial the <strong>max</strong>. The panel on the right shows the exact <strong>values array</strong> the form would submit.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="ctl mb-3">
+              <span class="ctl-label">Options</span>
+              <button class="btn-ghost on" id="acBtn"  type="button" aria-pressed="true">Autocomplete</button>
+              <button class="btn-ghost"    id="dupBtn" type="button" aria-pressed="false">Allow duplicates</button>
+            </div>
+
+            <div class="ctl mb-4">
+              <span class="ctl-label">Validate</span>
+              <button class="btn-ghost on" data-mode="tags"  type="button">Free text</button>
+              <button class="btn-ghost"    data-mode="email" type="button">Email</button>
+              <button class="btn-ghost" id="resetBtn" type="button" style="margin-left:auto;">Reset</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="chip-outer">
+                <div class="chip-field" id="chipField" role="group" aria-label="Tags">
+                  <input id="chipInput" class="chip-input" type="text" role="combobox"
+                         aria-expanded="false" aria-autocomplete="list" aria-controls="suggestList"
+                         aria-label="Add a tag" placeholder="Type a tag and press Enter&hellip;" autocomplete="off" />
+                </div>
+                <ul class="suggest" id="suggestList" role="listbox" aria-label="Suggestions" hidden></ul>
+              </div>
+              <div class="field-msg mut" id="fieldMsg" role="status" aria-live="polite" style="width:100%;max-width:560px;">Type a word and press Enter, or paste a comma-separated list.</div>
+
+              <div class="sliders">
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Max tags</span><span class="slider-val" id="valMax">8</span></div>
+                  <input type="range" id="sMax" min="2" max="12" step="1" value="8" aria-label="Maximum number of tags" />
+                </div>
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Suggestions shown</span><span class="slider-val" id="valSug">6</span></div>
+                  <input type="range" id="sSug" min="3" max="8" step="1" value="6" aria-label="Maximum suggestions shown" />
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">The field is <strong>one <code>&lt;input&gt;</code> and an array of strings</strong>. Committing runs the same pipeline every time: <strong>split</strong> the raw text on commas, <strong>trim</strong>, <strong>validate</strong>, drop <strong>duplicates</strong>, stop at the <strong>max</strong> &mdash; then re-render the chips and clear the box. Nothing is a chip until it passes; a rejected entry shakes the field and says why in the live region. <kbd>&larr;</kbd> from the empty input moves focus <em>into</em> the chip row so the keyboard alone can reach and delete any chip.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Live values</div>
+              <div class="values-box" id="valuesBox">[]</div>
+
+              <div class="mt-3">
+                <div class="prog-track"><div class="prog-fill" id="roCountFill" style="width:0%"></div></div>
+                <div class="text-right text-xs text-slate-400 font-semibold mt-1"><span id="roCount">0</span> / <span id="roMax">8</span> tags</div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-expanded</span><span id="roAria" class="pill mono">false</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">duplicates</span><span id="roDup" class="pill">blocked</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">validate</span><span id="roMode" class="pill">free text</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">focus</span><span id="roFocus" class="pill">input</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last action</span><span id="roLast" class="pill g">&mdash;</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure read-out of the field&rsquo;s state. <strong>Live values</strong> is literally the array a form would post &mdash; watch it grow and shrink. <strong>aria-expanded</strong> is what a screen reader announces for the combobox as the suggestion list opens. <strong>Focus</strong> shows where the keyboard is: the input, a chip you have arrowed into, or a highlighted suggestion. One array drives the chips, this card, and the submitted data.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Gmail&rsquo;s recipient box, GitHub&rsquo;s label picker, Stack Overflow&rsquo;s tag field, every &ldquo;add skills&rdquo; form &mdash; the same control each time: <strong>a text box that yields a list</strong>. Keep the rules obvious &mdash; a clear <strong>commit key</strong> (Enter / comma), a visible <strong>remove</strong> affordance, <strong>paste that splits</strong>, quiet <strong>dedup</strong> and a firm <strong>max</strong>, honest <strong>validation</strong> with a spoken reason &mdash; and wire the <strong>a11y</strong>: a real input, a combobox for suggestions, focus you can drive into the chips, and a live region for what just happened. Get those and the multi-value field feels effortless instead of fiddly.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a chip / tag input works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A chip input is <strong>a text field and a list fused into one control</strong>. We start from the <strong>markup</strong> &mdash; a bordered box with chips and an input inside &mdash; make it <strong>look and focus like a single field</strong>, add the <strong>commit</strong> keys that turn text into a chip, wire <strong>removal</strong> by <code>&times;</code> and by <kbd>Backspace</kbd>, split a <strong>paste</strong> on commas, add <strong>dedup + max</strong>, plug in <strong>validation</strong>, build the <strong>autocomplete combobox</strong>, drive <strong>keyboard navigation into the chips</strong>, and finish with the <strong>a11y &amp; live region</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup &mdash; chips and an input in one box</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The whole control is a flex container that <strong>wraps</strong>: zero or more chips followed by a single text <code>&lt;input&gt;</code> that flexes to fill the last line. The input is the <strong>only</strong> real form field; the chips are decoration around an array you keep in JS. Mark the box <code>role="group"</code> and give the input a real <code>aria-label</code>.</p>
+        <div class="relative"><pre>&lt;div class="chip-field" role="group" aria-label="Tags"&gt;
+  &lt;!-- chips are injected here, before the input --&gt;
+  &lt;input class="chip-input" type="text"
+         aria-label="Add a tag"
+         placeholder="Type a tag and press Enter&hellip;"
+         autocomplete="off" /&gt;
+&lt;/div&gt;
+
+let chips = [];   // the single source of truth</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Make it look and focus like a single field</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two tricks sell the illusion. First, <code>cursor:text</code> plus a click handler focuses the input whenever the padding is clicked &mdash; the whole box behaves like an input. Second, <code>:focus-within</code> draws the focus ring on the <em>container</em>, so tabbing to the inner input lights up the whole field. Style chips as pill badges that wrap onto new lines.</p>
+        <div class="relative"><pre>.chip-field { display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; padding:9px 10px; border:1.5px solid #e2e8f0;
+  border-radius:14px; cursor:text; }
+.chip-field:focus-within { border-color:#a5b4fc;
+  box-shadow:0 0 0 4px rgba(99,102,241,.16); }
+
+chipField.addEventListener('mousedown', e =&gt; {
+  if (e.target === chipField){ e.preventDefault(); input.focus(); }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Commit &mdash; text becomes a chip</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A keystroke turns the current text into a chip. The commit keys are <kbd>Enter</kbd> and <kbd>,</kbd> (a comma should never end up <em>inside</em> a chip). One <code>commit()</code> function is the single funnel: everything &mdash; typing, pasting, picking a suggestion &mdash; goes through it, so the rules live in exactly one place. After a successful add, clear the input and re-render.</p>
+        <div class="relative"><pre>input.addEventListener('keydown', e =&gt; {
+  if (e.key === 'Enter' || e.key === ','){
+    e.preventDefault();          // comma must not land in the text
+    commit(input.value);
+  }
+});
+
+function commit(raw){
+  splitParts(raw).forEach(tryAdd);   // steps 5-7 do the work
+  input.value = '';
+  renderChips();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Remove &mdash; the &times; and Backspace</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two removal paths. Every chip carries a real <code>&lt;button&gt;</code> with a <code>&times;</code> and an <code>aria-label="Remove {value}"</code> &mdash; click it and the chip at that index is spliced out. And the classic: pressing <kbd>Backspace</kbd> while the input is empty deletes the last chip, so a fast typist never has to reach for the mouse. Both call the same <code>removeChip(i)</code>.</p>
+        <div class="relative"><pre>function removeChip(i){
+  chips.splice(i, 1);
+  renderChips();
+}
+
+input.addEventListener('keydown', e =&gt; {
+  if (e.key === 'Backspace' &amp;&amp; input.value === '' &amp;&amp; chips.length){
+    removeChip(chips.length - 1);   // eat the last chip
+  }
+});
+
+// each chip: &lt;button aria-label="Remove ${v}"&gt;&amp;times;&lt;/button&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Paste &mdash; split on commas into many chips</h3></div>
+        <p class="text-sm text-slate-600 mb-3">People paste <code>alice, bob, carol</code> or a column of newline-separated values. Intercept the <code>paste</code> event, read the clipboard text, and if it contains a comma or newline, split it and feed every piece through <code>commit()</code>. The same <code>splitParts()</code> splitter is reused by the Enter/comma path, so typing and pasting behave identically.</p>
+        <div class="relative"><pre>const splitParts = raw =&gt; raw.split(/[,\n]/);   // comma OR newline
+
+input.addEventListener('paste', e =&gt; {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (/[,\n]/.test(text)){
+    e.preventDefault();
+    commit(input.value + text);   // prepend whatever was typed
+  }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Dedup &amp; max &mdash; the gatekeepers</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Before a value becomes a chip it must pass the gates. <strong>Trim</strong> it and drop empties. Unless duplicates are explicitly allowed, reject a value already present (compare case-insensitively). And never exceed the <strong>max</strong>. Each rejection returns a <em>reason</em> so the UI can explain itself instead of silently swallowing input.</p>
+        <div class="relative"><pre>function tryAdd(v){
+  v = v.trim();
+  if (!v) return { ok:false };
+  if (chips.length &gt;= cfg.max)
+    return { ok:false, reason:`Max ${cfg.max} tags reached` };
+  if (!cfg.allowDup &amp;&amp;
+      chips.some(c =&gt; c.toLowerCase() === v.toLowerCase()))
+    return { ok:false, reason:`"${v}" is already added` };
+  chips.push(v);
+  return { ok:true };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Validation &mdash; e.g. email chips</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Sometimes a chip must match a shape &mdash; an email, a hashtag, a positive number. Add one more gate: if the field is in email mode, test the value against a simple regex and reject with a reason if it fails. On rejection, <strong>shake</strong> the field and speak the message through the live region &mdash; feedback the user can both see and hear.</p>
+        <div class="relative"><pre>const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// inside tryAdd, before the dedup check:
+if (cfg.mode === 'email' &amp;&amp; !EMAIL.test(v))
+  return { ok:false, reason:`"${v}" is not a valid email` };
+
+function reject(reason){
+  setMsg(reason, 'err');                 // aria-live announces it
+  field.classList.add('shake');
+  setTimeout(() =&gt; field.classList.remove('shake'), 320);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Autocomplete &mdash; a combobox + listbox</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Suggestions are an ARIA <strong>combobox</strong>: the input gets <code>role="combobox"</code>, <code>aria-expanded</code> and <code>aria-controls</code> pointing at a <code>role="listbox"</code>. On input, filter a pool by the typed text (minus what is already chosen), render <code>role="option"</code> rows, and track the highlighted one with <code>aria-activedescendant</code> &mdash; not real focus, which stays in the input so typing never breaks. <kbd>&darr;</kbd><kbd>&uarr;</kbd> move the highlight, <kbd>Enter</kbd> picks it.</p>
+        <div class="relative"><pre>&lt;input role="combobox" aria-expanded="false"
+       aria-autocomplete="list" aria-controls="list"&gt;
+&lt;ul id="list" role="listbox"&gt;&lt;/ul&gt;
+
+function updateSuggest(){
+  const q = input.value.trim().toLowerCase();
+  items = POOL.filter(s =&gt; s.toLowerCase().includes(q)
+              &amp;&amp; !chips.includes(s)).slice(0, cfg.maxSug);
+  input.setAttribute('aria-expanded', String(items.length &gt; 0));
+  // highlight moves via aria-activedescendant, focus stays put
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Keyboard nav &mdash; step into the chips</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The mouse can click any <code>&times;</code>; the keyboard needs a way in. When the caret is at the start of an empty input, <kbd>&larr;</kbd> moves focus onto the <strong>last chip</strong>. From a chip, <kbd>&larr;</kbd><kbd>&rarr;</kbd> roam (roving <code>tabindex</code>), <kbd>Delete</kbd>/<kbd>Backspace</kbd> removes it and lands focus on a neighbour, and <kbd>&rarr;</kbd> past the end &mdash; or <kbd>Esc</kbd> &mdash; returns to the input. Now every chip is reachable without a pointer.</p>
+        <div class="relative"><pre>input.addEventListener('keydown', e =&gt; {
+  if (e.key === 'ArrowLeft' &amp;&amp; input.selectionStart === 0
+      &amp;&amp; chips.length) focusChip(chips.length - 1);
+});
+
+function onChipKey(e, i){
+  if (e.key === 'ArrowLeft')  focusChip(i - 1);
+  if (e.key === 'ArrowRight') i + 1 &lt; chips.length ? focusChip(i+1) : input.focus();
+  if (e.key === 'Delete' || e.key === 'Backspace'){ removeChip(i); }
+  if (e.key === 'Escape') input.focus();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">A11y, the live region &amp; when to use one</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Announce changes: an <code>aria-live="polite"</code> status says &ldquo;Added 3 tags&rdquo; or the rejection reason so non-sighted users are never left guessing. Build chip labels with <code>textContent</code>, never <code>innerHTML</code>, so a pasted <code>&lt;script&gt;</code> is inert. Use a chip input when values are <strong>short, many and equal</strong> &mdash; tags, recipients, labels. If there is only ever one value, use a plain input; if the set is fixed and small, checkboxes or a multiselect may read clearer.</p>
+        <div class="relative"><pre>&lt;div role="status" aria-live="polite" id="msg"&gt;&lt;/div&gt;
+
+// safe render — user text can never become markup
+const label = document.createElement('span');
+label.textContent = value;          // NOT innerHTML
+
+// GOOD: many short equal values
+[ design, frontend, a11y, css ]     // tags / recipients / labels
+// AVOID: one value -&gt; plain input; fixed small set -&gt; checkboxes</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 52 of DesignFromZero done &mdash; the Chip / Tag Input.</h3><p class="text-sm text-indigo-700 mt-2">You built a <strong>multi-value field</strong> from nothing: a wrapping box that <strong>looks and focuses like one input</strong>, <kbd>Enter</kbd>/<kbd>,</kbd> that <strong>commits</strong> text into a removable <strong>chip</strong>, a <code>&times;</code> and an empty-field <kbd>Backspace</kbd> that <strong>remove</strong>, a <strong>paste</strong> that <strong>splits on commas</strong>, gates for <strong>dedup</strong> and a <strong>max</strong>, pluggable <strong>validation</strong> with a shake and a spoken reason, an <strong>autocomplete</strong> wired as a real <code>combobox</code> + <code>listbox</code> with <code>aria-activedescendant</code>, <strong>keyboard navigation into the chips</strong> via roving focus, and a safe, announced, <code>textContent</code>-rendered a11y layer. <strong>&#128075; The tag field behind every recipient box and label picker, rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== CHIP / TAG INPUT =====
+// --- suggestion pools + validation ---
+const TAG_POOL = ["JavaScript","TypeScript","React","Vue","Svelte","Angular","Node.js","CSS","HTML",
+  "Accessibility","Design","Animation","Web Components","Tailwind","GraphQL","Rust","Go","Python","Docker","Figma"];
+const EMAIL_POOL = ["ada@dev48v.io","grace@dev48v.io","linus@dev48v.io","alan@dev48v.io","dennis@dev48v.io","margaret@dev48v.io"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// --- config the controls poke ---
+const cfg = { max: 8, autocomplete: true, allowDup: false, mode: "tags", maxSug: 6 };
+
+// --- elements ---
+const chipField  = document.getElementById("chipField");
+const chipInput  = document.getElementById("chipInput");
+const suggestList= document.getElementById("suggestList");
+const fieldMsg   = document.getElementById("fieldMsg");
+const chipOuter  = chipField.parentElement;
+
+// --- state ---
+let chips = [];
+let activeChip = -1;          // -1 = the input; else index of a focused chip
+let lastAction = "—";
+let suggestOpen = false;
+let suggestItems = [];
+let activeSuggest = -1;
+
+// ---------- render chips (safe: textContent, no innerHTML for user data) ----------
+function renderChips(){
+  chipField.querySelectorAll(".chip").forEach(n => n.remove());
+  chips.forEach((val, i) => {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (i === activeChip ? " nav" : "");
+    chip.dataset.idx = i;
+    chip.tabIndex = -1;
+
+    const label = document.createElement("span");
+    label.className = "chip-label";
+    label.textContent = val;
+
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "chip-x";
+    x.tabIndex = -1;
+    x.setAttribute("aria-label", "Remove " + val);
+    x.innerHTML = "&times;";
+    x.addEventListener("click", (e) => { e.stopPropagation(); removeChip(i, false); chipInput.focus(); });
+
+    chip.appendChild(label);
+    chip.appendChild(x);
+    chip.addEventListener("keydown", onChipKey);
+    chip.addEventListener("focus", () => { activeChip = +chip.dataset.idx; syncNav(); paint(); });
+    chipField.insertBefore(chip, chipInput);
+  });
+}
+// keep only the arrowed-to chip highlighted
+function syncNav(){
+  chipField.querySelectorAll(".chip").forEach(c =>
+    c.classList.toggle("nav", +c.dataset.idx === activeChip));
+}
+
+// ---------- focus helpers ----------
+function focusChip(idx){
+  if (!chips.length){ focusInput(); return; }
+  idx = Math.max(0, Math.min(chips.length - 1, idx));
+  activeChip = idx;
+  syncNav();
+  const el = chipField.querySelector('.chip[data-idx="' + idx + '"]');
+  if (el) el.focus();
+  paint();
+}
+function focusInput(){
+  activeChip = -1;
+  syncNav();
+  chipInput.focus();
+  paint();
+}
+
+// ---------- the add/commit pipeline ----------
+const splitParts = raw => String(raw).split(/[,\n]/);
+
+function tryAdd(v){
+  v = v.trim();
+  if (!v) return { ok:false };
+  if (chips.length >= cfg.max) return { ok:false, reason:"Max " + cfg.max + " tags reached" };
+  if (cfg.mode === "email" && !EMAIL_RE.test(v)) return { ok:false, reason:"“" + v + "” is not a valid email" };
+  if (!cfg.allowDup && chips.some(c => c.toLowerCase() === v.toLowerCase()))
+    return { ok:false, reason:"“" + v + "” is already added" };
+  chips.push(v);
+  lastAction = "+ " + v;
+  return { ok:true };
+}
+
+function commit(raw){
+  const parts = splitParts(raw);
+  let added = 0, reason = null;
+  parts.forEach(p => {
+    if (!p.trim()) return;
+    const r = tryAdd(p);
+    if (r.ok) added++;
+    else if (r.reason) reason = r.reason;
+  });
+  chipInput.value = "";
+  closeSuggest();
+  renderChips();
+  if (added){
+    setMsg("Added " + added + " tag" + (added > 1 ? "s" : ""), "ok");
+  } else if (reason){
+    reject(reason);
+  }
+  paint();
+}
+
+function removeChip(i, byKey){
+  const val = chips[i];
+  chips.splice(i, 1);
+  lastAction = "− " + val;
+  if (byKey){
+    if (!chips.length) { activeChip = -1; renderChips(); focusInput(); return; }
+    const next = Math.min(i, chips.length - 1);
+    activeChip = next;
+    renderChips();
+    const el = chipField.querySelector('.chip[data-idx="' + next + '"]');
+    if (el) el.focus();
+  } else {
+    renderChips();
+  }
+  setMsg("Removed " + val, "mut");
+  paint();
+}
+
+// ---------- feedback ----------
+function setMsg(text, kind){
+  fieldMsg.textContent = text;
+  fieldMsg.className = "field-msg " + (kind || "mut");
+}
+function reject(reason){
+  setMsg(reason, "err");
+  chipField.classList.remove("shake");
+  void chipField.offsetWidth;           // restart the animation
+  chipField.classList.add("shake");
+  setTimeout(() => chipField.classList.remove("shake"), 340);
+}
+
+// ---------- input key handling ----------
+chipInput.addEventListener("keydown", e => {
+  // suggestion navigation takes priority when the list is open
+  if (suggestOpen){
+    if (e.key === "ArrowDown"){ e.preventDefault(); moveSuggest(1); return; }
+    if (e.key === "ArrowUp"){ e.preventDefault(); moveSuggest(-1); return; }
+    if (e.key === "Enter" && activeSuggest >= 0){ e.preventDefault(); pickSuggest(activeSuggest); return; }
+    if (e.key === "Escape"){ e.preventDefault(); closeSuggest(); paint(); return; }
+  }
+  if (e.key === "Enter" || e.key === ","){ e.preventDefault(); commit(chipInput.value); return; }
+  if (e.key === "Backspace" && chipInput.value === "" && chips.length){
+    e.preventDefault(); removeChip(chips.length - 1, false); return;
+  }
+  if (e.key === "ArrowLeft" && chipInput.selectionStart === 0 && chipInput.value === "" && chips.length){
+    e.preventDefault(); focusChip(chips.length - 1); return;
+  }
+});
+
+// paste splits on commas / newlines
+chipInput.addEventListener("paste", e => {
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (/[,\n]/.test(text)){ e.preventDefault(); commit(chipInput.value + text); }
+});
+
+// typing updates the suggestion list
+chipInput.addEventListener("input", updateSuggest);
+chipInput.addEventListener("focus", () => { activeChip = -1; syncNav(); updateSuggest(); paint(); });
+
+// clicking the padding focuses the input
+chipField.addEventListener("mousedown", e => {
+  if (e.target === chipField){ e.preventDefault(); chipInput.focus(); }
+});
+
+// ---------- chip key handling ----------
+function onChipKey(e){
+  const i = +e.currentTarget.dataset.idx;
+  if (e.key === "ArrowLeft"){ e.preventDefault(); focusChip(i - 1); }
+  else if (e.key === "ArrowRight"){ e.preventDefault(); (i + 1 < chips.length) ? focusChip(i + 1) : focusInput(); }
+  else if (e.key === "Home"){ e.preventDefault(); focusChip(0); }
+  else if (e.key === "End"){ e.preventDefault(); focusInput(); }
+  else if (e.key === "Backspace" || e.key === "Delete" || e.key === "Enter" || e.key === " "){ e.preventDefault(); removeChip(i, true); }
+  else if (e.key === "Escape"){ e.preventDefault(); focusInput(); }
+}
+
+// ---------- autocomplete: combobox + listbox ----------
+function updateSuggest(){
+  if (!cfg.autocomplete){ closeSuggest(); paint(); return; }
+  const q = chipInput.value.trim().toLowerCase();
+  if (!q){ closeSuggest(); paint(); return; }
+  const pool = cfg.mode === "email" ? EMAIL_POOL : TAG_POOL;
+  suggestItems = pool.filter(s =>
+    s.toLowerCase().includes(q) &&
+    !chips.some(c => c.toLowerCase() === s.toLowerCase())
+  ).slice(0, cfg.maxSug);
+  if (!suggestItems.length){ closeSuggest(); paint(); return; }
+  activeSuggest = -1;
+  openSuggest();
+  renderSuggest(q);
+  paint();
+}
+function renderSuggest(q){
+  suggestList.innerHTML = "";
+  suggestItems.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.className = "sug" + (i === activeSuggest ? " active" : "");
+    li.id = "sug-" + i;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", String(i === activeSuggest));
+
+    // highlight the matched substring (built safely)
+    const text = document.createElement("span");
+    const idx = s.toLowerCase().indexOf(q);
+    if (idx >= 0 && q){
+      text.appendChild(document.createTextNode(s.slice(0, idx)));
+      const mk = document.createElement("mark");
+      mk.textContent = s.slice(idx, idx + q.length);
+      text.appendChild(mk);
+      text.appendChild(document.createTextNode(s.slice(idx + q.length)));
+    } else {
+      text.textContent = s;
+    }
+    const hint = document.createElement("span");
+    hint.className = "sug-hint";
+    hint.textContent = "Enter";
+
+    li.appendChild(text);
+    li.appendChild(hint);
+    li.addEventListener("mousedown", e => { e.preventDefault(); pickSuggest(i); });
+    suggestList.appendChild(li);
+  });
+}
+function openSuggest(){
+  suggestOpen = true;
+  suggestList.hidden = false;
+  chipInput.setAttribute("aria-expanded", "true");
+}
+function closeSuggest(){
+  suggestOpen = false;
+  suggestList.hidden = true;
+  suggestItems = [];
+  activeSuggest = -1;
+  chipInput.setAttribute("aria-expanded", "false");
+  chipInput.removeAttribute("aria-activedescendant");
+}
+function moveSuggest(d){
+  const n = suggestItems.length;
+  if (!n) return;
+  activeSuggest = (activeSuggest + d + n) % n;
+  Array.from(suggestList.children).forEach((li, i) => {
+    const on = i === activeSuggest;
+    li.classList.toggle("active", on);
+    li.setAttribute("aria-selected", String(on));
+  });
+  chipInput.setAttribute("aria-activedescendant", "sug-" + activeSuggest);
+  const el = suggestList.children[activeSuggest];
+  if (el) el.scrollIntoView({ block: "nearest" });
+  paint();
+}
+function pickSuggest(i){
+  const val = suggestItems[i];
+  commit(val);
+  chipInput.focus();
+}
+
+// close suggestions on an outside click
+document.addEventListener("pointerdown", e => {
+  if (!chipOuter.contains(e.target) && suggestOpen){ closeSuggest(); paint(); }
+});
+
+// ---------- controls ----------
+const acBtn = document.getElementById("acBtn");
+acBtn.addEventListener("click", () => {
+  cfg.autocomplete = !cfg.autocomplete;
+  acBtn.classList.toggle("on", cfg.autocomplete);
+  acBtn.setAttribute("aria-pressed", String(cfg.autocomplete));
+  if (!cfg.autocomplete) closeSuggest(); else updateSuggest();
+  paint();
+});
+
+const dupBtn = document.getElementById("dupBtn");
+dupBtn.addEventListener("click", () => {
+  cfg.allowDup = !cfg.allowDup;
+  dupBtn.classList.toggle("on", cfg.allowDup);
+  dupBtn.setAttribute("aria-pressed", String(cfg.allowDup));
+  paint();
+});
+
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => {
+  cfg.mode = b.dataset.mode;
+  document.querySelectorAll("[data-mode]").forEach(x => x.classList.toggle("on", x === b));
+  chipInput.placeholder = cfg.mode === "email" ? "Type an email and press Enter…" : "Type a tag and press Enter…";
+  updateSuggest();
+  paint();
+}));
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  chips = ["design", "frontend", "accessibility"];
+  lastAction = "—";
+  activeChip = -1;
+  chipInput.value = "";
+  closeSuggest();
+  renderChips();
+  setMsg("Reset to a starting set.", "mut");
+  chipInput.focus();
+  paint();
+});
+
+// sliders
+const sMax = document.getElementById("sMax"), valMax = document.getElementById("valMax");
+const sSug = document.getElementById("sSug"), valSug = document.getElementById("valSug");
+sMax.addEventListener("input", () => {
+  cfg.max = +sMax.value; valMax.textContent = cfg.max;
+  if (chips.length > cfg.max){ chips = chips.slice(0, cfg.max); renderChips(); }
+  paint();
+});
+sSug.addEventListener("input", () => {
+  cfg.maxSug = +sSug.value; valSug.textContent = cfg.maxSug;
+  updateSuggest();
+});
+
+// ---------- read-out ----------
+const valuesBox  = document.getElementById("valuesBox");
+const roCount    = document.getElementById("roCount");
+const roMax      = document.getElementById("roMax");
+const roCountFill= document.getElementById("roCountFill");
+const roAria     = document.getElementById("roAria");
+const roDup      = document.getElementById("roDup");
+const roMode     = document.getElementById("roMode");
+const roFocus    = document.getElementById("roFocus");
+const roLast     = document.getElementById("roLast");
+function paint(){
+  valuesBox.textContent = "[" + chips.map(c => JSON.stringify(c)).join(", ") + "]";
+  roCount.textContent = chips.length;
+  roMax.textContent   = cfg.max;
+  roCountFill.style.width = Math.min(100, (chips.length / cfg.max) * 100) + "%";
+  roAria.textContent  = String(suggestOpen);
+  roAria.className     = "pill mono " + (suggestOpen ? "a" : "");
+  roDup.textContent   = cfg.allowDup ? "allowed" : "blocked";
+  roDup.className     = "pill " + (cfg.allowDup ? "a" : "");
+  roMode.textContent  = cfg.mode === "email" ? "email" : "free text";
+  let focusTxt = "input";
+  if (suggestOpen && activeSuggest >= 0) focusTxt = "suggestion " + (activeSuggest + 1);
+  else if (activeChip >= 0) focusTxt = "chip " + (activeChip + 1);
+  roFocus.textContent = focusTxt;
+  roLast.textContent  = lastAction;
+  roLast.className     = "pill " + (lastAction === "—" ? "g" : (lastAction[0] === "+" ? "g" : "r"));
+}
+
+// ---------- go ----------
+chips = ["design", "frontend", "accessibility"];
+renderChips();
+paint();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. A text box that yields a list",
+   why:"A chip (or tag) input is one control doing two jobs: it is a text field you type into, and it is a list of the values you have already entered. Each committed value hardens into a small removable chip; the caret keeps sitting after the chips, ready for the next. Mentally, there is a single source of truth — an array of strings — and the chips are just its visible form. Everything the widget does is 'change the array, then re-render'. Recipients in an email 'To' field, labels on an issue, skills on a profile: all the same shape.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[ design &times; ] [ frontend &times; ] &#9155;<br><br>chips = ["design","frontend"]<br><br>one array &rarr; the chips &middot; the form data</div>',
+   code:"// The whole control is ONE array of strings.\nlet chips = [];\n// Type -> commit -> push a string -> re-render chips.\n// A chip is just the visible form of an array item." },
+ { title:"2. Looks and focuses like one field",
+   why:"For the user this must feel like a single input, not a box with a widget bolted on. Two CSS/JS tricks do it. cursor:text plus a mousedown handler means clicking anywhere in the padding focuses the hidden input. And :focus-within draws the focus ring on the CONTAINER, so tabbing to the inner input lights up the whole field as one. The chips wrap onto new lines with flex-wrap; the input flexes to fill whatever space is left on the last row.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">.chip-field { display:flex; flex-wrap:wrap }<br>.chip-field:focus-within { ring }<br><br>click padding &rarr; focus the input<br>one box, one focus ring</div>',
+   code:".chip-field { display:flex; flex-wrap:wrap; gap:8px;\n  cursor:text; border:1.5px solid #e2e8f0; }\n.chip-field:focus-within {\n  border-color:#a5b4fc;\n  box-shadow:0 0 0 4px rgba(99,102,241,.16); }\n\nfield.addEventListener('mousedown', e => {\n  if (e.target === field) input.focus();\n});" },
+ { title:"3. Committing text into a chip",
+   why:"A keystroke turns the typed text into a chip. The commit keys are Enter and comma — a comma should split values, never sit inside a chip. The golden rule is a SINGLE commit() function that every path funnels through: typing Enter, pasting a list, picking a suggestion. Put the trim / validate / dedup / max rules in that one place and the widget can never behave differently depending on how a value arrived. After a successful commit you clear the input and re-render.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">type "css" + Enter/,<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; commit("css")<br>trim &middot; validate &middot; dedup &middot; max<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>chips.push("css") &middot; re-render</div>',
+   code:"input.addEventListener('keydown', e => {\n  if (e.key === 'Enter' || e.key === ','){\n    e.preventDefault();       // no comma inside a chip\n    commit(input.value);\n  }\n});\nfunction commit(raw){\n  splitParts(raw).forEach(tryAdd);\n  input.value = ''; renderChips();\n}" },
+ { title:"4. Two ways to remove",
+   why:"Every chip must be removable by mouse AND keyboard. By mouse: each chip carries a real <button> with a times glyph and aria-label='Remove {value}', so clicking it splices that index out and a screen reader announces exactly what went. By keyboard: pressing Backspace while the input is empty deletes the last chip — the muscle-memory shortcut every tag field shares — so a fast typist who added one too many just taps Backspace. Both paths call the same removeChip(i).",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[ react &times; ]&nbsp;&larr; click the &times;<br><br>empty input + Backspace &rarr; eat last chip<br><br>both &rarr; removeChip(i) &rarr; splice + render</div>',
+   code:"function removeChip(i){ chips.splice(i,1); renderChips(); }\n\n// mouse: <button aria-label=\"Remove react\">&times;</button>\nx.onclick = () => removeChip(i);\n\n// keyboard: empty field + Backspace\nif (e.key === 'Backspace' && input.value === '' && chips.length)\n  removeChip(chips.length - 1);" },
+ { title:"5. Paste that splits on commas",
+   why:"Real data arrives in bulk — someone copies 'alice, bob, carol' from a spreadsheet or a column of newline-separated addresses. Intercept the paste event, read the clipboard text, and if it contains a comma or newline, split it and run each piece through the same commit(). Because typing-Enter and pasting share one splitParts() and one tryAdd(), a pasted list obeys exactly the same dedup, max and validation rules as hand-typed values. Three pastes, three chips, no surprises.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">paste: "alpha, beta, gamma"<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; split(/[,\\n]/)<br>[ alpha ] [ beta ] [ gamma ]<br><br>same pipeline as typing</div>',
+   code:"const splitParts = raw => raw.split(/[,\\n]/);\n\ninput.addEventListener('paste', e => {\n  const text = e.clipboardData.getData('text');\n  if (/[,\\n]/.test(text)){\n    e.preventDefault();\n    commit(input.value + text);\n  }\n});" },
+ { title:"6. Dedup and the max",
+   why:"Before a value becomes a chip it passes gates. Trim it and drop empties so stray spaces never become a chip. Unless duplicates are explicitly allowed, reject a value already present — compared case-insensitively, because 'React' and 'react' are the same tag to a human. And enforce a hard max so a paste of a thousand rows cannot blow up the field or the form. Crucially, each rejection returns a REASON string, so the UI can explain itself instead of silently dropping input.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">"React" already in list &rarr; reject (dup)<br>chips.length &ge; max &rarr; reject (full)<br>"" &rarr; drop<br><br>each reject carries a reason</div>',
+   code:"function tryAdd(v){\n  v = v.trim();\n  if (!v) return { ok:false };\n  if (chips.length >= cfg.max)\n    return { ok:false, reason:`Max ${cfg.max} tags` };\n  if (!cfg.allowDup && chips.some(c =>\n      c.toLowerCase() === v.toLowerCase()))\n    return { ok:false, reason:`\"${v}\" already added` };\n  chips.push(v); return { ok:true };\n}" },
+ { title:"7. Validation, e.g. email chips",
+   why:"Often a chip must have a shape: an email address, a hashtag, a number. That is just one more gate in tryAdd — in email mode, test the value against a regex and reject with a reason if it fails. What makes it feel polished is the feedback: on rejection, SHAKE the field for a beat and speak the reason through an aria-live region, so the user both sees and hears why 'notanemail' did not stick. Valid entries glide in; invalid ones bounce with an explanation.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">mode = email<br>"ada@dev48v.io" &rarr; ok<br>"nope" &rarr; reject + shake + announce<br><br>validation is just another gate</div>',
+   code:"const EMAIL = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\nif (cfg.mode === 'email' && !EMAIL.test(v))\n  return { ok:false, reason:`\"${v}\" is not a valid email` };\n\nfunction reject(reason){\n  setMsg(reason, 'err');          // aria-live speaks it\n  field.classList.add('shake');\n}" },
+ { title:"8. Autocomplete as a combobox",
+   why:"Suggestions turn the field into an ARIA combobox. The input gets role='combobox', aria-expanded and aria-controls pointing at a role='listbox'; each suggestion is a role='option'. As you type, filter a pool by the text (minus what is already chosen) and render the matches. The subtle, important part: the highlighted option is tracked with aria-activedescendant, NOT real DOM focus — focus stays in the input so you can keep typing while Arrow keys move the highlight and Enter picks it.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">type "re" &rarr; listbox opens<br>&nbsp;&nbsp;&#8227; React&nbsp;&nbsp;(active)<br>&nbsp;&nbsp;&#8227; Redux<br>&uarr;&darr; move highlight &middot; Enter picks<br>focus stays in the input</div>',
+   code:"<input role=\"combobox\" aria-expanded=\"false\"\n       aria-controls=\"list\">\n<ul id=\"list\" role=\"listbox\"></ul>\n\nitems = POOL.filter(s => s.toLowerCase().includes(q)\n          && !chips.includes(s)).slice(0, cfg.maxSug);\ninput.setAttribute('aria-activedescendant', 'sug-' + active);" },
+ { title:"9. Keyboard nav into the chips",
+   why:"The mouse can click any times button, but the keyboard needs a door in. When the caret is at the very start of an empty input, ArrowLeft moves focus onto the LAST chip. From a chip, ArrowLeft/ArrowRight roam the row (roving tabindex — only the active chip is focusable), Delete or Backspace removes it and drops focus onto a neighbour so you can keep deleting, and ArrowRight past the end, or Escape, returns to the input. Now the whole control is operable without ever touching a pointer.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">empty input + &larr; &rarr; focus last chip<br>[ a ] [ b ] [ <b>c</b> ]&nbsp;&larr;&rarr; roam<br>Delete &rarr; remove + focus neighbour<br>Esc / &rarr; past end &rarr; back to input</div>',
+   code:"// from the input:\nif (e.key === 'ArrowLeft' && input.selectionStart === 0\n    && chips.length) focusChip(chips.length - 1);\n\n// from a chip:\nif (e.key === 'ArrowLeft')  focusChip(i - 1);\nif (e.key === 'ArrowRight') i+1 < chips.length\n    ? focusChip(i+1) : input.focus();\nif (e.key === 'Delete' || e.key === 'Backspace') removeChip(i);" },
+ { title:"10. A11y, safety & when to use one",
+   why:"Announce every change through an aria-live='polite' status — 'Added 3 tags', or the rejection reason — so a screen-reader user is never left guessing. Build chip labels with textContent, never innerHTML, so a pasted <script> or <img onerror> is inert text, not markup: the field takes arbitrary user input, so this is a real XSS boundary. And know when the pattern fits: use a chip input when values are short, many and equal in weight — tags, recipients, labels. For a single value use a plain input; for a fixed, small set, checkboxes or a multiselect often read clearer.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">aria-live: "Added 3 tags"<br>label.textContent = v&nbsp;&nbsp;// never innerHTML<br><br>USE: many short equal values<br>AVOID: one value &middot; fixed small set</div>',
+   code:"<div role=\"status\" aria-live=\"polite\"></div>\n\n// SAFE render — user text can never become markup\nconst label = document.createElement('span');\nlabel.textContent = value;      // NOT innerHTML\n\n// GOOD: [ design, frontend, a11y ]  // tags / recipients\n// AVOID: one value -> input; fixed set -> checkboxes" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4200); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
