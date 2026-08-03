@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 53 — Pagination</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:22px;
+                display:flex; flex-direction:column; align-items:center; gap:18px; }
+
+  /* ===== the data table (what pagination pages through) ===== */
+  .table-wrap { width:100%; max-width:640px; background:#fff; border:1px solid #e2e8f0;
+                border-radius:14px; overflow:hidden; box-shadow:0 1px 0 rgba(15,23,42,.03); }
+  .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .data-table thead th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+                         color:#94a3b8; font-weight:800; padding:11px 16px; background:#f8fafc;
+                         border-bottom:1px solid #e2e8f0; }
+  .data-table tbody td { padding:11px 16px; border-bottom:1px solid #f1f5f9; color:#334155; font-weight:600; }
+  .data-table tbody tr:last-child td { border-bottom:none; }
+  .data-table tbody tr { animation: rowIn .16s ease-out; }
+  @keyframes rowIn { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
+  .col-id { color:#94a3b8; font-variant-numeric:tabular-nums; width:52px; }
+  .col-name { color:#0f172a; font-weight:700; }
+  .dot { display:inline-flex; align-items:center; gap:7px; font-weight:700; font-size:12px; color:#475569; white-space:nowrap; }
+  .dot::before { content:""; width:8px; height:8px; border-radius:50%; background:#94a3b8; flex:0 0 auto; }
+  .dot.active::before  { background:#10b981; }
+  .dot.away::before    { background:#f59e0b; }
+  .dot.invited::before { background:#6366f1; }
+  .table-empty { padding:26px 16px; text-align:center; color:#94a3b8; font-weight:700; font-size:13px; }
+
+  /* ===== THE PAGER ===== */
+  .pager { width:100%; max-width:640px; display:flex; justify-content:center; }
+  .pager-list { display:flex; flex-wrap:wrap; align-items:center; gap:6px; list-style:none; margin:0; padding:0; }
+  .page-btn { min-width:38px; height:38px; padding:0 11px; border-radius:10px; border:1px solid #e2e8f0;
+              background:#fff; color:#334155; font-weight:700; font-size:13px; font-variant-numeric:tabular-nums;
+              cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px;
+              transition:background .12s ease, border-color .12s ease, color .12s ease, transform .1s ease, box-shadow .12s ease; }
+  .page-btn:hover:not(:disabled):not(.active) { background:#f1f5f9; border-color:#cbd5e1; }
+  .page-btn:active:not(:disabled) { transform:translateY(1px); }
+  .page-btn.active { background:#4f46e5; border-color:#4f46e5; color:#fff; cursor:default;
+                     box-shadow:0 4px 12px rgba(79,70,229,.42); }
+  .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .page-btn.nav svg { width:16px; height:16px; }
+  .page-ellipsis { min-width:30px; height:38px; display:inline-flex; align-items:flex-end; justify-content:center;
+                   color:#94a3b8; font-weight:800; letter-spacing:1px; padding-bottom:8px; user-select:none; }
+
+  /* ---- controls ---- */
+  .ctl { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .btn-ghost { background:#fff; color:#334155; border:1px solid #e2e8f0; border-radius:10px; padding:8px 14px; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-ghost:hover { background:#f8fafc; }
+  .btn-ghost:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-ghost.on { background:#eef2ff; border-color:#a5b4fc; color:#4338ca; }
+  .btn-solid { background:#4f46e5; color:#fff; border:1px solid #4f46e5; border-radius:10px; padding:8px 16px; font-weight:800; font-size:13px; cursor:pointer; }
+  .btn-solid:hover { background:#4338ca; }
+  .ctl-label { font-size:12px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+  .jump-input { width:64px; height:36px; border:1.5px solid #e2e8f0; border-radius:10px; padding:0 10px;
+                font-weight:700; font-size:13px; color:#0f172a; font-variant-numeric:tabular-nums; outline:none; }
+  .jump-input:focus { border-color:#a5b4fc; box-shadow:0 0 0 4px rgba(99,102,241,.16); }
+
+  /* ---- sliders ---- */
+  .sliders { width:100%; max-width:640px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px 22px; }
+  @media (max-width:640px){ .sliders { grid-template-columns:1fr; } }
+  .slider-row { display:flex; flex-direction:column; gap:5px; }
+  .slider-top { display:flex; align-items:baseline; justify-content:space-between; }
+  .slider-name { font-size:12px; font-weight:800; color:#475569; }
+  .slider-val  { font-size:12px; font-weight:800; color:#4338ca; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:#6366f1; height:6px; cursor:pointer; }
+
+  /* read-out */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.04em; }
+  .prog-track { height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+  .prog-fill  { height:100%; background:linear-gradient(90deg,#6366f1,#a855f7); border-radius:999px; transition:width .18s ease; }
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none; }
+    .data-table tbody tr, .prog-fill, .page-btn { animation:none !important; transition-duration:.001s !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 53</div>
+      <h1 class="text-xl font-bold">Pagination &mdash; the control that turns a list <strong>too long to scroll</strong> into numbered pages. <kbd>Prev</kbd>/<kbd>Next</kbd> step one page at a time, a row of <strong>page-number buttons</strong> jumps anywhere, the <strong>current page is highlighted</strong> and carries <code>aria-current</code>, and when there are more pages than fit, the classic <strong>ellipsis truncation</strong> keeps the bar a <strong>fixed width</strong> &mdash; always the <strong>first and last</strong> page, a <strong>window</strong> of neighbours around the current one, and a <code>&hellip;</code> standing in for the runs it hides (<code>1 &hellip; 4 5 [6] 7 8 &hellip; 20</code>), <strong>collapsing to a plain number</strong> whenever the gap is only one page. It is wired to a <strong>live table</strong> that re-renders the visible <strong>slice</strong> as you page, driven entirely by <strong>two numbers</strong> &mdash; current page and page size &mdash; and fully keyboard-operable with <kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>Home</kbd> <kbd>End</kbd>, real focusable buttons and a labelled <code>nav</code>. The control under every table, search-results screen and comment feed, rebuilt from scratch in one file.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Page through a long list &mdash; <span class="text-indigo-600">first, last, and a window around you</span>.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A <strong>pagination</strong> control breaks a list too long for one screen into numbered <strong>pages</strong> and gives you a compact bar to move between them. The whole thing is driven by <strong>two numbers</strong> &mdash; the <strong>current page</strong> and the <strong>page size</strong> &mdash; from which everything else is derived: the visible <strong>slice</strong> of rows, the total page count, and which page buttons to draw. Try it on the live table: click the <strong>numbers</strong> or <kbd>Prev</kbd>/<kbd>Next</kbd>, or focus the bar and use <kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>Home</kbd> <kbd>End</kbd>. Then use the controls to change <strong>rows per page</strong>, widen or narrow the <strong>window</strong> of neighbours shown around the current page, and grow the dataset to hundreds of rows &mdash; watch the <code>&hellip;</code> appear, and watch it <strong>collapse back into a plain number</strong> the instant it would only be hiding a single page. The panel on the right is a pure read-out of the state that drives it all.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-stretch">
+          <!-- the widget -->
+          <div class="flex-1 min-w-0">
+            <div class="ctl mb-3">
+              <span class="ctl-label">Options</span>
+              <button class="btn-ghost" id="edgeBtn" type="button" aria-pressed="false">First / last jumps</button>
+              <label class="ctl-label" for="jumpInput" style="margin-left:6px;">Go to</label>
+              <input class="jump-input" id="jumpInput" type="number" min="1" value="6" aria-label="Jump to page number" />
+              <button class="btn-ghost" id="resetBtn" type="button" style="margin-left:auto;">Reset</button>
+            </div>
+
+            <div class="demo-frame">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr><th class="col-id">#</th><th>Name</th><th>Team</th><th>Status</th></tr></thead>
+                  <tbody id="tableBody"></tbody>
+                </table>
+              </div>
+
+              <nav class="pager" id="pagerNav" aria-label="Pagination" tabindex="-1">
+                <ul class="pager-list" id="pagerList"></ul>
+              </nav>
+
+              <div class="sliders">
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Rows per page</span><span class="slider-val" id="valPer">8</span></div>
+                  <input type="range" id="sPer" min="4" max="24" step="1" value="8" aria-label="Rows per page" />
+                </div>
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Window (siblings)</span><span class="slider-val" id="valSib">&plusmn;2</span></div>
+                  <input type="range" id="sSib" min="0" max="3" step="1" value="2" aria-label="Sibling pages shown around the current page" />
+                </div>
+                <div class="slider-row">
+                  <div class="slider-top"><span class="slider-name">Total rows</span><span class="slider-val" id="valTot">160</span></div>
+                  <input type="range" id="sTot" min="20" max="480" step="4" value="160" aria-label="Total number of rows in the dataset" />
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">The control is <strong>two numbers</strong>: <code>page</code> and <code>pageSize</code>. The rows are <code>data.slice((page-1)&times;size, page&times;size)</code>; the page count is <code>ceil(total / size)</code>. The button bar is produced by one <strong>range function</strong> that always emits the <strong>first</strong> and <strong>last</strong> page, a <strong>window</strong> of <code>&plusmn;siblings</code> around the current page, and an <code>&hellip;</code> wherever a gap is left &mdash; unless that gap is exactly <strong>one</strong> page, in which case it prints the number instead, because an ellipsis hiding a single page is silly. Change any input and the same pipeline recomputes the slice and the bar together.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-64 flex-shrink-0">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Live state</div>
+              <div class="flex items-baseline justify-between">
+                <span id="roPageBig" class="text-lg font-bold text-slate-800">Page 6</span>
+                <span id="roPagesBig" class="text-xs text-slate-400 font-semibold flex-shrink-0 ml-2">of 20 pages</span>
+              </div>
+              <div id="roRange" class="text-right text-xs text-slate-400 font-semibold -mt-1">Showing 41&ndash;48 of 160</div>
+
+              <div class="mt-3">
+                <div class="prog-track"><div class="prog-fill" id="roFill" style="width:30%"></div></div>
+                <div class="text-right text-xs text-slate-400 font-semibold mt-1">progress through the list</div>
+              </div>
+
+              <div class="mt-4 pt-3 border-t border-slate-200 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-current</span><span id="roAria" class="pill mono">page 6</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">rows / page</span><span id="roPer" class="pill mono">8</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">window</span><span id="roSib" class="pill mono">&plusmn;2</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">page buttons</span><span id="roBtns" class="pill mono">7</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">last action</span><span id="roLast" class="pill g">&mdash;</span></div>
+              </div>
+
+              <p class="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-200">This panel is a pure read-out of the state. <strong>aria-current</strong> is exactly what a screen reader announces for the highlighted page. <strong>Page buttons</strong> is how many numbers the range function chose to draw &mdash; notice it stays roughly constant no matter how large the dataset grows, because the <code>&hellip;</code> absorbs the rest. One pair of numbers drives the table slice, the button bar and this whole card.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Google&rsquo;s results footer, an admin table&rsquo;s bottom bar, a forum thread&rsquo;s page strip, the API that returns <code>?page=6&amp;size=8</code> &mdash; the same control each time: <strong>a long list, cut into pages, with a compact way to move</strong>. Keep it honest &mdash; always expose the <strong>first and last</strong> page, keep a <strong>steady window</strong> around where you are, use the <code>&hellip;</code> only to hide <strong>runs</strong> you truly cannot show, disable <kbd>Prev</kbd>/<kbd>Next</kbd> at the ends, and wire the <strong>a11y</strong>: real buttons, a labelled <code>nav</code>, <code>aria-current</code> on the active page and <kbd>&larr;</kbd><kbd>&rarr;</kbd> keys. Get those and paging through ten thousand rows feels as light as flicking between two.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How pagination works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Pagination is <strong>two numbers and a range function</strong>. We start from the <strong>markup</strong> &mdash; a table and a <code>nav</code> of buttons &mdash; hold the state as <strong>page + pageSize</strong>, <strong>slice</strong> the data for the current page, add <strong>Prev/Next</strong> with clamping, draw the <strong>naive</strong> all-numbers bar to see why it fails, then build the <strong>truncation window</strong>, drop in the <strong>ellipsis</strong> with its <strong>single-gap collapse</strong>, <strong>render</strong> the range into buttons with <code>aria-current</code>, wire <strong>keyboard</strong> navigation and focus, and finish with the <strong>a11y</strong> and the design rules for <strong>when to page</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup &mdash; a table and a nav of buttons</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two pieces: the <strong>content</strong> you are paging (here a table body we fill from JS) and the <strong>pager</strong> itself. The pager is a <code>&lt;nav&gt;</code> with an <code>aria-label</code> so assistive tech announces &ldquo;Pagination&rdquo;, wrapping a <code>&lt;ul&gt;</code> of list items &mdash; each page is a real <code>&lt;button&gt;</code>, never a bare <code>&lt;div&gt;</code>, so it is focusable and clickable for free.</p>
+        <div class="relative"><pre>&lt;table class="data-table"&gt;
+  &lt;thead&gt;&hellip;&lt;/thead&gt;
+  &lt;tbody id="tableBody"&gt;&lt;/tbody&gt;   &lt;!-- filled per page --&gt;
+&lt;/table&gt;
+
+&lt;nav class="pager" aria-label="Pagination"&gt;
+  &lt;ul class="pager-list" id="pagerList"&gt;&lt;/ul&gt;
+&lt;/nav&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">State is two numbers</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The entire control is described by <code>page</code> and <code>pageSize</code>. Everything else is <em>derived</em>, never stored: the total page count is <code>ceil(total / pageSize)</code>, and the current page is always clamped into <code>[1, totalPages]</code> so no slider or jump box can push you off the end. Derive, don&rsquo;t duplicate &mdash; that is what keeps the table and the bar from ever disagreeing.</p>
+        <div class="relative"><pre>const state = { page: 1, pageSize: 8 };
+const DATA = [ /* the full array of rows */ ];
+
+const totalPages = () =&gt;
+  Math.max(1, Math.ceil(DATA.length / state.pageSize));
+
+const clamp = p =&gt; Math.max(1, Math.min(totalPages(), p));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Slice the data for the current page</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rendering a page is just <code>Array.slice</code>. Page 6 with a size of 8 shows indices 40&ndash;47 &mdash; that is <code>(page-1)&times;size</code> up to <code>page&times;size</code>. The &ldquo;Showing X&ndash;Y of Z&rdquo; label falls out of the same two offsets. Build each cell with <code>textContent</code>, never string concatenation into <code>innerHTML</code>, so row data can never smuggle in markup.</p>
+        <div class="relative"><pre>function renderTable(){
+  const start = (state.page - 1) * state.pageSize;
+  const rows  = DATA.slice(start, start + state.pageSize);
+  tableBody.innerHTML = "";
+  for (const r of rows){
+    const tr = tableBody.insertRow();
+    tr.insertCell().textContent = r.id;      // safe: textContent
+    tr.insertCell().textContent = r.name;
+  }
+  // label: `Showing ${start+1}–${start+rows.length} of ${DATA.length}`
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Prev / Next &mdash; step and clamp</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One <code>goTo(p)</code> function is the single funnel for every page change &mdash; a number click, an arrow key, the jump box &mdash; and it <strong>clamps</strong> before re-rendering, so the rest of the code never worries about bounds. <kbd>Prev</kbd> is <code>goTo(page-1)</code>, <kbd>Next</kbd> is <code>goTo(page+1)</code>, and both are <strong>disabled</strong> at the ends so you can never step into the void.</p>
+        <div class="relative"><pre>function goTo(p){
+  const next = clamp(p);
+  if (next === state.page) return;   // already there
+  state.page = next;
+  render();                          // table + pager together
+}
+
+prevBtn.disabled = state.page === 1;
+nextBtn.disabled = state.page === totalPages();</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The naive bar &mdash; and why it breaks</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The obvious first cut is to draw a button for <strong>every</strong> page. It works for ten pages and falls apart at a thousand: the bar wraps across the screen and becomes useless. That failure is the whole motivation for truncation &mdash; we need a control whose <strong>width is bounded</strong> no matter how large the dataset, while still letting you reach the ends and see where you are.</p>
+        <div class="relative"><pre>// Naive: one button per page — fine at 10, a disaster at 1000.
+for (let p = 1; p &lt;= totalPages(); p++){
+  addPageButton(p);
+}
+
+// 1  2  3  4  5  6  7  8  9 10 11 12 &hellip; 998 999 1000  ✗
+// The bar must stay a FIXED width -> we truncate.</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The window &mdash; first, last, and neighbours</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Truncation shows only three groups: the <strong>boundary</strong> pages (always page 1 and page N), and a <strong>window</strong> of <code>siblings</code> pages on each side of the current page. The subtle part is the clamps: near the start or end the window is <strong>shifted inward</strong> so it never runs off either edge and the visible count stays steady. <code>startCut</code> and <code>endCut</code> are the first and last page of that window.</p>
+        <div class="relative"><pre>const range = (a, b) =&gt; {           // inclusive integer range
+  const out = []; for (let i = a; i &lt;= b; i++) out.push(i); return out;
+};
+
+// window bounds, clamped so they never leave [2 .. total-1]
+const startCut = Math.max(
+  Math.min(current - siblings, total - siblings*2 - 3), 3);
+const endCut   = Math.min(
+  Math.max(current + siblings, siblings*2 + 4), total - 2);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">The ellipsis &mdash; and the single-gap trick</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Between page 1 and the window there may be a gap; likewise between the window and page N. Where a gap exists, emit a <code>&hellip;</code>. But there is one polished rule: if the gap is <strong>exactly one page</strong> &mdash; the window starts at page 3, so only page 2 is hidden &mdash; print <strong>that number</strong> instead. An ellipsis that hides a single page wastes the same space it saves, so the range function quietly prefers the digit.</p>
+        <div class="relative"><pre>const leftGap  = startCut &gt; 3;              // more than one page hidden?
+const rightGap = endCut &lt; total - 2;
+
+const seq = [
+  1,                                       // first boundary
+  ...(leftGap  ? ["dots"] : (3 &gt; 3 ? [] : [2])),   // gap of 1 -&gt; show "2"
+  ...range(startCut, endCut),              // the window
+  ...(rightGap ? ["dots"] : [total - 1]),  // gap of 1 -&gt; show "N-1"
+  total,                                   // last boundary
+];
+// current 6 of 20, siblings 2  ->  1 … 4 5 6 7 8 … 20</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Render the range into buttons</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Walk the sequence: a number becomes a real <code>&lt;button&gt;</code> that calls <code>goTo(n)</code>; the string <code>"dots"</code> becomes an inert <code>&hellip;</code> span marked <code>aria-hidden</code>. The current page gets the <code>.active</code> highlight <strong>and</strong> <code>aria-current="page"</code> &mdash; the visual state and the announced state set together, so they can never drift apart.</p>
+        <div class="relative"><pre>for (const tok of seq){
+  if (tok === "dots"){
+    add(`&lt;span class="page-ellipsis" aria-hidden="true"&gt;&hellip;&lt;/span&gt;`);
+    continue;
+  }
+  const b = document.createElement("button");
+  b.textContent = tok;
+  b.setAttribute("aria-label", "Page " + tok);
+  if (tok === state.page){
+    b.classList.add("active");
+    b.setAttribute("aria-current", "page");   // announced state
+  }
+  b.onclick = () =&gt; goTo(tok);
+  add(b);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Keyboard navigation &amp; focus</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because every page is a real button, <kbd>Tab</kbd> and <kbd>Enter</kbd> already work. Add the expected shortcuts on the <code>nav</code>: <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> step a page, <kbd>Home</kbd>/<kbd>End</kbd> jump to the first/last. The catch is focus: re-rendering destroys the button you were on, so after a keyboard move, put focus back on the freshly-drawn <strong>active</strong> button &mdash; the user is never dropped onto <code>&lt;body&gt;</code>.</p>
+        <div class="relative"><pre>pagerNav.addEventListener("keydown", e =&gt; {
+  const map = { ArrowLeft: state.page - 1, ArrowRight: state.page + 1,
+                Home: 1, End: totalPages() };
+  if (!(e.key in map)) return;
+  e.preventDefault();
+  goTo(map[e.key]);
+  // focus survives the re-render:
+  pagerList.querySelector(".page-btn.active")?.focus();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">A11y &amp; when to paginate</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Wrap the bar in a labelled <code>&lt;nav&gt;</code>, mark the active page with <code>aria-current="page"</code>, give <kbd>Prev</kbd>/<kbd>Next</kbd> real <code>aria-label</code>s (an icon alone is a guess) and disable them at the ends. Reach for pagination when users need to <strong>find a known item</strong> or feel <strong>orientation</strong> in a bounded set &mdash; search results, admin tables, archives. Prefer <strong>infinite scroll</strong> for open-ended discovery feeds, and <strong>&ldquo;load more&rdquo;</strong> when you want lazy loading without losing the footer. If pages come from a server, page state usually belongs in the <strong>URL</strong> (<code>?page=6</code>) so it is shareable and survives a refresh.</p>
+        <div class="relative"><pre>&lt;nav aria-label="Pagination"&gt;
+  &lt;button aria-label="Previous page" disabled&gt;&hellip;&lt;/button&gt;
+  &lt;button aria-current="page"&gt;6&lt;/button&gt;
+&lt;/nav&gt;
+
+// GOOD: find a known item / bounded set -&gt; pages
+[ search results, admin tables, archives ]
+// AVOID for endless discovery feeds -&gt; infinite scroll / "load more"
+// Server-paged? keep it in the URL:  ?page=6&amp;size=8</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 53 of DesignFromZero done &mdash; Pagination.</h3><p class="text-sm text-indigo-700 mt-2">You built a pagination control from nothing: <strong>two numbers</strong> &mdash; <code>page</code> and <code>pageSize</code> &mdash; from which the table <strong>slice</strong> and page count are <strong>derived</strong>, a single clamped <code>goTo()</code> funnel with <strong>Prev/Next</strong> disabled at the ends, and the classic <strong>range function</strong> that keeps the bar a <strong>fixed width</strong>: always the <strong>first and last</strong> page, a <strong>window</strong> of <code>&plusmn;siblings</code> around the current one, an <code>&hellip;</code> for the runs it hides, and the <strong>single-gap collapse</strong> that prints a number rather than dots when only one page would be hidden. It renders to real <code>&lt;button&gt;</code>s with the <strong>active</strong> page carrying <code>aria-current</code>, is driven by <kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>Home</kbd><kbd>End</kbd> with <strong>focus that survives the re-render</strong>, and lives in a labelled <code>nav</code>. <strong>&#128075; The control under every table, search page and feed, rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== PAGINATION =====
+// --- the dataset (generated, no emoji, purely for the demo table) ---
+const FIRST = ["Ada","Grace","Linus","Alan","Dennis","Margaret","Katherine","Barbara","Guido","Bjarne",
+  "Tim","Brendan","Anders","Yukihiro","James","Rasmus","Ken","Rob","John","Donald"];
+const LAST = ["Lovelace","Hopper","Torvalds","Turing","Ritchie","Hamilton","Johnson","Liskov","van Rossum",
+  "Stroustrup","Berners-Lee","Eich","Hejlsberg","Matsumoto","Gosling","Lerdorf","Thompson","Pike","McCarthy","Knuth"];
+const TEAMS = ["Platform","Design","Growth","Mobile","Infra","Data","Payments","Support"];
+const STATUS = ["Active","Invited","Away"];
+const DATA = Array.from({ length: 480 }, (_, i) => ({
+  id: i + 1,
+  name: FIRST[i % FIRST.length] + " " + LAST[(i * 7 + 3) % LAST.length],
+  team: TEAMS[(i * 3) % TEAMS.length],
+  status: STATUS[(i + Math.floor(i / 3)) % STATUS.length]
+}));
+
+// --- state: the whole control is these numbers ---
+const state = { page: 6, per: 8, siblings: 2, total: 160, edges: false };
+let lastAction = "—";
+
+// --- elements ---
+const tableBody = document.getElementById("tableBody");
+const pagerNav  = document.getElementById("pagerNav");
+const pagerList = document.getElementById("pagerList");
+const jumpInput = document.getElementById("jumpInput");
+
+// --- derived helpers ---
+const pool       = () => DATA.slice(0, state.total);
+const totalPages = () => Math.max(1, Math.ceil(state.total / state.per));
+const clamp      = p => Math.max(1, Math.min(totalPages(), p));
+const range      = (a, b) => { const out = []; for (let i = a; i <= b; i++) out.push(i); return out; };
+
+// --- THE TRUNCATION-WINDOW ALGORITHM ---------------------------------------
+// Always shows page 1 and page N, plus a window of `siblings` pages around the
+// current page. A "dots" token marks a hidden run; but if a gap is exactly one
+// page, the number is shown instead (an ellipsis hiding a single page is silly).
+function buildRange(current, total, siblings) {
+  const totalNumbers = siblings * 2 + 5;   // 1 + N + window + 2 boundaries-in
+  if (totalNumbers >= total) return range(1, total);   // everything fits
+
+  const startCut = Math.max(Math.min(current - siblings, total - siblings * 2 - 3), 3);
+  const endCut   = Math.min(Math.max(current + siblings, siblings * 2 + 4), total - 2);
+
+  const leftGap  = startCut > 3;              // >1 page hidden on the left?
+  const rightGap = endCut < total - 2;        // >1 page hidden on the right?
+
+  return [
+    1,
+    ...(leftGap  ? ["dots"] : (3 < total ? [2] : [])),
+    ...range(startCut, endCut),
+    ...(rightGap ? ["dots"] : (total - 1 > 1 ? [total - 1] : [])),
+    total
+  ];
+}
+
+// --- icons (inline SVG chevrons, no emoji) ---
+const ICON_PREV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+const ICON_NEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+
+// --- the single funnel for every page change ---
+function goTo(p, focusIntent) {
+  const next = clamp(p);
+  const changed = next !== state.page;
+  state.page = next;
+  render();
+  if (focusIntent === "active") {
+    const el = pagerList.querySelector(".page-btn.active");
+    if (el) el.focus();
+  } else if (focusIntent === "prev" || focusIntent === "next") {
+    const el = pagerList.querySelector('[data-nav="' + focusIntent + '"]');
+    (el && !el.disabled ? el : pagerList.querySelector(".page-btn.active")).focus();
+  }
+  return changed;
+}
+
+// --- render the visible slice of rows ---
+function renderTable() {
+  const rows = pool();
+  const start = (state.page - 1) * state.per;
+  const slice = rows.slice(start, start + state.per);
+  tableBody.innerHTML = "";
+  if (!slice.length) {
+    const tr = tableBody.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = 4; td.className = "table-empty"; td.textContent = "No rows on this page.";
+    return;
+  }
+  slice.forEach(r => {
+    const tr = document.createElement("tr");
+    const cId = document.createElement("td");   cId.className = "col-id";  cId.textContent = r.id;
+    const cNm = document.createElement("td");    cNm.className = "col-name"; cNm.textContent = r.name;
+    const cTm = document.createElement("td");    cTm.textContent = r.team;
+    const cSt = document.createElement("td");
+    const dot = document.createElement("span");  dot.className = "dot " + r.status.toLowerCase();
+    dot.textContent = r.status;
+    cSt.appendChild(dot);
+    tr.append(cId, cNm, cTm, cSt);           // textContent everywhere = safe
+    tableBody.appendChild(tr);
+  });
+}
+
+// --- build a numbered page button ---
+function pageBtn(n) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "page-btn" + (n === state.page ? " active" : "");
+  b.textContent = n;
+  b.setAttribute("aria-label", "Page " + n);
+  if (n === state.page) b.setAttribute("aria-current", "page");
+  b.addEventListener("click", () => { lastAction = "page " + n; goTo(n, "active"); });
+  return b;
+}
+
+// --- build a prev/next/first/last control ---
+function navBtn(kind, html, disabled, label) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "page-btn nav";
+  b.dataset.nav = kind;
+  b.disabled = disabled;
+  b.setAttribute("aria-label", label);
+  b.innerHTML = html;   // trusted static markup (SVG / guillemet)
+  b.addEventListener("click", () => {
+    const target = kind === "first" ? 1
+                 : kind === "last"  ? totalPages()
+                 : kind === "prev"  ? state.page - 1
+                 : state.page + 1;
+    lastAction = kind;
+    goTo(target, kind === "prev" || kind === "next" ? kind : "active");
+  });
+  return b;
+}
+
+// --- render the pager bar from the range ---
+function renderPager() {
+  const total = totalPages();
+  const seq = buildRange(state.page, total, state.siblings);
+  pagerList.innerHTML = "";
+  const add = node => { const li = document.createElement("li"); li.appendChild(node); pagerList.appendChild(li); };
+
+  if (state.edges) add(navBtn("first", "&laquo;", state.page === 1, "First page"));
+  add(navBtn("prev", ICON_PREV, state.page === 1, "Previous page"));
+
+  seq.forEach(tok => {
+    if (tok === "dots") {
+      const span = document.createElement("span");
+      span.className = "page-ellipsis";
+      span.setAttribute("aria-hidden", "true");
+      span.textContent = "…";
+      add(span);
+    } else {
+      add(pageBtn(tok));
+    }
+  });
+
+  add(navBtn("next", ICON_NEXT, state.page === total, "Next page"));
+  if (state.edges) add(navBtn("last", "&raquo;", state.page === total, "Last page"));
+}
+
+// --- read-out ---
+const roPageBig  = document.getElementById("roPageBig");
+const roPagesBig = document.getElementById("roPagesBig");
+const roRange    = document.getElementById("roRange");
+const roFill     = document.getElementById("roFill");
+const roAria     = document.getElementById("roAria");
+const roPer      = document.getElementById("roPer");
+const roSib      = document.getElementById("roSib");
+const roBtns     = document.getElementById("roBtns");
+const roLast     = document.getElementById("roLast");
+function paint() {
+  const total = totalPages();
+  const start = state.total === 0 ? 0 : (state.page - 1) * state.per + 1;
+  const end   = Math.min(state.page * state.per, state.total);
+  roPageBig.textContent  = "Page " + state.page;
+  roPagesBig.textContent = "of " + total + " page" + (total > 1 ? "s" : "");
+  roFill.style.width     = (state.page / total * 100) + "%";
+  roRange.textContent    = state.total === 0 ? "No rows" : ("Showing " + start + "–" + end + " of " + state.total);
+  roAria.textContent     = "page " + state.page;
+  roPer.textContent      = state.per;
+  roSib.textContent      = "±" + state.siblings;
+  roBtns.textContent     = pagerList.querySelectorAll(".page-btn:not(.nav)").length;
+  roLast.textContent     = lastAction;
+  roLast.className       = "pill " + (lastAction === "—" ? "g" : "");
+  jumpInput.max          = total;
+  if (document.activeElement !== jumpInput) jumpInput.value = state.page;
+}
+
+// --- one render pass keeps table + bar + card in lockstep ---
+function render() {
+  state.page = clamp(state.page);
+  renderTable();
+  renderPager();
+  paint();
+}
+
+// --- keyboard: arrows step, Home/End jump; focus survives the re-render ---
+pagerNav.addEventListener("keydown", e => {
+  const map = { ArrowLeft: state.page - 1, ArrowRight: state.page + 1, Home: 1, End: totalPages() };
+  if (!(e.key in map)) return;
+  e.preventDefault();
+  lastAction = e.key.replace("Arrow", "").toLowerCase() || e.key.toLowerCase();
+  goTo(map[e.key], "active");
+});
+
+// --- controls ---
+const edgeBtn = document.getElementById("edgeBtn");
+edgeBtn.addEventListener("click", () => {
+  state.edges = !state.edges;
+  edgeBtn.classList.toggle("on", state.edges);
+  edgeBtn.setAttribute("aria-pressed", String(state.edges));
+  render();
+});
+
+jumpInput.addEventListener("input", () => {
+  const v = parseInt(jumpInput.value, 10);
+  if (!Number.isNaN(v)) { lastAction = "jump " + clamp(v); goTo(v); }
+});
+
+const sPer = document.getElementById("sPer"), valPer = document.getElementById("valPer");
+const sSib = document.getElementById("sSib"), valSib = document.getElementById("valSib");
+const sTot = document.getElementById("sTot"), valTot = document.getElementById("valTot");
+sPer.addEventListener("input", () => {
+  state.per = +sPer.value; valPer.textContent = state.per;
+  state.page = clamp(state.page); render();
+});
+sSib.addEventListener("input", () => {
+  state.siblings = +sSib.value; valSib.textContent = "±" + state.siblings;
+  render();
+});
+sTot.addEventListener("input", () => {
+  state.total = +sTot.value; valTot.textContent = state.total;
+  state.page = clamp(state.page); render();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  state.page = 6; state.per = 8; state.siblings = 2; state.total = 160; state.edges = false;
+  lastAction = "—";
+  sPer.value = 8; valPer.textContent = 8;
+  sSib.value = 2; valSib.textContent = "±2";
+  sTot.value = 160; valTot.textContent = 160;
+  edgeBtn.classList.remove("on"); edgeBtn.setAttribute("aria-pressed", "false");
+  render();
+});
+
+// --- go ---
+render();
+
+// ===== UNDERSTAND step engine =====
+const CONCEPT_STEPS = [
+ { title:"1. Two numbers describe everything",
+   why:"A pagination control looks like a bar of buttons, but its real state is just two numbers: the current page and the page size (rows per page). Everything else is derived, never stored. The total number of pages is ceil(total / pageSize). The visible rows are a slice of the full array. Which buttons to draw is a pure function of the current page and the count. Keep those two numbers as the single source of truth and the table, the button bar and the 'showing X-Y of Z' label can never disagree, because they are all reading the same state.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">state = { page: 6, pageSize: 8 }<br><br>pages&nbsp;&nbsp;= ceil(total / pageSize)<br>rows&nbsp;&nbsp;&nbsp;= data.slice(&hellip;)<br>buttons = f(page, pages)<br><br>two numbers &rarr; everything</div>',
+   code:"// The whole control is TWO numbers.\nconst state = { page: 6, pageSize: 8 };\n\n// Everything else is DERIVED, not stored:\nconst totalPages = () =>\n  Math.max(1, Math.ceil(DATA.length / state.pageSize));" },
+ { title:"2. Slicing the data",
+   why:"Rendering a page is one Array.slice. Page p with size s shows the rows from index (p-1)*s up to p*s. Page 6 at size 8 is indices 40 through 47. The human-friendly 'Showing 41-48 of 160' label is just those offsets plus one. The last page is naturally short when the total is not a clean multiple of the size - 160 rows at 8 gives exactly 20 pages, but 137 rows would make page 18 hold only the leftover one. slice() handles that for free; it simply returns fewer items.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">page 6, size 8<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>slice(40, 48)<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>Showing 41&ndash;48 of 160</div>',
+   code:"const start = (state.page - 1) * state.pageSize;\nconst rows  = DATA.slice(start, start + state.pageSize);\n\n// label:\n`Showing ${start + 1}\\u2013${start + rows.length} of ${DATA.length}`" },
+ { title:"3. Prev / Next and clamping",
+   why:"Every way to change the page - a number click, an arrow key, the jump box, Prev/Next - funnels through one goTo(p) function, and that function clamps p into [1, totalPages] before doing anything. Centralising the clamp means no other code ever has to check bounds. Prev is goTo(page-1); Next is goTo(page+1). At the very first and last page the respective button is disabled, so a user can never step off either end, and a screen reader announces the button as unavailable.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">click / key / jump&nbsp;&rarr;&nbsp;goTo(p)<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; clamp(p) into [1, N]<br>re-render<br><br>page 1 &rarr; Prev disabled<br>page N &rarr; Next disabled</div>',
+   code:"function goTo(p){\n  const next = clamp(p);       // Math.max(1, Math.min(N, p))\n  if (next === state.page) return;\n  state.page = next;\n  render();\n}\nprevBtn.disabled = state.page === 1;\nnextBtn.disabled = state.page === totalPages();" },
+ { title:"4. Why truncate at all",
+   why:"The naive bar draws one button per page. That is perfectly fine for ten pages and a catastrophe for a thousand - the bar wraps line after line and stops being a control at all. Real datasets are big, so the bar must have a bounded width no matter how many pages exist, while still letting you reach the two ends and see roughly where you are in the whole. That single requirement - fixed width, unbounded data - is the entire reason the ellipsis pattern exists.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">1000 pages, one button each:<br>1 2 3 4 5 6 7 8 9 10 11 12 &hellip;<br>&hellip; 997 998 999 1000&nbsp;&nbsp;&#10007;<br><br>need: FIXED width, any dataset</div>',
+   code:"// Naive: a button per page.\nfor (let p = 1; p <= totalPages(); p++) addPageButton(p);\n\n// Fine at 10 pages. Useless at 1000.\n// The bar must stay a fixed width -> truncate." },
+ { title:"5. The anchors: first, last, window",
+   why:"Truncation keeps only three things. The boundaries: page 1 and page N, always visible, because the ends are the most common jump targets. And a window: the current page plus a few siblings on each side, so you can nudge to nearby pages without hunting. The window size is the 'siblings' setting - one on each side gives a five-wide window, two gives seven. Near the start or end the window is shifted inward so it never runs off an edge, which keeps the number of buttons steady wherever you are.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[ 1 ]&nbsp;&hellip;&nbsp;4 5 <b>6</b> 7 8&nbsp;&hellip;&nbsp;[ 20 ]<br><br>boundaries: 1 and N (always)<br>window: current &plusmn; siblings<br>shifted inward near the edges</div>',
+   code:"// window bounds, clamped to stay inside [2 .. N-1]\nconst startCut = Math.max(\n  Math.min(cur - sib, N - sib*2 - 3), 3);\nconst endCut = Math.min(\n  Math.max(cur + sib, sib*2 + 4), N - 2);\nconst window = range(startCut, endCut);" },
+ { title:"6. Where the ellipsis goes",
+   why:"After you have page 1, the window, and page N, there can be a gap on either side. Between page 1 and the window's first page - and between the window's last page and page N - if any pages are skipped, that gap becomes a single ellipsis token. The ellipsis is not a button and not focusable; it is decoration marked aria-hidden so a screen reader skips it and simply hears the page numbers. One '...' can stand in for two pages or two hundred; its job is only to say 'there is more here'.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">1&nbsp;&nbsp;[gap?]&nbsp;&nbsp;4 5 6 7 8&nbsp;&nbsp;[gap?]&nbsp;&nbsp;20<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>1&nbsp;&nbsp;&hellip;&nbsp;&nbsp;4 5 6 7 8&nbsp;&nbsp;&hellip;&nbsp;&nbsp;20<br><br>&hellip; is aria-hidden decoration</div>',
+   code:"const leftGap  = startCut > 3;          // pages hidden on the left\nconst rightGap = endCut < N - 2;        // pages hidden on the right\n\n// '...' is inert, not a button:\n// <span class=\"page-ellipsis\" aria-hidden=\"true\">\\u2026</span>" },
+ { title:"7. The single-page-gap trick",
+   why:"There is one rule that separates a polished pager from a rough one. If a gap would hide exactly one page - say the window begins at page 3, so only page 2 is missing - showing '1 ... 3' wastes the same width as '1 2 3' while hiding information. So when the gap is a single page, the range function prints that number instead of the ellipsis. The ellipsis only ever appears when it is genuinely saving space by hiding two or more pages. It is a small touch, but it is the difference people feel without being able to name.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">gap hides 1 page:<br>1 &hellip; 3 4 5&nbsp;&nbsp;&#10007;&nbsp;&rarr;&nbsp;1 2 3 4 5&nbsp;&nbsp;&#10003;<br><br>gap hides &ge;2 pages:<br>1 &hellip; 5 6 7&nbsp;&nbsp;&#10003;</div>',
+   code:"// gap of exactly one -> show the number, not dots\n...(leftGap  ? ['dots'] : [2]),      // '1 ... 3' becomes '1 2 3'\n...range(startCut, endCut),\n...(rightGap ? ['dots'] : [N - 1]),  // '18 ... 20' becomes '18 19 20'" },
+ { title:"8. The full range function",
+   why:"Put it together and the whole bar is one pure function: given the current page, the total, and the sibling count, it returns an array of tokens - numbers and the string 'dots'. First a shortcut: if everything fits (total <= window + boundaries) just return 1..N and never truncate. Otherwise compute the clamped window, decide each gap, and assemble [1, left, ...window, right, N]. It has no side effects and touches no DOM, so it is trivial to test: feed it page 1, page N and a middle page and eyeball the arrays.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">buildRange(6, 20, 2)<br>&nbsp;&nbsp;&rarr; [1,"dots",4,5,6,7,8,"dots",20]<br><br>buildRange(1, 20, 2)<br>&nbsp;&nbsp;&rarr; [1,2,3,4,5,6,7,8,"dots",20]<br>buildRange(20, 20, 2)<br>&nbsp;&nbsp;&rarr; [1,"dots",13,14,15,16,17,18,19,20]</div>',
+   code:"function buildRange(cur, N, sib){\n  const slots = sib*2 + 5;\n  if (slots >= N) return range(1, N);      // it all fits\n  const s = Math.max(Math.min(cur-sib, N-sib*2-3), 3);\n  const e = Math.min(Math.max(cur+sib, sib*2+4), N-2);\n  return [1,\n    ...(s > 3 ? ['dots'] : [2]),\n    ...range(s, e),\n    ...(e < N-2 ? ['dots'] : [N-1]),\n    N];\n}" },
+ { title:"9. Keyboard & aria-current",
+   why:"Because each page is a real button, Tab reaches it and Enter activates it with zero extra code. On top of that, add the shortcuts people expect on the nav container: Left/Right step a page, Home/End jump to the first/last. Two accessibility details make it a true component. The active page carries aria-current='page', which is precisely what a screen reader announces as 'current page'. And because re-rendering throws away the button you were standing on, after a keyboard move you must move focus onto the freshly drawn active button, or the user is dropped onto the body.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Tab &rarr; a page button&nbsp;&middot;&nbsp;Enter activates<br>&larr; &rarr; step&nbsp;&middot;&nbsp;Home / End jump<br><br>active button: aria-current="page"<br>after a move: re-focus the active button</div>',
+   code:"nav.addEventListener('keydown', e => {\n  const map = { ArrowLeft: page-1, ArrowRight: page+1,\n                Home: 1, End: totalPages() };\n  if (!(e.key in map)) return;\n  e.preventDefault();\n  goTo(map[e.key]);\n  list.querySelector('.page-btn.active')?.focus();\n});" },
+ { title:"10. When to paginate",
+   why:"Pagination is the honest pattern when users need to find a known item or feel oriented inside a bounded set: search results, admin tables, invoices, an archive. It gives a sense of size ('page 6 of 20'), stable positions you can bookmark, and a clean footer. Prefer infinite scroll for open-ended discovery feeds where the count does not matter and flow does; prefer a 'load more' button when you want lazy loading but still want to keep the footer reachable. And when pages come from a server, put the page in the URL (?page=6) so the state is shareable and survives a refresh - a naked client-only pager loses your place on reload.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">USE: find a known item &middot; bounded set<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;results &middot; tables &middot; archives<br>AVOID: endless feed &rarr; infinite scroll<br>server-paged? state lives in ?page=6</div>',
+   code:"// GOOD: bounded set, find-a-known-item\n[ search results, admin tables, archives ]\n\n// AVOID for endless discovery feeds:\n//   -> infinite scroll or a 'load more' button\n\n// Server-paged? keep it shareable:  /users?page=6&size=8" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4200); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
