@@ -55,6 +55,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 51 — FAB & Speed-Dial](https://dev48v.infy.uk/design/day51-fab.html) — `day51-fab.html`
 - [DesignFromZero · Day 52 — Chip / Tag Input](https://dev48v.infy.uk/design/day52-chip-input.html) — `day52-chip-input.html`
 - [DesignFromZero · Day 53 — Pagination](https://dev48v.infy.uk/design/day53-pagination.html) — `day53-pagination.html`
+- [DesignFromZero · Day 54 — Apple Settings](https://dev48v.infy.uk/design/day54-apple-settings.html) — `day54-apple-settings.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

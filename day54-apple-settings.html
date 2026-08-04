@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 54 — Apple Settings</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== demo surface ===== */
+  .demo-frame { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:16px; padding:26px 22px;
+                display:flex; justify-content:center; }
+
+  /* ===== THE PHONE FRAME (the whole component lives inside) ===== */
+  .ios-frame {
+    width:300px; max-width:100%; height:562px; border-radius:40px; overflow:hidden; position:relative;
+    display:flex; flex-direction:column; --s-scale:1;
+    background:var(--bg); box-shadow:0 0 0 10px #1c1c1e, 0 24px 50px rgba(15,23,42,.32);
+    /* light theme tokens */
+    --bg:#f2f2f7; --card:#ffffff; --sep:#d7d7db; --label:#1c1c1e; --muted:#8a8a8e;
+    --header:#6d6d72; --chev:#c4c4c7; --switchoff:#e9e9ea; --tap:rgba(120,120,128,.16);
+    transition:background .3s ease;
+  }
+  .ios-frame.dark {
+    --bg:#000000; --card:#1c1c1e; --sep:#38383a; --label:#ffffff; --muted:#8d8d93;
+    --header:#8d8d93; --chev:#48484a; --switchoff:#39393d; --tap:rgba(255,255,255,.12);
+  }
+
+  .ios-status { height:26px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+                padding:0 20px 0 26px; font-size:13px; font-weight:700; color:var(--label); background:var(--bg);
+                font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+  .ios-status .si { display:inline-flex; align-items:center; gap:6px; }
+  .ios-status .si svg { width:16px; height:16px; }
+  .ios-status .off  { opacity:.28; }
+  .ios-status .hide { display:none; }
+  .ios-batt { width:22px; height:12px; border:1.4px solid var(--label); border-radius:3px; position:relative; opacity:.9; }
+  .ios-batt::after { content:""; position:absolute; right:-3px; top:3px; width:2px; height:6px; background:var(--label); border-radius:0 1px 1px 0; }
+  .ios-batt::before { content:""; position:absolute; left:1.5px; top:1.5px; bottom:1.5px; width:70%; background:var(--label); border-radius:1px; }
+
+  .ios-navbar { height:50px; flex:0 0 auto; position:relative; display:flex; align-items:center; justify-content:center;
+                background:var(--bg); border-bottom:1px solid var(--sep); }
+  .ios-title  { font-size:17px; font-weight:700; color:var(--label); transition:opacity .2s; }
+  .ios-back   { position:absolute; left:6px; top:0; height:100%; display:none; align-items:center; gap:1px;
+                background:none; border:none; color:#0a84ff; font-size:16px; font-weight:500; cursor:pointer; padding:0 8px; }
+  .ios-back.show { display:flex; }
+  .ios-back .chev { font-size:26px; line-height:1; margin-top:-3px; font-weight:400; }
+  .ios-back .lbl  { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .ios-viewport { flex:1; position:relative; overflow:hidden; background:var(--bg); }
+  .ios-stack    { display:flex; height:100%; width:100%; transition:transform .34s cubic-bezier(.32,.72,0,1); }
+  .ios-dim      { position:absolute; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .2s ease; }
+  .s-panel      { flex:0 0 100%; width:100%; height:100%; overflow-y:auto; padding:16px 0 30px; }
+
+  /* ===== INSET-GROUPED LIST ===== */
+  .s-group  { margin:0 16px 22px; }
+  .s-header { padding:0 16px 7px; font-size:13px; text-transform:uppercase; letter-spacing:.01em; color:var(--header); }
+  .s-footer { padding:7px 16px 0; font-size:12px; line-height:1.42; color:var(--header); }
+  .s-card   { background:var(--card); border-radius:12px; overflow:hidden; }
+
+  .s-row { position:relative; display:flex; align-items:center; gap:12px; width:100%;
+           min-height:45px; padding:7px 16px; background:none; border:none; font-family:inherit; text-align:left; }
+  .s-row:not(:last-child)::after { content:""; position:absolute; left:57px; right:0; bottom:0;
+           height:1px; background:var(--sep); transform:scaleY(.5); transform-origin:bottom; }
+  .s-select:not(:last-child)::after { left:16px; }
+  .s-tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .s-tap:active { background:var(--tap); }
+
+  .s-tile { width:29px; height:29px; border-radius:7px; flex:0 0 auto; color:#fff;
+            display:flex; align-items:center; justify-content:center; }
+  .s-tile svg { width:18px; height:18px; }
+  .s-label { flex:1; min-width:0; color:var(--label); font-size:calc(16px * var(--s-scale)); font-weight:400; }
+  .s-trail { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+  .s-value { color:var(--muted); font-size:15px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .s-chevron { color:var(--chev); font-size:19px; font-weight:600; line-height:1; }
+
+  /* iOS switch */
+  .s-switch { width:51px; height:31px; border-radius:16px; background:var(--switchoff); border:none; padding:0;
+              position:relative; cursor:pointer; flex:0 0 auto; transition:background .25s ease; }
+  .s-switch.on { background:#34c759; }
+  .s-knob { position:absolute; top:2px; left:2px; width:27px; height:27px; border-radius:50%; background:#fff;
+            box-shadow:0 3px 6px rgba(0,0,0,.2), 0 0 0 .5px rgba(0,0,0,.04); transition:transform .26s cubic-bezier(.4,.1,.3,1.35); }
+  .s-switch.on .s-knob { transform:translateX(20px); }
+  .s-switch:focus-visible { outline:2px solid #0a84ff; outline-offset:3px; }
+
+  /* selection checkmark + swatch */
+  .s-check { color:#0a84ff; opacity:0; transform:scale(.5); transition:opacity .18s ease, transform .18s ease; display:flex; }
+  .s-check svg { width:19px; height:19px; }
+  .s-check.show { opacity:1; transform:scale(1); }
+  .s-swatch { width:29px; height:29px; border-radius:7px; flex:0 0 auto; box-shadow:inset 0 0 0 1px rgba(0,0,0,.1); }
+
+  /* slider row */
+  .s-row-slider { align-items:center; }
+  .s-slider-wrap { flex:1; display:flex; flex-direction:column; gap:6px; }
+  .s-slider-top  { display:flex; align-items:baseline; justify-content:space-between; }
+  .s-slider-name { color:var(--label); font-size:calc(15px * var(--s-scale)); }
+  .s-slider-val  { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+  .s-row-slider input[type=range] { width:100%; accent-color:#0a84ff; height:5px; cursor:pointer; margin:0; }
+
+  /* ===== read-out card ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .ro-phone  { border-radius:20px; padding:13px; position:relative; overflow:hidden; color:#fff; min-height:172px;
+               display:flex; flex-direction:column; box-shadow:inset 0 0 0 1px rgba(255,255,255,.14); }
+  .ro-statusbar { display:flex; align-items:center; justify-content:space-between; font-size:12px; font-weight:800;
+                  text-shadow:0 1px 3px rgba(0,0,0,.4); font-variant-numeric:tabular-nums; }
+  .ro-sicons { display:flex; gap:6px; }
+  .ro-si svg { width:15px; height:15px; }
+  .ro-si.off  { opacity:.32; }
+  .ro-si.hide { display:none; }
+  .ro-sample { flex:1; display:flex; align-items:center; justify-content:center; font-weight:800;
+               text-shadow:0 2px 10px rgba(0,0,0,.4); transition:font-size .15s ease; }
+  .ro-mode   { align-self:flex-start; background:rgba(255,255,255,.22); padding:3px 11px; border-radius:999px;
+               font-size:11px; font-weight:800; text-shadow:none; letter-spacing:.02em; }
+  .ro-dim    { position:absolute; inset:0; background:#000; pointer-events:none; transition:opacity .18s ease; }
+  .ro-inner  { position:relative; z-index:2; display:flex; flex-direction:column; height:100%; flex:1; }
+
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.03em; }
+  .pill.sw { padding-left:20px; position:relative; }
+  .pill.sw::before { content:""; position:absolute; left:6px; top:50%; transform:translateY(-50%); width:9px; height:9px; border-radius:3px; background:var(--sw,#999); }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .ios-stack, .s-knob, .s-switch, .s-check, .ro-dim, .ios-dim { animation:none !important; transition-duration:.001s !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero · Day 54</div>
+      <h1 class="text-xl font-bold">Apple Settings &mdash; the <strong>inset-grouped list</strong> that organises every option on iOS and macOS into rounded <strong>cards</strong> of rows, each card introduced by an uppercase <strong>header</strong> and closed by a small grey <strong>footnote</strong>. Every row is a <strong>leading icon tile</strong> + label + a <strong>trailing accessory</strong>, and the accessory is the whole vocabulary of the pattern: an animated iOS <strong>toggle switch</strong> (<code>role="switch"</code>, sliding knob), a <strong>chevron</strong> that shows the current <strong>value</strong> and <strong>pushes</strong> a subpage onto an in-panel <strong>navigation stack</strong> &mdash; a horizontal strip of screens translated by depth, with a <kbd>&lsaquo; Back</kbd> button that <strong>names where you came from</strong> &mdash; a <strong>checkmark</strong> selection row inside a <code>radiogroup</code>, and a <strong>slider</strong>. State is <strong>real</strong>: flip <strong>Dark</strong> and the entire panel repaints from its own tokens, drag <strong>Text Size</strong> and every label grows, pick a <strong>network</strong> or <strong>wallpaper</strong> deep in a subpage and the value <strong>flows back</strong> to the row that pushed it. Vanilla HTML, CSS and JS &mdash; no libraries, the model drives every pixel.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">The grouped list &mdash; <span class="text-indigo-600">tiles, switches, chevrons that push, and checkmarks that flow back</span>.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A <strong>settings screen</strong> is not one long list &mdash; it is <strong>inset groups</strong> of rounded cards, each a cluster of related rows under an uppercase <strong>header</strong> and above a grey <strong>footnote</strong>. Try the live phone: flip a <strong>switch</strong> (watch the knob slide), tap a row with a <strong>chevron</strong> to <strong>push</strong> a subpage &mdash; the whole screen slides left and a <kbd>&lsaquo; Back</kbd> button appears <strong>named after the screen you left</strong>. Inside <strong>Display &amp; Brightness</strong> choose <strong>Dark</strong> and the panel <strong>repaints itself</strong>; drag <strong>Text Size</strong> and every label grows; inside <strong>Wi-Fi</strong> or <strong>Wallpaper</strong> tap an option to move the <strong>checkmark</strong> &mdash; then go back and see the value <strong>waiting on the row that sent you</strong>. The card on the right is a pure read-out: a live preview that reflects the very same state.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-shrink-0" style="padding:10px;">
+            <div class="ios-frame" id="iosFrame">
+              <div class="ios-status">
+                <span>9:41</span>
+                <span class="ios-sicons" style="display:inline-flex;gap:6px;align-items:center;">
+                  <span class="si hide" id="fAir" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+                  </span>
+                  <span class="si" id="fWifi" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                  </span>
+                  <span class="ios-batt" aria-hidden="true"></span>
+                </span>
+              </div>
+              <div class="ios-navbar">
+                <button class="ios-back" id="iosBack" type="button" aria-label="Back">
+                  <span class="chev" aria-hidden="true">&lsaquo;</span><span class="lbl" id="iosBackLabel">Back</span>
+                </button>
+                <div class="ios-title" id="iosTitle">Settings</div>
+              </div>
+              <div class="ios-viewport">
+                <div class="ios-stack" id="iosStack"></div>
+                <div class="ios-dim" id="iosDim"></div>
+              </div>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3" style="max-width:300px;">A real component &mdash; <kbd>Tab</kbd> to reach any control, <kbd>Space</kbd> flips a switch, <kbd>Enter</kbd> pushes a screen, <kbd>Esc</kbd> goes back.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live preview &mdash; same state</div>
+              <div class="ro-phone" id="roPhone">
+                <div class="ro-dim" id="roDim"></div>
+                <div class="ro-inner">
+                  <div class="ro-statusbar">
+                    <span>9:41</span>
+                    <span class="ro-sicons">
+                      <span class="ro-si hide" id="roAir" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg></span>
+                      <span class="ro-si" id="roWifi" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></span>
+                      <span class="ro-si" id="roBt" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg></span>
+                    </span>
+                  </div>
+                  <div class="ro-sample" id="roSample">Aa</div>
+                  <div class="ro-mode" id="roMode">Light</div>
+                </div>
+              </div>
+
+              <div class="mt-4 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">appearance</span><span id="pAppear" class="pill mono">Light</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">wallpaper</span><span id="pWall" class="pill sw">Aurora</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">brightness</span><span id="pBright" class="pill mono">62%</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">text size</span><span id="pText" class="pill mono">level 3</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">network</span><span id="pNet" class="pill mono">HomeNet 5G</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">notifications</span><span id="pNotif" class="pill g">On</span></div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-200"><span class="text-slate-400 font-semibold">last action</span><span id="pLast" class="pill">&mdash;</span></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Every switch, slider and checkmark writes to one <code>state</code> object. This preview only <strong>reads</strong> it &mdash; which is why it can never drift from the list.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">iOS Settings, macOS System Settings, the settings pane of a hundred apps &mdash; the same shape each time: <strong>inset groups</strong> of rows, a <strong>tile</strong> to scan by, a <strong>trailing accessory</strong> that tells you what a row <em>does</em>, and a <strong>push stack</strong> that trades depth for a flat, uncluttered screen. Keep it honest &mdash; a <strong>switch</strong> for an instant on/off, a <strong>chevron</strong> when there is more behind it, a <strong>checkmark</strong> for one-of-many, real <strong>focusable</strong> controls, <code>role="switch"</code>/<code>radiogroup</code> and a <strong>back</strong> that says where it returns. Get those and a screen with fifty options still feels like nothing to navigate.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a settings list works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A settings screen is a <strong>model rendered into inset groups</strong>, plus a <strong>navigation stack</strong>. We start from the <strong>anatomy</strong> &mdash; group = header + rounded card of rows + footnote &mdash; describe the whole screen as <strong>data</strong>, render a <strong>row</strong> as tile + label + accessory, build the four accessories (<strong>switch</strong>, <strong>chevron</strong>, <strong>checkmark</strong>, <strong>slider</strong>), hold all values in one <strong>state</strong> object, wire the <strong>push/pop stack</strong> as a translated strip, make the <strong>navbar</strong> name the screen you left, let a deep <strong>selection flow back</strong> to its parent row, and finish with the <strong>a11y</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The anatomy &mdash; header, card, footnote</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The inset-grouped list is three parts per group: an uppercase <strong>header</strong>, a rounded <strong>card</strong> that clips its rows, and a small grey <strong>footnote</strong>. The card&rsquo;s <code>overflow:hidden</code> is what rounds the first and last rows for free; the hairline separators are inset to start after the icon tile, never under it.</p>
+        <div class="relative"><pre>.s-group  { margin:0 16px 22px; }         /* inset from the edges */
+.s-header { text-transform:uppercase; color:#6d6d72; }
+.s-card   { background:#fff; border-radius:12px; overflow:hidden; }
+.s-footer { color:#6d6d72; font-size:12px; }
+
+/* separator inset so it lines up with the label, not the tile */
+.s-row:not(:last-child)::after { left:57px; height:.5px; background:#d7d7db; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The whole screen is data</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not hand-write rows. Describe every screen as a <strong>model</strong>: a map of screens, each a list of groups, each group a list of <strong>row descriptors</strong>. A descriptor names its <code>type</code>, its icon and tint, the <code>state</code> key it reads/writes, and (for a chevron row) the <code>screen</code> it pushes and a <code>value</code> function. One data structure, one renderer.</p>
+        <div class="relative"><pre>const SCREENS = {
+  root: { title:"Settings", groups:[
+    { footer:"Airplane Mode turns off Wi-Fi &amp; Bluetooth.", rows:[
+      { type:"toggle", key:"airplane", label:"Airplane Mode", icon:"airplane", tint:"#ff9500" },
+      { type:"nav", label:"Wi-Fi", icon:"wifi", tint:"#007aff",
+        screen:"wifi", value: s =&gt; s.wifiOn ? s.network : "Off" },
+    ]},
+    { header:"PREFERENCES", rows:[ /* … */ ] },
+  ]},
+  display: { title:"Display &amp; Brightness", groups:[ /* … */ ] },
+};</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">A row = tile + label + accessory</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every row shares a skeleton: a coloured <strong>tile</strong> (29&times;29, a white SVG inside), a flexible <strong>label</strong>, and a <strong>trailing</strong> slot for the accessory. Build cells with <code>textContent</code>, never string concatenation, so a label can never smuggle in markup. The tile&rsquo;s SVG is trusted static icon markup.</p>
+        <div class="relative"><pre>function tile(name, tint){
+  const t = document.createElement("div");
+  t.className = "s-tile"; t.style.background = tint;
+  t.innerHTML = ICON[name];          // trusted static SVG
+  return t;
+}
+// row shell: &lt;div class="s-row"&gt; [tile] &lt;div class="s-label"&gt; &lt;div class="s-trail"&gt;
+label.textContent = r.label;         // safe: never innerHTML for data</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Accessory 1 &mdash; the switch</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The toggle is a real <code>&lt;button&gt;</code> with <code>role="switch"</code> and <code>aria-checked</code>. The knob is a circle moved with a CSS <code>transform</code> transition &mdash; the class <code>.on</code> both colours the track and slides the knob, so the visual and the announced state are set from one boolean and can never disagree.</p>
+        <div class="relative"><pre>const sw = document.createElement("button");
+sw.type = "button"; sw.setAttribute("role", "switch");
+sw.className = "s-switch" + (state[r.key] ? " on" : "");
+sw.setAttribute("aria-checked", String(!!state[r.key]));
+sw.innerHTML = '&lt;span class="s-knob"&gt;&lt;/span&gt;';
+sw.onclick = () =&gt; {
+  state[r.key] = !state[r.key];                 // flip the source of truth
+  sw.classList.toggle("on", state[r.key]);      // .on slides the knob (CSS)
+  sw.setAttribute("aria-checked", String(state[r.key]));
+  onStateChange();                              // repaint everything that reads it
+};</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Accessory 2 &mdash; the chevron that pushes</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A <strong>nav</strong> row is a button showing the current <strong>value</strong> and a <code>&rsaquo;</code> chevron. Its <code>value</code> is a <em>function</em> of state, so it always shows the truth; we stash that function on the element so it can be recomputed in place when the value changes deep in a subpage. Clicking it <strong>pushes</strong> the target screen.</p>
+        <div class="relative"><pre>const v = document.createElement("span");
+v.className = "s-value nav-val";
+v.textContent = r.value(state);       // "HomeNet 5G", "Dark", …
+v._valueFn = r.value;                 // remember how to recompute it
+row.onclick = () =&gt; push(r.screen);   // slide the subpage in
+
+// later, when any state changes:
+function updateNavValues(){
+  document.querySelectorAll(".nav-val")
+    .forEach(el =&gt; { if (el._valueFn) el.textContent = el._valueFn(state); });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Accessory 3 &amp; 4 &mdash; checkmark &amp; slider</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A <strong>selection</strong> group is a <code>radiogroup</code> of rows; the chosen one gets <code>aria-checked</code> and a blue <strong>checkmark</strong>. Selecting moves the mark to the tapped row (remove <code>.show</code> from siblings, add to this one) &mdash; no re-render needed. A <strong>slider</strong> row is a native <code>&lt;input type=range&gt;</code> writing straight to state on every <code>input</code>.</p>
+        <div class="relative"><pre>row.setAttribute("role", "radio");
+row.setAttribute("aria-checked", String(state[r.key] === r.value));
+row.onclick = () =&gt; {
+  state[r.key] = r.value;
+  card.querySelectorAll(".s-check").forEach(c =&gt; c.classList.remove("show"));
+  check.classList.add("show");        // checkmark animates to here
+  onStateChange();
+};
+
+// slider
+input.oninput = () =&gt; { state[r.key] = +input.value; onStateChange(); };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">The navigation stack &mdash; push &amp; pop</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Navigation is an <strong>array of screen ids</strong>. The DOM is a <strong>strip</strong> of full-width panels laid side by side; you show depth <code>d</code> by translating the strip <code>-d&times;100%</code>. <strong>Push</strong> builds a fresh panel, appends it, then shifts the strip &mdash; it slides in. <strong>Pop</strong> shifts back, then removes the panel after the transition.</p>
+        <div class="relative"><pre>let nav = ["root"];
+function push(id){
+  nav.push(id);
+  stack.append(renderScreen(id));                 // fresh panel off to the right
+  stack.style.transform = `translateX(-${(nav.length-1)*100}%)`;
+  syncNavbar();
+}
+function pop(){
+  if (nav.length &lt;= 1) return;
+  nav.pop();
+  stack.style.transform = `translateX(-${(nav.length-1)*100}%)`;
+  stack.addEventListener("transitionend", function h(){
+    stack.lastElementChild.remove();              // drop it once off-screen
+    stack.removeEventListener("transitionend", h);
+  });
+  syncNavbar();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The navbar names where you came from</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The bar reads from the stack: the centre <strong>title</strong> is the top screen, and the <strong>Back</strong> button is labelled with the <strong>previous</strong> screen&rsquo;s title &mdash; that is the small touch that makes an iOS back button feel oriented. At the root there is nothing to return to, so the button hides.</p>
+        <div class="relative"><pre>function syncNavbar(){
+  const top  = nav[nav.length - 1];
+  const prev = nav[nav.length - 2];
+  title.textContent = SCREENS[top].title;
+  if (prev){
+    back.classList.add("show");
+    backLabel.textContent = SCREENS[prev].title;    // "‹ Settings"
+    back.setAttribute("aria-label", "Back to " + SCREENS[prev].title);
+  } else {
+    back.classList.remove("show");                  // root: nothing behind
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">One state object, one repaint</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every control writes to a single <code>state</code>. After a write, <code>onStateChange()</code> fans out: recolour the panel for <strong>Dark</strong>, scale labels for <strong>Text Size</strong>, dim for <strong>Brightness</strong>, recompute the <strong>nav values</strong> (so a deep pick flows back), and repaint the preview. The list reacts to its <em>own</em> state &mdash; that is what makes it feel alive rather than static.</p>
+        <div class="relative"><pre>function onStateChange(){
+  frame.classList.toggle("dark", state.appearance === "dark");   // repaint tokens
+  frame.style.setProperty("--s-scale", 0.82 + state.textSize*0.06); // grow labels
+  dim.style.opacity = (100 - state.brightness) / 100 * 0.45;        // brightness
+  updateNavValues();     // Wi-Fi row now reads the network you just picked
+  paintPreview();        // the read-out card
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">A11y &amp; when to use which accessory</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Real <code>&lt;button&gt;</code>s give <kbd>Tab</kbd>/<kbd>Enter</kbd>/<kbd>Space</kbd> for free; add <kbd>Esc</kbd> to pop the stack. Mark switches <code>role="switch"</code>+<code>aria-checked</code>, wrap selection groups in <code>role="radiogroup"</code> with <code>aria-checked</code> radios, and keep the chevron/checkmark decorative (<code>aria-hidden</code>). Choose the accessory by meaning: <strong>switch</strong> = instant on/off, <strong>chevron</strong> = there is more behind it, <strong>checkmark</strong> = one of many, <strong>slider</strong> = a continuous range.</p>
+        <div class="relative"><pre>frame.addEventListener("keydown", e =&gt; {
+  if (e.key === "Escape") pop();          // back
+});
+// switch      -> role="switch"  aria-checked   (instant on/off)
+// nav+chevron -> a real button, value is a fn  (drills deeper)
+// select      -> role="radio" in a radiogroup  (one of many)
+// slider      -> &lt;input type=range&gt;             (continuous)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 54 of DesignFromZero done &mdash; Apple Settings.</h3><p class="text-sm text-indigo-700 mt-2">You built an iOS/macOS grouped settings list from nothing: <strong>inset groups</strong> of rounded cards (header + rows + footnote), every screen described as a <strong>data model</strong> and turned into rows of <strong>tile + label + accessory</strong>, the four accessories &mdash; animated <strong>switch</strong> (<code>role="switch"</code>), <strong>chevron</strong> whose <strong>value is a function of state</strong>, <code>radiogroup</code> <strong>checkmark</strong>, and <strong>slider</strong> &mdash; all writing to <strong>one state object</strong>. Navigation is an <strong>array of screens</strong> rendered as a <strong>translated strip</strong> that pushes and pops, a <strong>navbar</strong> that names where you came from, and a selection deep in a subpage that <strong>flows its value back</strong> to the row that sent you. Flip Dark and the panel repaints itself; drag Text Size and every label grows. <strong>&#128075; The screen behind every app&rsquo;s gear icon, rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== APPLE SETTINGS =====================================================
+// small helpers ----------------------------------------------------------
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const SVG = inner => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+
+// inline stroke icons (no emoji in the component itself) ------------------
+const ICON = {
+  airplane:  SVG('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/>'),
+  wifi:      SVG('<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>'),
+  bluetooth: SVG('<polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/>'),
+  display:   SVG('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  textsize:  SVG('<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>'),
+  wallpaper: SVG('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>'),
+  sound:     SVG('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/>'),
+  bell:      SVG('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'),
+  location:  SVG('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/>'),
+  analytics: SVG('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
+};
+const CHECK = SVG('<path d="M20 6 9 17l-5-5"/>');
+
+// wallpapers -------------------------------------------------------------
+const WALL = {
+  Aurora:   "linear-gradient(135deg,#5ee7df,#b490ca)",
+  Sky:      "linear-gradient(135deg,#2980b9,#6dd5fa)",
+  Graphite: "linear-gradient(135deg,#3a3a3c,#8e8e93)",
+  Sunset:   "linear-gradient(135deg,#ff512f,#f09819)",
+};
+
+// the single source of truth --------------------------------------------
+const state = {
+  airplane: false, wifiOn: true, network: "HomeNet 5G", bluetooth: true,
+  appearance: "light", brightness: 62, trueTone: true, textSize: 3,
+  wallpaper: "Aurora", ringer: 75, changeWithButtons: true, vibrate: true,
+  notifications: true, location: true, analytics: false,
+};
+let lastAction = "—";
+
+// the model: every screen described as data -----------------------------
+const SCREENS = {
+  root: { title: "Settings", groups: [
+    { footer: "Airplane Mode turns off Wi-Fi and Bluetooth. Turn them back on individually to use them in flight.", rows: [
+      { type: "toggle", key: "airplane", label: "Airplane Mode", icon: "airplane", tint: "#ff9500" },
+      { type: "nav", label: "Wi-Fi", icon: "wifi", tint: "#007aff", screen: "wifi",
+        value: s => s.airplane ? "Off" : (s.wifiOn ? s.network : "Off") },
+      { type: "toggle", key: "bluetooth", label: "Bluetooth", icon: "bluetooth", tint: "#0a84ff" },
+    ]},
+    { header: "PREFERENCES", footer: "Choose how the interface looks and sounds — changes preview instantly in the panel on the right.", rows: [
+      { type: "nav", label: "Display & Brightness", icon: "display", tint: "#5856d6", screen: "display", value: s => cap(s.appearance) },
+      { type: "nav", label: "Sounds & Haptics", icon: "sound", tint: "#ff2d55", screen: "sounds", value: s => s.ringer + "%" },
+      { type: "nav", label: "Wallpaper", icon: "wallpaper", tint: "#32ade6", screen: "wallpaper", value: s => s.wallpaper },
+    ]},
+    { header: "PRIVACY", footer: "Analytics helps improve products by sending anonymised usage data. No content is ever shared.", rows: [
+      { type: "toggle", key: "notifications", label: "Notifications", icon: "bell", tint: "#ff3b30" },
+      { type: "toggle", key: "location", label: "Location Services", icon: "location", tint: "#34c759" },
+      { type: "toggle", key: "analytics", label: "Share Analytics", icon: "analytics", tint: "#af52de" },
+    ]},
+  ]},
+
+  wifi: { title: "Wi-Fi", groups: [
+    { rows: [ { type: "toggle", key: "wifiOn", label: "Wi-Fi", icon: "wifi", tint: "#007aff" } ] },
+    { header: "Choose a Network", radio: true, footer: "Tap a network to join it — the chosen name flows back to the Wi-Fi row on the previous screen.", rows: [
+      { type: "select", key: "network", value: "HomeNet 5G",   label: "HomeNet 5G" },
+      { type: "select", key: "network", value: "Studio-Guest", label: "Studio-Guest" },
+      { type: "select", key: "network", value: "Pixel Hotspot", label: "Pixel Hotspot" },
+      { type: "select", key: "network", value: "Xfinity WiFi",  label: "Xfinity WiFi" },
+    ]},
+  ]},
+
+  display: { title: "Display & Brightness", groups: [
+    { header: "Appearance", radio: true, footer: "Choosing Dark instantly repaints the whole settings panel — the component reads its own state.", rows: [
+      { type: "select", key: "appearance", value: "light",     label: "Light" },
+      { type: "select", key: "appearance", value: "dark",      label: "Dark" },
+      { type: "select", key: "appearance", value: "automatic", label: "Automatic" },
+    ]},
+    { header: "Brightness", rows: [
+      { type: "slider", key: "brightness", icon: "display", tint: "#ff9500", min: 0, max: 100, label: "Brightness", format: v => v + "%" },
+      { type: "toggle", key: "trueTone", label: "True Tone", icon: "display", tint: "#ff9500" },
+    ]},
+    { header: "Text Size", radio: false, footer: "Larger text scales every label in the list — try it and watch the rows grow.", rows: [
+      { type: "slider", key: "textSize", icon: "textsize", tint: "#007aff", min: 1, max: 7, label: "Text Size", format: v => "Level " + v },
+    ]},
+  ]},
+
+  sounds: { title: "Sounds & Haptics", groups: [
+    { header: "Ringer and Alerts", rows: [
+      { type: "slider", key: "ringer", icon: "sound", tint: "#ff2d55", min: 0, max: 100, label: "Volume", format: v => v + "%" },
+    ]},
+    { footer: "When off, the side buttons no longer change the ringer volume.", rows: [
+      { type: "toggle", key: "changeWithButtons", label: "Change with Buttons", icon: "sound", tint: "#ff2d55" },
+      { type: "toggle", key: "vibrate", label: "Vibrate on Silent", icon: "bell", tint: "#ff3b30" },
+    ]},
+  ]},
+
+  wallpaper: { title: "Wallpaper", groups: [
+    { header: "Choose a New Wallpaper", radio: true, footer: "The selected wallpaper shows behind the live preview, and its name flows back to the Wallpaper row.", rows: [
+      { type: "select", key: "wallpaper", value: "Aurora",   label: "Aurora",   swatch: WALL.Aurora },
+      { type: "select", key: "wallpaper", value: "Sky",      label: "Sky",      swatch: WALL.Sky },
+      { type: "select", key: "wallpaper", value: "Graphite", label: "Graphite", swatch: WALL.Graphite },
+      { type: "select", key: "wallpaper", value: "Sunset",   label: "Sunset",   swatch: WALL.Sunset },
+    ]},
+  ]},
+};
+
+// element refs -----------------------------------------------------------
+const frame     = document.getElementById("iosFrame");
+const stackEl   = document.getElementById("iosStack");
+const dimEl     = document.getElementById("iosDim");
+const navTitle  = document.getElementById("iosTitle");
+const backBtn   = document.getElementById("iosBack");
+const backLabel = document.getElementById("iosBackLabel");
+
+// --- tile builder -------------------------------------------------------
+function tile(name, tint) {
+  const t = document.createElement("div");
+  t.className = "s-tile";
+  t.style.background = tint;
+  t.innerHTML = ICON[name] || "";   // trusted static SVG
+  return t;
+}
+
+// --- row builders (one per accessory) -----------------------------------
+function rowToggle(r) {
+  const row = document.createElement("div");
+  row.className = "s-row";
+  row.appendChild(tile(r.icon, r.tint));
+  const label = document.createElement("div");
+  label.className = "s-label"; label.textContent = r.label;
+  row.appendChild(label);
+  const trail = document.createElement("div"); trail.className = "s-trail";
+  const sw = document.createElement("button");
+  sw.type = "button";
+  sw.className = "s-switch" + (state[r.key] ? " on" : "");
+  sw.setAttribute("role", "switch");
+  sw.setAttribute("aria-checked", String(!!state[r.key]));
+  sw.setAttribute("aria-label", r.label);
+  sw.innerHTML = '<span class="s-knob"></span>';
+  sw.addEventListener("click", () => {
+    state[r.key] = !state[r.key];
+    sw.classList.toggle("on", state[r.key]);
+    sw.setAttribute("aria-checked", String(state[r.key]));
+    lastAction = r.label + " " + (state[r.key] ? "on" : "off");
+    onStateChange();
+  });
+  trail.appendChild(sw);
+  row.appendChild(trail);
+  return row;
+}
+
+function rowNav(r) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "s-row s-tap";
+  if (r.icon) row.appendChild(tile(r.icon, r.tint));
+  const label = document.createElement("div");
+  label.className = "s-label"; label.textContent = r.label;
+  row.appendChild(label);
+  const trail = document.createElement("div"); trail.className = "s-trail";
+  if (r.value) {
+    const v = document.createElement("span");
+    v.className = "s-value nav-val";
+    v.textContent = r.value(state);
+    v._valueFn = r.value;
+    trail.appendChild(v);
+  }
+  const chev = document.createElement("span");
+  chev.className = "s-chevron"; chev.setAttribute("aria-hidden", "true");
+  chev.textContent = "›";
+  trail.appendChild(chev);
+  row.appendChild(trail);
+  row.setAttribute("aria-label", r.label + (r.value ? (", " + r.value(state)) : ""));
+  row.addEventListener("click", () => { lastAction = "open " + r.label; push(r.screen); });
+  return row;
+}
+
+function rowSelect(r) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "s-row s-tap s-select";
+  row.setAttribute("role", "radio");
+  const selected = state[r.key] === r.value;
+  row.setAttribute("aria-checked", String(selected));
+  if (r.swatch) {
+    const sw = document.createElement("span");
+    sw.className = "s-swatch"; sw.style.background = r.swatch;
+    row.appendChild(sw);
+  }
+  const label = document.createElement("div");
+  label.className = "s-label"; label.textContent = r.label;
+  row.appendChild(label);
+  const trail = document.createElement("div"); trail.className = "s-trail";
+  const ck = document.createElement("span");
+  ck.className = "s-check" + (selected ? " show" : "");
+  ck.setAttribute("aria-hidden", "true");
+  ck.innerHTML = CHECK;
+  trail.appendChild(ck);
+  row.appendChild(trail);
+  row.addEventListener("click", () => {
+    state[r.key] = r.value;
+    const card = row.parentElement;
+    card.querySelectorAll(".s-select").forEach(x => {
+      x.setAttribute("aria-checked", "false");
+      const c = x.querySelector(".s-check"); if (c) c.classList.remove("show");
+    });
+    row.setAttribute("aria-checked", "true");
+    ck.classList.add("show");
+    lastAction = "set " + r.label;
+    onStateChange();
+  });
+  return row;
+}
+
+function rowSlider(r) {
+  const row = document.createElement("div");
+  row.className = "s-row s-row-slider";
+  if (r.icon) row.appendChild(tile(r.icon, r.tint));
+  const wrap = document.createElement("div"); wrap.className = "s-slider-wrap";
+  const top = document.createElement("div"); top.className = "s-slider-top";
+  const nm = document.createElement("span"); nm.className = "s-slider-name"; nm.textContent = r.label;
+  const vv = document.createElement("span"); vv.className = "s-slider-val";
+  vv.textContent = r.format ? r.format(state[r.key]) : state[r.key];
+  top.appendChild(nm); top.appendChild(vv);
+  const inp = document.createElement("input");
+  inp.type = "range"; inp.min = r.min; inp.max = r.max; inp.step = r.step || 1;
+  inp.value = state[r.key]; inp.setAttribute("aria-label", r.label);
+  inp.addEventListener("input", () => {
+    state[r.key] = +inp.value;
+    vv.textContent = r.format ? r.format(state[r.key]) : state[r.key];
+    lastAction = r.label + " " + (r.format ? r.format(state[r.key]) : state[r.key]);
+    onStateChange();
+  });
+  wrap.appendChild(top); wrap.appendChild(inp);
+  row.appendChild(wrap);
+  return row;
+}
+
+// --- group + screen renderers -------------------------------------------
+function renderGroup(g) {
+  const sec = document.createElement("section");
+  sec.className = "s-group";
+  if (g.header) {
+    const h = document.createElement("div");
+    h.className = "s-header"; h.textContent = g.header;
+    sec.appendChild(h);
+  }
+  const card = document.createElement("div");
+  card.className = "s-card";
+  if (g.radio) {
+    card.setAttribute("role", "radiogroup");
+    if (g.header) card.setAttribute("aria-label", g.header);
+  }
+  g.rows.forEach(r => {
+    let el;
+    if (r.type === "toggle")      el = rowToggle(r);
+    else if (r.type === "nav")    el = rowNav(r);
+    else if (r.type === "select") el = rowSelect(r);
+    else if (r.type === "slider") el = rowSlider(r);
+    if (el) card.appendChild(el);
+  });
+  sec.appendChild(card);
+  if (g.footer) {
+    const f = document.createElement("div");
+    f.className = "s-footer"; f.textContent = g.footer;
+    sec.appendChild(f);
+  }
+  return sec;
+}
+
+function renderScreen(id) {
+  const scr = SCREENS[id];
+  const panel = document.createElement("div");
+  panel.className = "s-panel";
+  panel.dataset.screen = id;
+  scr.groups.forEach(g => panel.appendChild(renderGroup(g)));
+  return panel;
+}
+
+// --- the navigation stack -----------------------------------------------
+let nav = ["root"];
+
+function syncNavbar() {
+  const top = nav[nav.length - 1];
+  const prev = nav[nav.length - 2];
+  navTitle.textContent = SCREENS[top].title;
+  if (prev !== undefined) {
+    backBtn.classList.add("show");
+    backLabel.textContent = SCREENS[prev].title;
+    backBtn.setAttribute("aria-label", "Back to " + SCREENS[prev].title);
+  } else {
+    backBtn.classList.remove("show");
+  }
+}
+
+function push(id) {
+  if (!SCREENS[id]) return;
+  nav.push(id);
+  const panel = renderScreen(id);
+  stackEl.appendChild(panel);
+  void stackEl.offsetWidth;                 // commit layout before we translate
+  stackEl.style.transform = "translateX(-" + ((nav.length - 1) * 100) + "%)";
+  syncNavbar();
+}
+
+function pop() {
+  if (nav.length <= 1) return;
+  lastAction = "back";
+  nav.pop();
+  stackEl.style.transform = "translateX(-" + ((nav.length - 1) * 100) + "%)";
+  syncNavbar();
+  const handler = () => {
+    while (stackEl.children.length > nav.length) stackEl.removeChild(stackEl.lastElementChild);
+    stackEl.removeEventListener("transitionend", handler);
+  };
+  stackEl.addEventListener("transitionend", handler);
+  paintDetail();
+}
+
+backBtn.addEventListener("click", pop);
+frame.addEventListener("keydown", e => { if (e.key === "Escape") pop(); });
+
+// --- side-effects that read the state -----------------------------------
+function updateNavValues() {
+  stackEl.querySelectorAll(".nav-val").forEach(v => { if (v._valueFn) v.textContent = v._valueFn(state); });
+}
+function applyAppearance() {
+  const dark = state.appearance === "dark";
+  frame.classList.toggle("dark", dark);
+  dimEl.style.opacity = ((100 - state.brightness) / 100 * 0.45).toFixed(3);
+  frame.style.setProperty("--s-scale", (0.82 + state.textSize * 0.06).toFixed(3));
+}
+function updateStatus() {
+  document.getElementById("fAir").classList.toggle("hide", !state.airplane);
+  document.getElementById("fWifi").classList.toggle("off", state.airplane || !state.wifiOn);
+}
+
+// --- the read-out card (a pure reader of state) -------------------------
+const roPhone  = document.getElementById("roPhone");
+const roDim    = document.getElementById("roDim");
+const roSample = document.getElementById("roSample");
+const roMode   = document.getElementById("roMode");
+const roAir    = document.getElementById("roAir");
+const roWifi   = document.getElementById("roWifi");
+const roBt     = document.getElementById("roBt");
+const pAppear  = document.getElementById("pAppear");
+const pWall    = document.getElementById("pWall");
+const pBright  = document.getElementById("pBright");
+const pText    = document.getElementById("pText");
+const pNet     = document.getElementById("pNet");
+const pNotif   = document.getElementById("pNotif");
+const pLast    = document.getElementById("pLast");
+
+function paintDetail() {
+  const dark = state.appearance === "dark";
+  roPhone.style.background = WALL[state.wallpaper];
+  const bright = (100 - state.brightness) / 100 * 0.5;
+  roDim.style.opacity = Math.min(0.82, bright + (dark ? 0.34 : 0)).toFixed(3);
+  roSample.style.fontSize = (18 + state.textSize * 4) + "px";
+  roMode.textContent = cap(state.appearance) + (dark ? " · repainted" : "");
+  roAir.classList.toggle("hide", !state.airplane);
+  roWifi.classList.toggle("off", state.airplane || !state.wifiOn);
+  roBt.classList.toggle("off", state.airplane || !state.bluetooth);
+
+  pAppear.textContent = cap(state.appearance);
+  pWall.textContent = state.wallpaper;
+  pWall.style.setProperty("--sw", "#7c8bd0");
+  pBright.textContent = state.brightness + "%";
+  pText.textContent = "level " + state.textSize;
+  pNet.textContent = state.airplane ? "Airplane" : (state.wifiOn ? state.network : "Off");
+  pNotif.textContent = state.notifications ? "On" : "Off";
+  pNotif.className = "pill " + (state.notifications ? "g" : "r");
+  pLast.textContent = lastAction;
+  pLast.className = "pill" + (lastAction === "—" ? "" : " a");
+}
+
+// --- the one fan-out called after every state write ---------------------
+function onStateChange() {
+  applyAppearance();
+  updateStatus();
+  updateNavValues();
+  paintDetail();
+}
+
+// --- boot ----------------------------------------------------------------
+stackEl.appendChild(renderScreen("root"));
+syncNavbar();
+onStateChange();
+
+// ===== UNDERSTAND step engine ===========================================
+const CONCEPT_STEPS = [
+ { title:"1. It is not a list — it is inset groups",
+   why:"The first insight is that a settings screen is not one long list; it is a stack of inset groups. Each group is a rounded card that clips a small cluster of related rows, introduced by an uppercase header and closed by a grey footnote that explains or qualifies. The grouping itself carries meaning: rows in one card belong together. The card's rounded corners come for free from overflow:hidden on the container, so the first and last rows are rounded without any per-row work, and the hairline separators between rows are inset to begin after the icon tile, never running under it.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">HEADER<br><div style="background:#fff;border-radius:10px;padding:8px;margin:6px 0;text-align:left;">&nbsp;row&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9737;<br>&nbsp;row&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rsaquo;<br>&nbsp;row&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#10003;</div>footnote text</div>',
+   code:".s-group  { margin:0 16px 22px; }        // inset from screen edges\n.s-header { text-transform:uppercase; color:#6d6d72; }\n.s-card   { background:#fff; border-radius:12px; overflow:hidden; }\n.s-footer { color:#6d6d72; font-size:12px; }" },
+ { title:"2. Describe the screen as data",
+   why:"A settings screen with dozens of rows should never be hand-written as markup. Describe it as a model: a map of screens, each screen a list of groups, each group a list of row descriptors. A descriptor is plain data - it names the row type, its icon and tint, the state key it reads and writes, and for a drill-in row the target screen and a value function. One renderer walks that data and produces DOM. Adding a row, or a whole screen, becomes a data edit, not a DOM edit, and every row is guaranteed to look and behave consistently because they all flow through the same builders.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">SCREENS = {<br>&nbsp;&nbsp;root: { groups:[ {rows:[ &hellip; ]} ] },<br>&nbsp;&nbsp;display: { groups:[ &hellip; ] },<br>&nbsp;&nbsp;wifi: { groups:[ &hellip; ] },<br>}<br><br>data &rarr; one renderer &rarr; DOM</div>',
+   code:"const SCREENS = {\n  root: { title:'Settings', groups:[\n    { footer:'\\u2026', rows:[\n      { type:'toggle', key:'airplane', label:'Airplane Mode', icon:'airplane' },\n      { type:'nav', label:'Wi-Fi', screen:'wifi',\n        value: s => s.wifiOn ? s.network : 'Off' },\n    ]},\n  ]},\n};" },
+ { title:"3. A row is tile + label + accessory",
+   why:"Every row, whatever it does, shares one skeleton: a leading coloured tile (a 29-pixel rounded square with a white icon), a flexible label that takes the middle, and a trailing slot that holds the accessory. That shared skeleton is why a settings list scans so easily - the eye locks onto the column of tiles on the left and the column of accessories on the right. Labels are always written with textContent, never by concatenating strings into innerHTML, so a row's text can never smuggle in markup; only the tile's icon is innerHTML, and that is trusted static SVG we control.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[&#9633;]&nbsp;&nbsp;Label&nbsp;&nbsp;&hellip;&hellip;&hellip;&nbsp;&nbsp;[accessory]<br>&nbsp;tile&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;grows&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;switch /<br>&nbsp;29px&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;chevron</div>',
+   code:"function tile(name, tint){\n  const t = document.createElement('div');\n  t.className = 's-tile'; t.style.background = tint;\n  t.innerHTML = ICON[name];        // trusted static SVG\n  return t;\n}\nlabel.textContent = r.label;       // data is ALWAYS textContent" },
+ { title:"4. The switch: one boolean, two states",
+   why:"The toggle is the accessory people reach for most, and it must be a real control - a button with role='switch' and aria-checked, not a styled div. Visually it is a track and a knob; a single class, .on, both colours the track green and slides the knob to the right with a CSS transform transition. Because that one class drives both the colour and the knob position, and the same boolean sets aria-checked, the thing a sighted user sees and the thing a screen reader announces are wired to a single source and can never drift apart. Clicking flips state, toggles the class, updates aria, and calls the one repaint function.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">off:&nbsp;&nbsp;( &#9679;&nbsp;&nbsp;&nbsp;&nbsp;)&nbsp;&nbsp;grey<br>on:&nbsp;&nbsp;&nbsp;(&nbsp;&nbsp;&nbsp;&nbsp;&#9679; )&nbsp;&nbsp;green<br><br>.on &rarr; colour + translateX(knob)<br>aria-checked = same boolean</div>',
+   code:"sw.setAttribute('role','switch');\nsw.setAttribute('aria-checked', String(state[key]));\nsw.onclick = () => {\n  state[key] = !state[key];\n  sw.classList.toggle('on', state[key]);   // CSS slides the knob\n  sw.setAttribute('aria-checked', String(state[key]));\n  onStateChange();\n};" },
+ { title:"5. The chevron: a value that is a function",
+   why:"A drill-in row shows a chevron and, usually, the current value of what lies behind it - the Wi-Fi row shows the network name, Display shows Light or Dark. The trick that keeps it honest is to store the value not as text but as a function of state, and to stash that function on the DOM element. When something changes it three screens deep, a single sweep re-runs every stored value function and rewrites the text in place. So a network you pick inside the Wi-Fi subpage appears on the Wi-Fi row the instant you go back, with no bespoke wiring between the two screens.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Wi-Fi&nbsp;&nbsp;&hellip;&nbsp;&nbsp;HomeNet 5G&nbsp;&nbsp;&rsaquo;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&uarr;<br>value = s =&gt; s.wifiOn ? s.network : "Off"<br><br>recompute all .nav-val on any change</div>',
+   code:"v.textContent = r.value(state);   // e.g. 'HomeNet 5G'\nv._valueFn = r.value;             // remember how to recompute\n\nfunction updateNavValues(){\n  document.querySelectorAll('.nav-val').forEach(el =>\n    { if (el._valueFn) el.textContent = el._valueFn(state); });\n}" },
+ { title:"6. The checkmark: one of many",
+   why:"When a setting is a choice from a small fixed set - appearance, a wallpaper, a Wi-Fi network - the pattern is a selection group: a card marked role='radiogroup' whose rows are radios, the chosen one carrying aria-checked and a blue checkmark on the trailing side. Selecting is cheap and needs no re-render: remove the .show class from every checkmark in the card, add it to the tapped row, set the aria state, and write the value. The checkmark fades and scales in with a short CSS transition, which is the small motion that makes the choice feel registered.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono" style="text-align:left;">Light<br>Dark&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#10003;<br>Automatic<br><br>radiogroup &middot; move the &#10003; on tap</div>',
+   code:"row.setAttribute('role','radio');\nrow.onclick = () => {\n  state[key] = value;\n  card.querySelectorAll('.s-check')\n      .forEach(c => c.classList.remove('show'));\n  check.classList.add('show');       // checkmark animates here\n  onStateChange();\n};" },
+ { title:"7. Navigation is a stack of screens",
+   why:"Drilling in and out is modelled as a stack - an array of screen ids, starting at ['root']. Pushing appends an id; popping removes the last. The DOM mirrors it as a horizontal strip of full-width panels sitting side by side inside a clipped viewport; showing depth d is simply translating the strip by minus d times one hundred percent. Push builds a fresh panel for the new screen, appends it off to the right, then shifts the strip so it slides in. Pop shifts the strip back and, once the transition ends, removes the now off-screen panel. The animation is a single transform - cheap and smooth.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">nav = [root, display]&nbsp;&nbsp;depth 1<br>[ root ][ display ][ &hellip; ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&larr; translateX(-100%)<br><br>push = append + shift &middot; pop = shift + drop</div>',
+   code:"let nav = ['root'];\nfunction push(id){\n  nav.push(id);\n  stack.append(renderScreen(id));\n  stack.style.transform =\n    `translateX(-${(nav.length-1)*100}%)`;\n  syncNavbar();\n}" },
+ { title:"8. The navbar names where you came from",
+   why:"A polished back button does not just say 'Back' - it names the screen you will return to, and the title in the centre names the screen you are on. Both are pure reads off the stack: the title is the top id, the back label is the id one below it. At the root the array has a single entry, there is nothing below, so the back button hides entirely. Keeping the navbar derived from the same stack that drives the panels means the label, the title and the visible screen can never disagree - there is one source of truth for 'where am I'.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&lsaquo; Settings&nbsp;&nbsp;&nbsp;[ Wi-Fi ]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>&nbsp;&nbsp;&uarr; prev&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&uarr; top<br><br>root &rarr; nothing below &rarr; hide Back</div>',
+   code:"function syncNavbar(){\n  const top = nav[nav.length-1], prev = nav[nav.length-2];\n  title.textContent = SCREENS[top].title;\n  if (prev !== undefined){\n    backLabel.textContent = SCREENS[prev].title;   // '\\u2039 Settings'\n    back.classList.add('show');\n  } else back.classList.remove('show');\n}" },
+ { title:"9. One state, one repaint",
+   why:"Every control - switch, slider, checkmark - writes to a single state object and then calls one function, onStateChange. That function fans out to everything that reads the state: it toggles the frame's dark class so the whole panel repaints from its CSS tokens, sets a scale variable so every label grows for Text Size, sets an overlay opacity for Brightness, re-runs the nav value functions so a deep pick flows back, and repaints the preview card. Nothing polls, nothing observes; the write is explicit and the fan-out is explicit, which makes the data flow trivial to follow and impossible to get half-applied.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">control &rarr; state.x = v &rarr; onStateChange()<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>dark&nbsp;&nbsp;scale&nbsp;&nbsp;navvals&nbsp;&nbsp;preview<br><br>write once, fan out once</div>',
+   code:"function onStateChange(){\n  frame.classList.toggle('dark', state.appearance === 'dark');\n  frame.style.setProperty('--s-scale', 0.82 + state.textSize*0.06);\n  dim.style.opacity = (100 - state.brightness)/100 * 0.45;\n  updateNavValues();   // deep pick flows back to the parent row\n  paintPreview();\n}" },
+ { title:"10. Choosing the right accessory",
+   why:"The last thing is knowing which accessory a row deserves, because the accessory is a promise about what the row does. A switch means an instant, reversible on/off with no further screen - Wi-Fi, notifications. A chevron means there is more behind this row; it drills into a subpage. A checkmark inside a radiogroup means pick exactly one from a small set. A slider means a continuous range. Get the promise right and the screen is legible before a single tap; get it wrong - a chevron that toggles, a switch that opens a page - and every row becomes a guess. Real buttons, role='switch' and radiogroup, decorative chevrons and checkmarks marked aria-hidden, and Escape to pop the stack round out the accessibility.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono" style="text-align:left;">switch&nbsp;&nbsp;&nbsp;&rarr; instant on / off<br>chevron&nbsp;&rarr; there is more behind it<br>check&nbsp;&nbsp;&nbsp;&rarr; one of many<br>slider&nbsp;&nbsp;&rarr; a continuous range</div>',
+   code:"// switch      -> role='switch'  aria-checked      (instant on/off)\n// nav+chevron -> a real button, value is a function (drills deeper)\n// select      -> role='radio' in a radiogroup       (one of many)\n// slider      -> <input type=range>                 (continuous)\nframe.addEventListener('keydown', e => { if (e.key==='Escape') pop(); });" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
