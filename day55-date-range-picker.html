@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 55 — Date Range Picker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+
+  /* ===== THE DATE-RANGE PICKER ===== */
+  .dr-shell { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:20px 22px;
+              box-shadow:0 10px 30px rgba(15,23,42,.06); }
+
+  /* presets */
+  .dr-presets { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; align-items:center; }
+  .dr-preset { border:1px solid #e2e8f0; background:#f8fafc; color:#334155; font-weight:600; font-size:13px;
+               padding:6px 13px; border-radius:999px; cursor:pointer; font-family:inherit; transition:all .15s; }
+  .dr-preset:hover { border-color:#6366f1; color:#4338ca; background:#eef2ff; }
+  .dr-preset.active { background:#6366f1; border-color:#6366f1; color:#fff; }
+  .dr-clear { margin-left:auto; border:none; background:none; color:#94a3b8; font-weight:600; font-size:13px;
+              cursor:pointer; font-family:inherit; padding:6px 4px; }
+  .dr-clear:hover { color:#ef4444; }
+
+  /* two months side by side */
+  .dr-cal { display:flex; gap:26px; justify-content:center; }
+  @media (max-width:560px){ .dr-cal { flex-direction:column; gap:20px; align-items:center; } }
+  .dr-month { flex:0 0 auto; }
+  .dr-mhead { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; height:30px; }
+  .dr-mtitle { font-weight:700; font-size:15px; color:#0f172a; flex:1; text-align:center; font-variant-numeric:tabular-nums; }
+  .dr-mhead > .dr-spacer { width:30px; height:30px; }
+  .dr-arrow { width:30px; height:30px; border:1px solid #e2e8f0; background:#fff; border-radius:9px; cursor:pointer;
+              color:#475569; font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center;
+              font-family:inherit; transition:all .15s; }
+  .dr-arrow:hover { border-color:#6366f1; color:#4338ca; background:#eef2ff; }
+
+  /* the grid — 7 fixed columns, no gap so the range band is continuous */
+  .dr-grid { display:grid; grid-template-columns:repeat(7, 40px); grid-auto-rows:40px; }
+  .dr-wd { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;
+           color:#94a3b8; text-transform:uppercase; }
+  .dr-blank { }
+
+  /* a day is a full-cell button; the number sits in a 34px inner circle */
+  .dr-day { position:relative; border:none; background:none; font-family:inherit; padding:0; cursor:pointer;
+            display:flex; align-items:center; justify-content:center; }
+  .dr-num { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+            font-size:13px; font-weight:600; color:#334155; position:relative; z-index:1; transition:background .12s; }
+  .dr-day:hover .dr-num { background:#eef2ff; }
+  .dr-day.today .dr-num { box-shadow:inset 0 0 0 1.5px #c7d2fe; }
+
+  /* the in-range band fills the whole cell (continuous within a week row) */
+  .dr-day.in-range { background:#e0e7ff; }
+  .dr-day.in-range .dr-num { color:#3730a3; }
+  /* endpoints: half-band toward the middle + a solid circle */
+  .dr-day.range-start { background:linear-gradient(to right, transparent 0 50%, #e0e7ff 50% 100%); }
+  .dr-day.range-end   { background:linear-gradient(to left,  transparent 0 50%, #e0e7ff 50% 100%); }
+  .dr-day.single .dr-num,
+  .dr-day.range-start .dr-num,
+  .dr-day.range-end .dr-num { background:#6366f1; color:#fff; box-shadow:0 2px 6px rgba(99,102,241,.45); }
+  /* while dragging out the range, the hovered end is tentative (dashed, not filled) */
+  .dr-day.preview.range-end { background:linear-gradient(to left, transparent 0 50%, #eef2ff 50% 100%); }
+  .dr-day.preview.range-end .dr-num { background:#eef2ff; color:#4338ca; box-shadow:inset 0 0 0 1.5px #818cf8; }
+  .dr-day:focus-visible { outline:none; }
+  .dr-day:focus-visible .dr-num { box-shadow:0 0 0 2px #6366f1, 0 0 0 4px rgba(99,102,241,.25); }
+
+  /* output line under the calendars */
+  .dr-output { margin-top:18px; padding-top:16px; border-top:1px solid #eef2f6; display:flex; align-items:center;
+               justify-content:space-between; gap:12px; flex-wrap:wrap; min-height:34px; }
+  .dr-out-range { font-weight:700; color:#0f172a; font-size:15px; font-variant-numeric:tabular-nums; }
+  .dr-arrow-sep { color:#6366f1; margin:0 5px; }
+  .dr-out-count { font-weight:700; color:#4338ca; background:#eef2ff; padding:5px 13px; border-radius:999px;
+                  font-size:13px; font-variant-numeric:tabular-nums; }
+  .dr-out-hint, .dr-out-empty { color:#94a3b8; font-size:13px; font-weight:500; }
+
+  /* read-out summary card */
+  .dr-summary { display:flex; gap:16px; align-items:center; background:#fff; border:1px solid #e2e8f0;
+                border-radius:14px; padding:14px 16px; }
+  .dr-sum-count { text-align:center; flex:0 0 auto; }
+  .dr-sum-count span { display:block; font-size:30px; font-weight:900; color:#6366f1; line-height:1; font-variant-numeric:tabular-nums; }
+  .dr-sum-count small { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; font-weight:700; }
+  .dr-sum-dates { flex:1; font-size:13px; color:#334155; display:flex; flex-direction:column; gap:9px; min-width:0; }
+  .dr-sum-dates b { font-weight:700; font-variant-numeric:tabular-nums; }
+  .dr-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#6366f1; margin-right:7px; vertical-align:middle; }
+  .dr-dot.end { background:#a855f7; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .dr-num { animation:none !important; transition-duration:.001s !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 55</div>
+      <h1 class="text-xl font-bold">Date Range Picker &mdash; a <strong>two-month</strong> calendar you build by hand from real <strong>calendar math</strong> (leap-year <strong>days-in-month</strong>, the <strong>first-weekday offset</strong> that positions day&nbsp;1, a 7-column grid of blanks + numbers) and drive with a tiny <strong>two-click state machine</strong>: the first click sets the <strong>start</strong>, the second sets the <strong>end</strong> (auto-swapped so start&nbsp;&le;&nbsp;end), and in between every hovered day paints a live <strong>preview</strong> of the range-to-be. Days compare through one monotonic <strong>integer key</strong> so a range flows cleanly <strong>across the month boundary</strong> &mdash; start&nbsp;/&nbsp;end circles, a continuous <strong>in-range band</strong>, an inclusive <strong>day count</strong>. Quick <strong>presets</strong> (Today, Last 7 / 30 days, This month) are just date arithmetic that writes the same two variables, <kbd>&larr;&rarr;&uarr;&darr;</kbd> move a roving focus a day / a week at a time and <kbd>Enter</kbd> picks. Vanilla HTML, CSS and JS &mdash; no libraries, no <code>&lt;input type=date&gt;</code>, the model draws every cell.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Click a <span class="text-indigo-600">start</span>, click an <span class="text-purple-600">end</span> &mdash; the range paints itself across two months.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A range picker is a <strong>two-click state machine</strong> sitting on top of a calendar you draw yourself. <strong>Click any day</strong> to set the start; the next click sets the end &mdash; and if you click <em>earlier</em> than the start, the two <strong>swap</strong> so the range always reads left-to-right. While you are mid-selection, <strong>hover</strong> to preview the range-to-be. The two months share one clock, so a range that <strong>crosses the boundary</strong> highlights seamlessly from March into April. Try the <strong>presets</strong> &mdash; they are pure date arithmetic that writes the very same two dates &mdash; or use <kbd>&larr;&rarr;&uarr;&darr;</kbd> to move a day / a week and <kbd>Enter</kbd> to pick. The card on the right is a pure read-out of the same state: two endpoints and an inclusive <strong>day count</strong>.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-shrink-0 w-full max-w-xl">
+            <div class="dr-shell" id="drShell">
+              <div class="dr-presets" id="drPresets">
+                <button class="dr-preset" data-preset="today">Today</button>
+                <button class="dr-preset" data-preset="last7">Last 7 days</button>
+                <button class="dr-preset" data-preset="last30">Last 30 days</button>
+                <button class="dr-preset" data-preset="month">This month</button>
+                <button class="dr-clear" id="drClear" type="button">Clear</button>
+              </div>
+
+              <div class="dr-cal" id="drCal">
+                <div class="dr-month">
+                  <div class="dr-mhead">
+                    <button class="dr-arrow" id="drPrev" type="button" aria-label="Previous month">&lsaquo;</button>
+                    <div class="dr-mtitle" id="drTitle0"></div>
+                    <span class="dr-spacer" aria-hidden="true"></span>
+                  </div>
+                  <div class="dr-grid" id="drGrid0" role="grid" aria-label="First month"></div>
+                </div>
+                <div class="dr-month">
+                  <div class="dr-mhead">
+                    <span class="dr-spacer" aria-hidden="true"></span>
+                    <div class="dr-mtitle" id="drTitle1"></div>
+                    <button class="dr-arrow" id="drNext" type="button" aria-label="Next month">&rsaquo;</button>
+                  </div>
+                  <div class="dr-grid" id="drGrid1" role="grid" aria-label="Second month"></div>
+                </div>
+              </div>
+
+              <div class="dr-output" id="drOutput" aria-live="polite"></div>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3">Real component &mdash; <kbd>Tab</kbd> into the grid, <kbd>&larr;&rarr;&uarr;&darr;</kbd> move a day / week, <kbd>Enter</kbd> picks, <kbd>&lsaquo;</kbd> <kbd>&rsaquo;</kbd> change months.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live read-out &mdash; same state</div>
+              <div class="dr-summary">
+                <div class="dr-sum-count"><span id="roCount">0</span><small>days</small></div>
+                <div class="dr-sum-dates">
+                  <div><span class="dr-dot"></span> Start: <b id="roStart">&mdash;</b></div>
+                  <div><span class="dr-dot end"></span> End: <b id="roEnd">&mdash;</b></div>
+                </div>
+              </div>
+
+              <div class="mt-4 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">start</span><span id="pStart" class="pill mono">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">end</span><span id="pEnd" class="pill mono">&mdash;</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">days (inclusive)</span><span id="pDays" class="pill mono">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">nights</span><span id="pNights" class="pill mono">0</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">preset</span><span id="pPreset" class="pill">&mdash;</span></div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-200"><span class="text-slate-400 font-semibold">last action</span><span id="pLast" class="pill">&mdash;</span></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Every click, preset and arrow-key writes only <code>rangeStart</code> and <code>rangeEnd</code>. This card just <strong>reads</strong> them &mdash; which is why the count can never drift from the highlight.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Booking sites, analytics dashboards, invoice filters &mdash; the same shape each time: <strong>two months</strong> drawn from calendar math, a <strong>two-click</strong> start-then-end, a <strong>hover preview</strong> of the pending range, endpoints that <strong>auto-order</strong>, a band that flows <strong>across the boundary</strong>, and a set of <strong>presets</strong> that are nothing but date arithmetic writing the same two variables. Keep the state to two dates and one integer key for comparison, and a range across sixty cells stays trivial to reason about.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a range picker works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A date-range picker is a <strong>calendar you draw</strong> plus a <strong>two-click state machine</strong>. We start from the math &mdash; <strong>leap years</strong> and <strong>days-in-month</strong>, the <strong>first-weekday offset</strong> &mdash; lay a month into a <strong>7-column grid</strong> of blanks and numbers, render <strong>two months</strong> that share one clock, give every day a monotonic <strong>integer key</strong> for comparison, wire the <strong>start-then-end</strong> selection with an auto-swap, add the <strong>hover preview</strong>, <strong>paint</strong> start / in-range / end from the two keys, compute the inclusive <strong>day count</strong>, drive the <strong>presets</strong> as pure date arithmetic, and finish with <strong>keyboard</strong> + a11y. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Days in a month &mdash; the leap-year rule</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The whole calendar rests on two facts: how many days a month has, and which day of the week it starts on. Days-per-month is a fixed table &mdash; except February, which is 29 in a leap year. A leap year is divisible by 4, <em>but not</em> by 100 unless also by 400 (so 2000 is a leap year, 1900 is not).</p>
+        <div class="relative"><pre>function isLeap(y){
+  return (y % 4 === 0 &amp;&amp; y % 100 !== 0) || (y % 400 === 0);
+}
+function daysInMonth(y, m){   // m is 0-based: 0 = Jan
+  return [31, isLeap(y) ? 29 : 28, 31,30,31,30,31,31,30,31,30,31][m];
+}
+daysInMonth(2024, 1); // Feb 2024 -> 29    daysInMonth(2023,1) -> 28</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The first-weekday offset positions day&nbsp;1</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A month grid is not filled from the top-left &mdash; day&nbsp;1 sits under its real weekday. <code>new Date(y, m, 1).getDay()</code> gives that column (0 = Sunday). That number is how many <strong>blank</strong> cells to emit before the first number, so every date lands in the correct column.</p>
+        <div class="relative"><pre>function firstWeekday(y, m){
+  return new Date(y, m, 1).getDay();   // 0=Sun .. 6=Sat
+}
+// March 2024 starts on a Friday -> offset 5 -> 5 blanks, then "1"
+const offset = firstWeekday(2024, 2); // 5</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Lay a month into a 7-column grid</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A CSS grid of seven columns. Emit the <code>Su&hellip;Sa</code> header, then <code>offset</code> empty cells, then a real <code>&lt;button&gt;</code> for each day 1..N. Numbers go in with <code>textContent</code>; stamp each button with its <code>y / m / d</code> so a click knows exactly which date it is.</p>
+        <div class="relative"><pre>function buildGrid(el, y, m){
+  el.innerHTML = "";
+  WD.forEach(w =&gt; el.appendChild(cell("dr-wd", w)));      // Su..Sa
+  for (let i = 0; i &lt; firstWeekday(y, m); i++)
+    el.appendChild(cell("dr-blank"));                     // leading gaps
+  for (let d = 1; d &lt;= daysInMonth(y, m); d++){
+    const b = document.createElement("button");
+    b.className = "dr-day"; b.dataset.y = y; b.dataset.m = m; b.dataset.d = d;
+    b.innerHTML = '&lt;span class="dr-num"&gt;&lt;/span&gt;';
+    b.firstChild.textContent = d;                         // data as textContent
+    el.appendChild(b);
+  }
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Two months, one clock</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The left month is <code>(viewY, viewM)</code>; the right is simply the month after &mdash; with a year rollover when December wraps to January. Prev / next shift the left month by one and the right follows, so the pair always stays adjacent.</p>
+        <div class="relative"><pre>function nextMonth(y, m){ return m === 11 ? {y:y+1, m:0} : {y, m:m+1}; }
+function render(){
+  const R = nextMonth(viewY, viewM);
+  title0.textContent = MONTHS[viewM] + " " + viewY;
+  title1.textContent = MONTHS[R.m] + " " + R.y;
+  buildGrid(grid0, viewY, viewM);
+  buildGrid(grid1, R.y, R.m);
+  paint();                       // apply the range classes
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">One integer key to compare any two days</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Comparing dates as objects is awkward. Fold each into a single number &mdash; <code>y&times;10000 + (m+1)&times;100 + d</code> &mdash; and because the components never overflow their slots, that number is <strong>monotonic</strong>: Mar&nbsp;31 (20240331) is less than Apr&nbsp;1 (20240401). One <code>&lt;</code> now works cleanly across a month boundary.</p>
+        <div class="relative"><pre>function keyOf(y, m, d){ return y*10000 + (m+1)*100 + d; }
+keyOf(2024,2,31) &lt; keyOf(2024,3,1);   // true  (Mar 31 &lt; Apr 1)
+
+// day count is inclusive, via UTC so DST never shifts it
+function dayCount(a, b){
+  return Math.round((Date.UTC(b.y,b.m,b.d) - Date.UTC(a.y,a.m,a.d)) / 864e5) + 1;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The two-click state machine</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Two variables hold everything: <code>rangeStart</code> and <code>rangeEnd</code>. If there is no start (or a full range already), a click <strong>begins fresh</strong> &mdash; set start, clear end. Otherwise the click sets the end, and if it lands <em>before</em> the start the two <strong>swap</strong> so the range always reads left-to-right.</p>
+        <div class="relative"><pre>function pick(y, m, d){
+  const p = {y, m, d};
+  if (!rangeStart || rangeEnd){          // start a new range
+    rangeStart = p; rangeEnd = null;
+  } else {                               // set the end...
+    if (keyOf(y,m,d) &lt; keyOf(rangeStart.y, rangeStart.m, rangeStart.d)){
+      rangeEnd = rangeStart; rangeStart = p;   // ...swapping if earlier
+    } else {
+      rangeEnd = p;
+    }
+  }
+  render();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Hover preview of the pending range</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Between the first and second click, the range is <em>provisional</em>. Track a <code>hover</code> day; while a start exists but no end, mousing over a cell paints the band from the start to the hovered day. Leaving the grid clears it &mdash; only <code>paint()</code> re-runs, so nothing rebuilds.</p>
+        <div class="relative"><pre>btn.addEventListener("mouseenter", () =&gt; {
+  if (rangeStart &amp;&amp; !rangeEnd){ hover = {y, m, d}; paint(); }
+});
+cal.addEventListener("mouseleave", () =&gt; { hover = null; paint(); });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Paint: start, in-range, end from two keys</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Painting reduces the state to a <code>lo</code> and <code>hi</code> key &mdash; from the committed range, or from start+hover during preview. Then every cell answers three cheap questions: am I <code>lo</code> (start), am I <code>hi</code> (end), am I strictly between (in-range)? The CSS half-band + circle does the rest, and a single day where <code>lo === hi</code> is just a lone circle.</p>
+        <div class="relative"><pre>function paint(){
+  let lo = null, hi = null;
+  if (rangeStart &amp;&amp; rangeEnd){ lo = keyOf2(rangeStart); hi = keyOf2(rangeEnd); }
+  else if (rangeStart &amp;&amp; hover){ lo = Math.min(...); hi = Math.max(...); }
+  else if (rangeStart){ lo = hi = keyOf2(rangeStart); }   // lone start
+  dayCells.forEach(c =&gt; {
+    const k = +c.dataset.key;
+    c.classList.toggle("range-start", lo !== null &amp;&amp; k === lo &amp;&amp; lo !== hi);
+    c.classList.toggle("range-end",   lo !== null &amp;&amp; k === hi &amp;&amp; lo !== hi);
+    c.classList.toggle("single",      lo !== null &amp;&amp; k === lo &amp;&amp; lo === hi);
+    c.classList.toggle("in-range",    lo !== null &amp;&amp; k &gt; lo &amp;&amp; k &lt; hi);
+  });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Presets are just date arithmetic</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A preset is not special &mdash; it computes two dates and writes the <em>same</em> <code>rangeStart</code> / <code>rangeEnd</code>, then points the view at the start month so the result is visible. &ldquo;Last 7 days&rdquo; is <em>today minus 6</em> to <em>today</em>; &ldquo;This month&rdquo; is the 1st to day&nbsp;0 of next month (which is the last day of this one).</p>
+        <div class="relative"><pre>const iso = dt =&gt; ({ y:dt.getFullYear(), m:dt.getMonth(), d:dt.getDate() });
+function last7(){
+  const e = new Date(), s = new Date(); s.setDate(s.getDate() - 6);
+  setRange(iso(s), iso(e), "Last 7 days");     // 7 days inclusive
+}
+function thisMonth(){
+  const t = new Date();
+  setRange({y:t.getFullYear(), m:t.getMonth(), d:1},
+           iso(new Date(t.getFullYear(), t.getMonth()+1, 0)), "This month");
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Keyboard &amp; accessibility</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Days are real <code>&lt;button&gt;</code>s, so <kbd>Tab</kbd> and <kbd>Enter</kbd> come for free. A <strong>roving tabindex</strong> keeps one day focusable; the arrows move a focus date by &plusmn;1 (day) or &plusmn;7 (week) with real date math, shifting the view if the focus leaves the two months, then move DOM focus to the new cell. Grids get <code>role="grid"</code>, the output is <code>aria-live</code> so a screen reader hears the chosen range.</p>
+        <div class="relative"><pre>const STEP = { ArrowLeft:-1, ArrowRight:1, ArrowUp:-7, ArrowDown:7 };
+cal.addEventListener("keydown", e =&gt; {
+  if (e.key in STEP){
+    e.preventDefault();
+    const dt = new Date(focus.y, focus.m, focus.d + STEP[e.key]); // real math
+    focus = iso(dt); ensureVisible(focus); render();
+    cellFor(focus).focus();               // move the roving focus
+  } else if (e.key === "Enter" || e.key === " "){
+    e.preventDefault(); pick(focus.y, focus.m, focus.d);
+  }
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 55 of DesignFromZero done &mdash; Date Range Picker.</h3><p class="text-sm text-indigo-700 mt-2">You built a two-month range calendar from nothing: real <strong>calendar math</strong> &mdash; the leap-year rule, <strong>days-in-month</strong>, and the <strong>first-weekday offset</strong> that drops day&nbsp;1 into the right column of a hand-laid <strong>7-column grid</strong> &mdash; two months sharing <strong>one clock</strong>, and a single monotonic <strong>integer key</strong> that makes a range flow cleanly <strong>across the month boundary</strong>. On top sits a tiny <strong>two-click state machine</strong> (start, then an auto-swapped end), a <strong>hover preview</strong> of the pending range, a <code>paint()</code> that reduces everything to a <code>lo</code> / <code>hi</code> pair, an inclusive <strong>day count</strong> via UTC, <strong>presets</strong> that are pure date arithmetic writing the same two variables, and full <strong>keyboard</strong> nav over a roving tabindex. <strong>&#128075; The range picker behind every booking and dashboard filter, rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== DATE RANGE PICKER =================================================
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const WD  = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+// --- pure calendar math -------------------------------------------------
+function isLeap(y){ return (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0); }
+function daysInMonth(y, m){ return [31, isLeap(y) ? 29 : 28, 31,30,31,30,31,31,30,31,30,31][m]; }
+function firstWeekday(y, m){ return new Date(y, m, 1).getDay(); }   // 0=Sun
+function keyOf(y, m, d){ return y * 10000 + (m + 1) * 100 + d; }    // monotonic
+function key2(o){ return keyOf(o.y, o.m, o.d); }
+function dayCount(a, b){ return Math.round((Date.UTC(b.y,b.m,b.d) - Date.UTC(a.y,a.m,a.d)) / 864e5) + 1; }
+function nextMonth(y, m){ return m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }; }
+function prevMonth(y, m){ return m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }; }
+function iso(dt){ return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() }; }
+function fmt(o){ return o ? MON[o.m] + " " + o.d + ", " + o.y : "—"; }
+
+// --- the entire state ---------------------------------------------------
+const today = iso(new Date());
+let viewY = today.y, viewM = today.m;   // left month shown
+let rangeStart = null, rangeEnd = null; // {y,m,d} | null
+let hover = null;                       // {y,m,d} | null  (preview)
+let focus = { ...today };               // roving keyboard focus
+let lastAction = "—", lastPreset = "—";
+
+// --- element refs -------------------------------------------------------
+const grid0  = document.getElementById("drGrid0");
+const grid1  = document.getElementById("drGrid1");
+const title0 = document.getElementById("drTitle0");
+const title1 = document.getElementById("drTitle1");
+const cal    = document.getElementById("drCal");
+const outEl  = document.getElementById("drOutput");
+let dayCells = [];   // every day <button> currently in the DOM
+
+// --- build one month grid ----------------------------------------------
+function buildGrid(el, y, m){
+  el.innerHTML = "";
+  WD.forEach(w => {
+    const h = document.createElement("div");
+    h.className = "dr-wd"; h.setAttribute("role", "columnheader"); h.textContent = w;
+    el.appendChild(h);
+  });
+  const offset = firstWeekday(y, m);
+  for (let i = 0; i < offset; i++){
+    const b = document.createElement("div"); b.className = "dr-blank"; el.appendChild(b);
+  }
+  const dim = daysInMonth(y, m);
+  for (let d = 1; d <= dim; d++){
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "dr-day"; btn.setAttribute("role", "gridcell");
+    btn.dataset.y = y; btn.dataset.m = m; btn.dataset.d = d; btn.dataset.key = keyOf(y, m, d);
+    const num = document.createElement("span"); num.className = "dr-num"; num.textContent = d;
+    btn.appendChild(num);
+    if (y === today.y && m === today.m && d === today.d) btn.classList.add("today");
+    btn.tabIndex = (y === focus.y && m === focus.m && d === focus.d) ? 0 : -1;
+    btn.setAttribute("aria-label", fmt({ y, m, d }));
+    btn.addEventListener("click", () => pick(y, m, d));
+    btn.addEventListener("mouseenter", () => {
+      if (rangeStart && !rangeEnd){ hover = { y, m, d }; paint(); }
+    });
+    el.appendChild(btn);
+    dayCells.push(btn);
+  }
+}
+
+// --- render both months, then paint the range --------------------------
+function render(){
+  dayCells = [];
+  const R = nextMonth(viewY, viewM);
+  title0.textContent = MONTHS[viewM] + " " + viewY;
+  title1.textContent = MONTHS[R.m] + " " + R.y;
+  buildGrid(grid0, viewY, viewM);
+  buildGrid(grid1, R.y, R.m);
+  // guarantee exactly one tabbable cell even if focus scrolled off-view
+  if (dayCells.length && !dayCells.some(c => c.tabIndex === 0)){
+    dayCells[0].tabIndex = 0;
+    focus = { y: +dayCells[0].dataset.y, m: +dayCells[0].dataset.m, d: +dayCells[0].dataset.d };
+  }
+  paint();
+  paintReadout();
+}
+
+// --- reduce state to lo/hi keys and toggle classes ---------------------
+function paint(){
+  let lo = null, hi = null, previewing = false;
+  if (rangeStart && rangeEnd){
+    lo = Math.min(key2(rangeStart), key2(rangeEnd));
+    hi = Math.max(key2(rangeStart), key2(rangeEnd));
+  } else if (rangeStart && hover){
+    lo = Math.min(key2(rangeStart), key2(hover));
+    hi = Math.max(key2(rangeStart), key2(hover));
+    previewing = true;
+  } else if (rangeStart){
+    lo = hi = key2(rangeStart);
+  }
+  dayCells.forEach(c => {
+    const k = +c.dataset.key;
+    c.classList.remove("range-start", "range-end", "in-range", "single", "preview");
+    if (lo === null) return;
+    if (lo === hi){
+      if (k === lo) c.classList.add("single");
+    } else {
+      if (k === lo) c.classList.add("range-start");
+      if (k === hi){ c.classList.add("range-end"); if (previewing) c.classList.add("preview"); }
+      if (k > lo && k < hi) c.classList.add("in-range");
+    }
+  });
+  paintOutput();
+}
+
+// --- the output line under the calendars -------------------------------
+function paintOutput(){
+  outEl.innerHTML = "";
+  const range = document.createElement("span"); range.className = "dr-out-range";
+  if (rangeStart && rangeEnd){
+    range.innerHTML = fmt(rangeStart) + ' <span class="dr-arrow-sep">&rarr;</span> ' + fmt(rangeEnd);
+    const n = dayCount(rangeStart, rangeEnd);
+    const c = document.createElement("span"); c.className = "dr-out-count";
+    c.textContent = n + " day" + (n === 1 ? "" : "s") + " · " + (n - 1) + " night" + (n - 1 === 1 ? "" : "s");
+    outEl.appendChild(range); outEl.appendChild(c);
+  } else if (rangeStart){
+    range.innerHTML = fmt(rangeStart) + ' <span class="dr-arrow-sep">&rarr;</span> &hellip;';
+    const h = document.createElement("span"); h.className = "dr-out-hint"; h.textContent = "Pick the end date";
+    outEl.appendChild(range); outEl.appendChild(h);
+  } else {
+    const e = document.createElement("span"); e.className = "dr-out-empty"; e.textContent = "No range selected";
+    outEl.appendChild(e);
+  }
+}
+
+// --- the read-out card (a pure reader of state) ------------------------
+const roCount = document.getElementById("roCount");
+const roStart = document.getElementById("roStart");
+const roEnd   = document.getElementById("roEnd");
+const pStart  = document.getElementById("pStart");
+const pEnd    = document.getElementById("pEnd");
+const pDays   = document.getElementById("pDays");
+const pNights = document.getElementById("pNights");
+const pPreset = document.getElementById("pPreset");
+const pLast   = document.getElementById("pLast");
+
+function paintReadout(){
+  const n = (rangeStart && rangeEnd) ? dayCount(rangeStart, rangeEnd) : (rangeStart ? 1 : 0);
+  roCount.textContent = n;
+  roStart.textContent = fmt(rangeStart);
+  roEnd.textContent   = fmt(rangeEnd);
+  pStart.textContent  = fmt(rangeStart);
+  pEnd.textContent    = fmt(rangeEnd);
+  pDays.textContent   = (rangeStart && rangeEnd) ? n : (rangeStart ? "1 (start only)" : "0");
+  pNights.textContent = (rangeStart && rangeEnd) ? (n - 1) : "0";
+  pPreset.textContent = lastPreset;
+  pPreset.className   = "pill" + (lastPreset === "—" ? "" : " g");
+  pLast.textContent   = lastAction;
+  pLast.className      = "pill" + (lastAction === "—" ? "" : " a");
+}
+
+// --- the two-click state machine ---------------------------------------
+function pick(y, m, d){
+  const p = { y, m, d };
+  clearPresetActive();
+  lastPreset = "—";
+  if (!rangeStart || rangeEnd){                 // begin a fresh range
+    rangeStart = p; rangeEnd = null; hover = null;
+    lastAction = "start " + fmt(p);
+  } else {                                       // set the end (auto-swap)
+    if (key2(p) < key2(rangeStart)){ rangeEnd = rangeStart; rangeStart = p; }
+    else { rangeEnd = p; }
+    hover = null;
+    lastAction = fmt(rangeStart) + " → " + fmt(rangeEnd);
+  }
+  focus = p;
+  render();
+}
+
+// --- presets: pure date arithmetic writing the same two vars -----------
+function setRange(a, b, name){
+  rangeStart = a; rangeEnd = b; hover = null;
+  lastPreset = name; lastAction = "preset: " + name;
+  focus = { ...a };
+  viewY = a.y; viewM = a.m;          // show the start month on the left
+  render();
+}
+function clearPresetActive(){ document.querySelectorAll(".dr-preset").forEach(b => b.classList.remove("active")); }
+
+document.getElementById("drPresets").addEventListener("click", e => {
+  const btn = e.target.closest(".dr-preset"); if (!btn) return;
+  clearPresetActive(); btn.classList.add("active");
+  const t = new Date();
+  if (btn.dataset.preset === "today"){
+    setRange(iso(t), iso(t), "Today");
+  } else if (btn.dataset.preset === "last7"){
+    const s = new Date(); s.setDate(s.getDate() - 6); setRange(iso(s), iso(t), "Last 7 days");
+  } else if (btn.dataset.preset === "last30"){
+    const s = new Date(); s.setDate(s.getDate() - 29); setRange(iso(s), iso(t), "Last 30 days");
+  } else if (btn.dataset.preset === "month"){
+    setRange({ y: t.getFullYear(), m: t.getMonth(), d: 1 },
+             iso(new Date(t.getFullYear(), t.getMonth() + 1, 0)), "This month");
+  }
+});
+
+document.getElementById("drClear").addEventListener("click", () => {
+  rangeStart = rangeEnd = hover = null; lastPreset = "—"; lastAction = "cleared";
+  clearPresetActive(); render();
+});
+
+// --- month navigation ---------------------------------------------------
+document.getElementById("drPrev").addEventListener("click", () => {
+  const p = prevMonth(viewY, viewM); viewY = p.y; viewM = p.m; lastAction = "prev month"; render();
+});
+document.getElementById("drNext").addEventListener("click", () => {
+  const n = nextMonth(viewY, viewM); viewY = n.y; viewM = n.m; lastAction = "next month"; render();
+});
+
+// --- keyboard: roving focus over the grid ------------------------------
+const STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+function ensureVisible(f){
+  const left = viewY * 100 + viewM;
+  const R = nextMonth(viewY, viewM); const right = R.y * 100 + R.m;
+  const fk = f.y * 100 + f.m;
+  if (fk === left || fk === right) return;
+  if (fk < left){ viewY = f.y; viewM = f.m; }          // scrolled before -> becomes left
+  else { const p = prevMonth(f.y, f.m); viewY = p.y; viewM = p.m; }  // after -> becomes right
+}
+function cellFor(f){ return dayCells.find(c => +c.dataset.key === keyOf(f.y, f.m, f.d)); }
+
+cal.addEventListener("keydown", e => {
+  if (e.key in STEP){
+    e.preventDefault();
+    focus = iso(new Date(focus.y, focus.m, focus.d + STEP[e.key]));
+    ensureVisible(focus); render();
+    const c = cellFor(focus); if (c) c.focus();
+  } else if (e.key === "Home"){
+    e.preventDefault();
+    focus = { y: focus.y, m: focus.m, d: 1 }; ensureVisible(focus); render();
+    const c = cellFor(focus); if (c) c.focus();
+  } else if (e.key === "End"){
+    e.preventDefault();
+    focus = { y: focus.y, m: focus.m, d: daysInMonth(focus.y, focus.m) }; ensureVisible(focus); render();
+    const c = cellFor(focus); if (c) c.focus();
+  } else if (e.key === "Enter" || e.key === " "){
+    e.preventDefault(); pick(focus.y, focus.m, focus.d);
+    const c = cellFor(focus); if (c) c.focus();
+  }
+});
+cal.addEventListener("mouseleave", () => { if (hover){ hover = null; paint(); } });
+
+// --- boot ---------------------------------------------------------------
+render();
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. A month is a table, except February",
+   why:"Every calendar starts with one fact: how many days a month has. Eleven of them are fixed; only February moves, and it moves on the leap-year rule. A year is a leap year when it is divisible by four, but a century year (divisible by 100) is only a leap year if it is also divisible by 400. So 2024 and 2000 have a 29-day February, but 1900 does not. Encode the eleven fixed lengths as a table and let the February slot ask isLeap; that single function is the seed the whole grid grows from.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">isLeap(y) = y%4==0 &amp;&amp; y%100!=0 || y%400==0<br><br>Feb 2024 &rarr; 29&nbsp;&nbsp;&nbsp;Feb 2023 &rarr; 28<br>Feb 2000 &rarr; 29&nbsp;&nbsp;&nbsp;Feb 1900 &rarr; 28</div>',
+   code:"function isLeap(y){\n  return (y%4===0 && y%100!==0) || (y%400===0);\n}\nfunction daysInMonth(y, m){   // m 0-based\n  return [31, isLeap(y)?29:28, 31,30,31,30,31,31,30,31,30,31][m];\n}" },
+ { title:"2. The first-weekday offset",
+   why:"Knowing a month has 31 days is only half the layout; the other half is which column day 1 belongs in. A month grid is not filled from the top-left corner - the 1st sits under its true weekday, and the cells before it are empty. new Date(y, m, 1).getDay() returns that weekday as 0 for Sunday through 6 for Saturday, and that number is exactly how many blank cells to emit before the first date. Get this offset wrong by one and every date in the month sits under the wrong day name.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Su Mo Tu We Th Fr Sa<br>__ __ __ __ __&nbsp;<b>1</b>&nbsp;&nbsp;2<br>&nbsp;3&nbsp;&nbsp;4&nbsp;&nbsp;5&nbsp;&nbsp;6&nbsp;&nbsp;7&nbsp;&nbsp;8&nbsp;&nbsp;9<br><br>March 2024 &rarr; offset 5 (Fri)</div>',
+   code:"function firstWeekday(y, m){\n  return new Date(y, m, 1).getDay();   // 0=Sun .. 6=Sat\n}\nconst offset = firstWeekday(2024, 2); // March -> 5\n// emit `offset` blank cells, THEN day 1" },
+ { title:"3. Blanks then numbers, in a 7-column grid",
+   why:"With days-in-month and the offset, laying out a month is mechanical. Put down the seven weekday headers, then offset empty cells, then a button for every day from 1 to N. A CSS grid of seven fixed columns with no gaps means the cells line up into weeks automatically and, crucially, adjacent selected cells touch - which is what lets a range render as one continuous band rather than a row of separate pills. Each day button carries its own y, m and d in datasets, so a click already knows precisely which date it is without any lookup.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">grid-template-columns: repeat(7, 40px)<br>gap: 0&nbsp;&nbsp;&rarr; cells touch &rarr; band is continuous<br><br>[blank]&times;offset &middot; [1][2][3]&hellip;[N]</div>',
+   code:"WD.forEach(w => el.appendChild(cell('dr-wd', w)));  // Su..Sa\nfor (let i=0; i<offset; i++) el.appendChild(cell('dr-blank'));\nfor (let d=1; d<=dim; d++){\n  const b = document.createElement('button');\n  b.dataset.y=y; b.dataset.m=m; b.dataset.d=d;   // knows its date\n  b.firstChild.textContent = d;                  // number via textContent\n  el.appendChild(b);\n}" },
+ { title:"4. Two months share one clock",
+   why:"A range often spans a boundary - the 28th of one month to the 3rd of the next - so a single month is not enough context. Show two: the left month is the view position (viewY, viewM) and the right is simply the month after it, with a year rollover when December wraps into January. Both grids are drawn by the same builder from the same math, so there is nothing special about the second panel. Prev and next shift the left month by one and the right follows, keeping the pair adjacent no matter how far you travel.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[ March 2024 ]&nbsp;&nbsp;[ April 2024 ]<br>&nbsp;&nbsp;viewM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nextMonth(viewM)<br><br>Dec &rarr; nextMonth &rarr; Jan of next year</div>',
+   code:"function nextMonth(y, m){\n  return m===11 ? {y:y+1, m:0} : {y, m:m+1};\n}\nconst R = nextMonth(viewY, viewM);\nbuildGrid(grid0, viewY, viewM);   // left\nbuildGrid(grid1, R.y,  R.m);      // right, same builder" },
+ { title:"5. One integer key compares any two days",
+   why:"To know whether a cell is inside the range you must compare dates, and comparing {y,m,d} objects is clumsy. Fold each date into a single number: year times ten thousand, plus month-plus-one times a hundred, plus the day. Because the day never exceeds 31 and the month never exceeds 12, the slots never collide, so the number increases strictly with time - March 31 (20240331) is genuinely less than April 1 (20240401). Now one less-than operator decides in-range, and it works across a month or even a year boundary with no special cases. The inclusive day count uses UTC milliseconds so a daylight-saving jump can never add or drop a day.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">keyOf(y,m,d) = y*10000 + (m+1)*100 + d<br><br>Mar 31 &rarr; 20240331<br>Apr 01 &rarr; 20240401&nbsp;&nbsp;&nbsp;20240331 &lt; 20240401 &#10003;</div>',
+   code:"function keyOf(y, m, d){ return y*10000 + (m+1)*100 + d; }\n// monotonic: later date -> larger number, across boundaries\n\nfunction dayCount(a, b){   // inclusive, DST-proof\n  return Math.round((Date.UTC(b.y,b.m,b.d)\n                   - Date.UTC(a.y,a.m,a.d)) / 864e5) + 1;\n}" },
+ { title:"6. Two clicks, two variables",
+   why:"The heart of the component is smaller than the calendar under it: two variables, rangeStart and rangeEnd, and a rule for a click. If there is no start yet, or a complete range already exists, a click begins a fresh selection - set start, clear end. Otherwise the click is the end of the range. The one subtlety is direction: people do not always click earlier-then-later, so if the second click lands before the start, swap them, and the range is always stored left to right. That single swap is why the highlight and the day count are always correct regardless of click order.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">click 1 &rarr; start&nbsp;&nbsp;(end = null)<br>click 2 &rarr; end&nbsp;&nbsp;&nbsp;(swap if earlier)<br>click 3 &rarr; start again (fresh)<br><br>state = { rangeStart, rangeEnd }</div>',
+   code:"function pick(y, m, d){\n  const p = {y,m,d};\n  if (!rangeStart || rangeEnd){ rangeStart = p; rangeEnd = null; }\n  else if (key2(p) < key2(rangeStart)){ rangeEnd = rangeStart; rangeStart = p; }\n  else { rangeEnd = p; }\n  render();\n}" },
+ { title:"7. Hover previews the pending range",
+   why:"Between the first click and the second, the range is provisional, and a good picker shows what you are about to get. Track a hover date; while a start exists but no end, moving over any cell paints the band from the start to the cell under the pointer, so you can see the span grow before you commit. The hovered end is drawn tentatively - an outlined circle instead of a filled one - to signal it is not yet chosen. Leaving the grid clears the hover. None of this rebuilds the DOM; it only re-runs the paint pass over the existing cells, so it stays smooth.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">start set, end null &rarr; hover paints preview<br><br>[<b>5</b>]=====(6)(7)(<i>8</i>)&nbsp;&nbsp;&larr; pointer on 8<br>&nbsp;start&nbsp;&nbsp;in-range&nbsp;&nbsp;tentative end</div>',
+   code:"btn.addEventListener('mouseenter', () => {\n  if (rangeStart && !rangeEnd){ hover = {y,m,d}; paint(); }\n});\ncal.addEventListener('mouseleave', () => { hover = null; paint(); });" },
+ { title:"8. Paint reduces state to lo and hi",
+   why:"All the visual richness - start circle, in-range band, end circle, single-day dot, tentative preview - comes from just two numbers. The paint pass computes a lo and a hi key: from the committed start and end if both exist, from start and hover during a preview, or lo equal to hi for a lone start. Then every cell answers three cheap questions against those keys: am I lo, am I hi, am I strictly between. The CSS does the styling - a half-band toward the middle plus a filled circle for the endpoints, a full band for in-range - and the special case where lo equals hi renders as a single dot. Painting never rebuilds; it only toggles classes.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">lo = min(start, end/hover)<br>hi = max(start, end/hover)<br><br>k==lo &rarr; start &middot; k==hi &rarr; end<br>lo&lt;k&lt;hi &rarr; in-range &middot; lo==hi &rarr; single</div>',
+   code:"function paint(){\n  let lo=null, hi=null;\n  if (rangeStart && rangeEnd){ lo=min(...); hi=max(...); }\n  else if (rangeStart && hover){ lo=min(start,hover); hi=max(...); }\n  else if (rangeStart){ lo = hi = key2(rangeStart); }\n  dayCells.forEach(c => {\n    const k = +c.dataset.key;\n    c.classList.toggle('range-start', k===lo && lo!==hi);\n    c.classList.toggle('range-end',   k===hi && lo!==hi);\n    c.classList.toggle('in-range',    k>lo && k<hi);\n    c.classList.toggle('single',      k===lo && lo===hi);\n  });\n}" },
+ { title:"9. Presets are just arithmetic",
+   why:"The quick buttons look like a separate feature but they are not - each is a two-line computation that produces two dates and writes the same rangeStart and rangeEnd the clicks would. Last 7 days is today minus six through today, so the count reads seven. Last 30 days is today minus twenty-nine. This month is the 1st through day zero of next month, and day zero of a month is JavaScript's way of naming the last day of the previous one. After writing the dates, point the view at the start month so the result is actually on screen. Because presets feed the identical two variables, the highlight, the count and the read-out all just work.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Today&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; [t, t]<br>Last 7&nbsp;&nbsp;&nbsp;&rarr; [t-6, t]<br>Last 30&nbsp;&nbsp;&rarr; [t-29, t]<br>This month &rarr; [1st, day-0-of-next]</div>',
+   code:"const iso = dt => ({y:dt.getFullYear(), m:dt.getMonth(), d:dt.getDate()});\nfunction last7(){\n  const e=new Date(), s=new Date(); s.setDate(s.getDate()-6);\n  setRange(iso(s), iso(e), 'Last 7 days');\n}\n// last day of this month = day 0 of next month\nnew Date(t.getFullYear(), t.getMonth()+1, 0);" },
+ { title:"10. Keyboard and accessibility",
+   why:"Because each day is a real button, Tab reaches the grid and Enter picks for free. To move within the grid without forty stops, use a roving tabindex: exactly one day is tabbable at a time, and the arrow keys move a focus date - left and right by a single day, up and down by a week - using real Date arithmetic so the movement rolls correctly across month ends. If the focus leaves the two visible months the view shifts to bring it back, then DOM focus moves to the new cell. Mark the grids role=grid, keep the output aria-live so the chosen range is announced, and the picker is fully operable without a mouse.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&larr; &rarr; &nbsp;move 1 day&nbsp;&nbsp;&nbsp;&uarr; &darr; &nbsp;move 1 week<br>Enter / Space &rarr; pick&nbsp;&nbsp;&nbsp;Home/End &rarr; month edge<br><br>roving tabindex: one focusable day</div>',
+   code:"const STEP = {ArrowLeft:-1, ArrowRight:1, ArrowUp:-7, ArrowDown:7};\ncal.addEventListener('keydown', e => {\n  if (e.key in STEP){\n    e.preventDefault();\n    focus = iso(new Date(focus.y, focus.m, focus.d + STEP[e.key]));\n    ensureVisible(focus); render(); cellFor(focus).focus();\n  } else if (e.key==='Enter' || e.key===' '){\n    e.preventDefault(); pick(focus.y, focus.m, focus.d);\n  }\n});" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
