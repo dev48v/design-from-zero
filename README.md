@@ -57,6 +57,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 53 — Pagination](https://dev48v.infy.uk/design/day53-pagination.html) — `day53-pagination.html`
 - [DesignFromZero · Day 54 — Apple Settings](https://dev48v.infy.uk/design/day54-apple-settings.html) — `day54-apple-settings.html`
 - [DesignFromZero · Day 55 — Date Range Picker](https://dev48v.infy.uk/design/day55-date-range-picker.html) — `day55-date-range-picker.html`
+- [DesignFromZero · Day 56 — Image Comparison Slider](https://dev48v.infy.uk/design/day56-image-compare-slider.html) — `day56-image-compare-slider.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

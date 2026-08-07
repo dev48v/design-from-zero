@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 56 — Image Comparison Slider</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+
+  /* ===== THE IMAGE COMPARISON SLIDER ===== */
+  .ic-stage { position:relative; width:100%; aspect-ratio:8 / 5; border-radius:18px; overflow:hidden;
+              background:#0f172a; user-select:none; touch-action:none; cursor:ew-resize;
+              box-shadow:0 12px 30px rgba(15,23,42,.16); }
+  .ic-stage[data-orient="h"] { cursor:ns-resize; }
+  .ic-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .ic-before { will-change:clip-path; }               /* the trimmed top layer */
+
+  /* corner labels */
+  .ic-tag { position:absolute; z-index:2; padding:4px 11px; border-radius:999px; font-size:11px; font-weight:800;
+            letter-spacing:.06em; color:#fff; background:rgba(15,23,42,.5); pointer-events:none;
+            text-transform:uppercase; -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .ic-stage[data-orient="v"] .ic-tag-before { top:12px; left:12px; }
+  .ic-stage[data-orient="v"] .ic-tag-after  { top:12px; right:12px; }
+  .ic-stage[data-orient="h"] .ic-tag-before { top:12px; left:12px; }
+  .ic-stage[data-orient="h"] .ic-tag-after  { bottom:12px; left:12px; }
+
+  /* the divider line — JS moves left (v) or top (h) */
+  .ic-divider { position:absolute; z-index:3; }
+  .ic-stage[data-orient="v"] .ic-divider { top:0; bottom:0; width:3px; left:50%; transform:translateX(-50%);
+              background:rgba(255,255,255,.92); box-shadow:0 0 0 1px rgba(15,23,42,.18); }
+  .ic-stage[data-orient="h"] .ic-divider { left:0; right:0; height:3px; top:50%; transform:translateY(-50%);
+              background:rgba(255,255,255,.92); box-shadow:0 0 0 1px rgba(15,23,42,.18); }
+
+  /* the round handle, centred on the divider */
+  .ic-handle { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+               width:46px; height:46px; border-radius:50%; border:3px solid #fff; background:rgba(15,23,42,.5);
+               -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); color:#fff; cursor:inherit; padding:0;
+               display:flex; align-items:center; justify-content:center; box-shadow:0 4px 16px rgba(15,23,42,.42); }
+  .ic-handle svg { width:24px; height:24px; }
+  .ic-stage[data-orient="h"] .ic-handle svg { transform:rotate(90deg); }
+  .ic-handle:focus-visible { outline:none;
+               box-shadow:0 0 0 4px rgba(99,102,241,.6), 0 4px 16px rgba(15,23,42,.42); }
+
+  /* live % pill inside the stage */
+  .ic-readout { position:absolute; z-index:3; bottom:12px; left:50%; transform:translateX(-50%);
+                background:rgba(15,23,42,.6); color:#fff; font-size:12px; font-weight:800; padding:4px 12px;
+                border-radius:999px; pointer-events:none; font-variant-numeric:tabular-nums; letter-spacing:.03em;
+                -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .ic-stage[data-orient="h"] .ic-readout { bottom:auto; top:12px; left:auto; right:12px; transform:none; }
+
+  /* read-out card bits */
+  .ic-meter { position:relative; height:16px; border-radius:999px; overflow:hidden; display:flex; background:#e2e8f0; }
+  .ic-meter-before { background:#6366f1; transition:width .04s linear; }
+  .ic-meter-after  { background:#94a3b8; transition:width .04s linear; }
+  .ic-big { line-height:1; }
+  .ic-big span  { font-size:32px; font-weight:900; color:#6366f1; font-variant-numeric:tabular-nums; }
+  .ic-big small { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; font-weight:700; margin-left:5px; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .ic-meter-before, .ic-meter-after { animation:none !important; transition-duration:.001s !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 56</div>
+      <h1 class="text-xl font-bold">Image Comparison Slider &mdash; two versions of the same picture <strong>stacked in one box</strong> with a draggable divider that <strong>wipes</strong> between them. The bottom layer (the <strong>AFTER</strong>) shows in full; the top layer (the <strong>BEFORE</strong>) is trimmed to the left of the divider by a single <code>clip-path: inset(0 (100&minus;pos)% 0 0)</code>, so moving the divider is nothing but <strong>rewriting one percentage</strong>. A pointer anywhere on the image maps to that percent &mdash; <code>(clientX &minus; left) / width &times; 100</code> &mdash; <strong>clamped</strong> to 0&ndash;100, and the <em>same</em> handler serves mouse and touch because it listens to unified <strong>pointer events</strong> with <code>setPointerCapture</code> so the drag survives leaving the frame. The round handle is a real <code>role="slider"</code>: <kbd>&larr;&rarr;</kbd> nudge it a percent (<kbd>Shift</kbd>/<kbd>PageUp</kbd> jump), <kbd>Home</kbd>/<kbd>End</kbd> snap to the edges, and <code>aria-valuenow</code> announces the split. A second demo flips the axis to a <strong>horizontal divider</strong> &mdash; the very same math with <strong>X swapped for Y</strong>. The sample scenes are drawn on a <code>&lt;canvas&gt;</code> (a flat, overcast <em>unedited</em> frame vs a golden-hour <em>graded</em> one) so the whole thing is <strong>self-contained</strong> &mdash; no libraries, no external image URLs.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">Drag the divider &mdash; one <span class="text-indigo-600">percentage</span> clips the top image and the two frames <span class="text-purple-600">wipe</span> apart.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">A before/after slider is <strong>two pictures in one box</strong> and a divider that reveals more of one and less of the other. Everything is driven by a <strong>single number</strong> &mdash; the divider position as a percent. That number sets a <code>clip-path</code> on the top image (so it is trimmed exactly at the divider), positions the line and handle, fills the <code>aria-valuenow</code>, and writes the read-out. <strong>Drag anywhere</strong> on the image, <strong>tap to jump</strong>, or <kbd>Tab</kbd> to the handle and use <kbd>&larr;&rarr;</kbd>. Mouse and touch run through the identical <strong>pointer-event</strong> path. The card on the right is a pure read-out of that one number.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-shrink-0 w-full max-w-xl">
+            <div class="ic-stage" id="icV" data-orient="v" aria-label="Before and after image comparison">
+              <canvas class="ic-canvas ic-after"></canvas>
+              <canvas class="ic-canvas ic-before"></canvas>
+              <span class="ic-tag ic-tag-before">Before</span>
+              <span class="ic-tag ic-tag-after">After</span>
+              <div class="ic-divider">
+                <button class="ic-handle" type="button" role="slider" tabindex="0"
+                        aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"
+                        aria-label="Reveal before / after" title="Drag, or use arrow keys">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6 3 12l6 6"/><path d="M15 6l6 6-6 6"/></svg>
+                </button>
+              </div>
+              <span class="ic-readout" id="icVReadout">50%</span>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3">Real component &mdash; drag anywhere, or <kbd>Tab</kbd> to the handle and use <kbd>&larr;&rarr;</kbd>, <kbd>Shift</kbd>+arrows / <kbd>PageUp</kbd>&thinsp;<kbd>PageDown</kbd> to jump, <kbd>Home</kbd>/<kbd>End</kbd> for the edges.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live read-out &mdash; one number</div>
+              <div class="ic-meter mb-3">
+                <div class="ic-meter-before" id="roMB" style="width:50%"></div>
+                <div class="ic-meter-after"  id="roMA" style="width:50%"></div>
+              </div>
+              <div class="flex items-end justify-between">
+                <div class="ic-big"><span id="roPos">50</span><small>% before</small></div>
+                <div class="ic-big" style="text-align:right;"><span id="roPosA" style="color:#64748b;">50</span><small>% after</small></div>
+              </div>
+
+              <div class="mt-4 space-y-2 text-xs">
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">divider position</span><span id="pPos" class="pill mono">50%</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">before shown</span><span id="pBefore" class="pill mono">50%</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">after shown</span><span id="pAfter" class="pill mono">50%</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">clip-path (top layer)</span><span id="pClip" class="pill mono">inset 50%</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">orientation</span><span id="pOrient" class="pill">Vertical</span></div>
+                <div class="flex items-center justify-between"><span class="text-slate-400 font-semibold">aria-valuenow</span><span id="pAria" class="pill mono">50</span></div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-200"><span class="text-slate-400 font-semibold">last input</span><span id="pSrc" class="pill">&mdash;</span></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Drag, tap and every arrow-key write the same <code>pos</code> percent. This card only <strong>reads</strong> it &mdash; which is why the meter can never drift from the wipe.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- second demo: horizontal variant -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-2">
+        <div class="text-center mb-4">
+          <h3 class="font-bold text-lg">Second demo &mdash; a <span class="text-indigo-600">horizontal</span> divider</h3>
+          <p class="text-slate-500 text-sm max-w-2xl mx-auto">The exact same component with the axis flipped: the divider slides <strong>up and down</strong>, the top of the frame is <strong>Before</strong> and the bottom is <strong>After</strong>. The pointer maps <code>clientY</code> instead of <code>clientX</code>, and the clip trims the <em>bottom</em> &mdash; <code>inset(0 0 (100&minus;pos)% 0)</code>. One code path, one flag.</p>
+        </div>
+        <div class="max-w-xl mx-auto">
+          <div class="ic-stage" id="icH" data-orient="h" aria-label="Before and after image comparison, horizontal">
+            <canvas class="ic-canvas ic-after"></canvas>
+            <canvas class="ic-canvas ic-before"></canvas>
+            <span class="ic-tag ic-tag-before">Before</span>
+            <span class="ic-tag ic-tag-after">After</span>
+            <div class="ic-divider">
+              <button class="ic-handle" type="button" role="slider" tabindex="0"
+                      aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"
+                      aria-label="Reveal before / after (vertical)" title="Drag, or use up / down arrows">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6 3 12l6 6"/><path d="M15 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+            <span class="ic-readout" id="icHReadout">50%</span>
+          </div>
+          <p class="text-center text-xs text-slate-400 mt-3">Same code, <strong>Y instead of X</strong> &mdash; drag up / down, or <kbd>Tab</kbd> to the handle and use <kbd>&uarr;&darr;</kbd>.</p>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Product photo grades, map layers, renovation "before / after", model-output diffs &mdash; the same shape each time: <strong>two layers in one box</strong>, one <strong>clip-path</strong> that trims the top layer at the divider, a <strong>pointer-to-percent</strong> mapping that is identical for mouse and touch, a value <strong>clamped</strong> to its track, and a handle that is a real <strong>slider</strong> for the keyboard. Keep the whole thing driven by <strong>one percentage</strong> and flipping to a vertical wipe, or wiring three sliders on a page, costs almost nothing.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a compare slider works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A comparison slider is <strong>two layers in one box</strong> plus a divider driven by <strong>one percentage</strong>. We start by <strong>stacking</strong> two images in a clipped frame, reveal the top one with a single <code>clip-path: inset</code>, draw <strong>self-contained scenes</strong> on a canvas so there are no external files, map a <strong>pointer to a percent</strong>, <strong>clamp</strong> it to the track, funnel everything through one <code>setPos</code> that writes clip + divider + ARIA + read-out, wire <strong>drag</strong> once with pointer capture so mouse and touch share a path, make the handle a real <strong>keyboard slider</strong>, <strong>flip the axis</strong> for the horizontal variant, and finish with <strong>a11y</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies, no image URLs.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">Two layers, one box</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Stack both images in a <code>position:relative</code> stage with <code>overflow:hidden</code>. Each layer is absolutely positioned and fills the box, so they line up pixel-for-pixel. DOM order is z-order: the <strong>AFTER</strong> layer is painted first (the full background); the <strong>BEFORE</strong> layer sits on top and is the one we will trim.</p>
+        <div class="relative"><pre>.ic-stage  { position:relative; overflow:hidden; aspect-ratio:8/5; touch-action:none; }
+.ic-canvas { position:absolute; inset:0; width:100%; height:100%; }
+
+&lt;div class="ic-stage"&gt;
+  &lt;canvas class="ic-after"&gt;&lt;/canvas&gt;   &lt;!-- full background --&gt;
+  &lt;canvas class="ic-before"&gt;&lt;/canvas&gt;  &lt;!-- on top, gets clipped --&gt;
+&lt;/div&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">The reveal is one clip-path</h3></div>
+        <p class="text-sm text-slate-600 mb-3">To show only the left <code>pos%</code> of the top image, clip away its right side. <code>clip-path: inset(top right bottom left)</code> takes insets from each edge, so <code>inset(0 (100&minus;pos)% 0 0)</code> trims <code>(100&minus;pos)%</code> off the right and leaves the left <code>pos%</code> visible. At <code>pos=50</code> the box is split down the middle; at <code>0</code> the top layer vanishes, at <code>100</code> it covers everything. No masks, no second canvas &mdash; one string.</p>
+        <div class="relative"><pre>// reveal the left `pos`% of the BEFORE layer
+before.style.clipPath = `inset(0 ${100 - pos}% 0 0)`;
+
+// pos = 70  ->  inset(0 30% 0 0)  ->  left 70% shows BEFORE,
+//                                      right 30% shows the AFTER underneath</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Draw the scenes on a canvas &mdash; no files</h3></div>
+        <p class="text-sm text-slate-600 mb-3">To stay self-contained we do not load photos; we <strong>draw</strong> the same landscape twice with different palettes. One <code>drawScene(ctx, W, H, after)</code> lays the identical geometry &mdash; sky, sun, two mountain ridges, water &mdash; so the shapes register across the divider, and the <code>after</code> flag swaps a flat overcast grade for a warm golden-hour one. Same-seed math means both layers line up perfectly.</p>
+        <div class="relative"><pre>function drawScene(ctx, W, H, after){
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+  if (after){ sky.addColorStop(0,'#1e2a4a'); sky.addColorStop(.72,'#ff7a3d'); sky.addColorStop(1,'#ffd270'); }
+  else      { sky.addColorStop(0,'#aab5c0'); sky.addColorStop(1,'#d8dee3'); }
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H * 0.6);
+  ridge(ctx, W, H*0.6, H*0.25, 1.1, after ? '#4a3568' : '#93a0ac');   // same geometry,
+  ridge(ctx, W, H*0.6, H*0.37, 3.7, after ? '#2b1f42' : '#76828e');   // different grade
+  // ...sun, water, vignette
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Pointer &rarr; percent</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The core mapping. A pointer event carries a viewport <code>clientX</code>; subtract the stage's left edge (from <code>getBoundingClientRect()</code>) to get a local offset, divide by the stage width for a 0&ndash;1 fraction, times 100 for a percent. Because the rect is read live, it is correct no matter where the page has scrolled or how the stage was sized.</p>
+        <div class="relative"><pre>function pctFromEvent(e){
+  const rect = stage.getBoundingClientRect();
+  const frac = (e.clientX - rect.left) / rect.width;   // 0 .. 1 across the box
+  return frac * 100;                                   // -> percent
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Clamp to the track</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A pointer can leave the frame while dragging, and an arrow key can push past an end. Every write goes through <code>clamp(v, 0, 100)</code> so the divider physically cannot escape its track &mdash; the clip-path stays valid, the handle stays on the line, and the value never reads a nonsense number. Clamp once, at the single choke-point, and nothing downstream has to worry.</p>
+        <div class="relative"><pre>const clamp = (v, lo, hi) =&gt; Math.min(hi, Math.max(lo, v));
+
+// drag out past the right edge -> clientX huge -> frac &gt; 1 -> clamp back to 100
+setPos(clamp(pctFromEvent(e), 0, 100));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">One setPos writes everything</h3></div>
+        <p class="text-sm text-slate-600 mb-3">There is a single source of truth &mdash; <code>pos</code> &mdash; and one function that applies it. <code>setPos</code> clamps, stores, then fans out: the clip-path on the top layer, the divider's <code>left</code>, the handle's <code>aria-valuenow</code>, the in-frame % pill, and (via a callback) the read-out card. Because every input funnels through here, the picture, the ARIA and the read-out can never disagree.</p>
+        <div class="relative"><pre>function setPos(p, src){
+  pos = clamp(p, 0, 100);
+  before.style.clipPath = `inset(0 ${100 - pos}% 0 0)`;   // the wipe
+  divider.style.left    = pos + '%';                      // line + handle
+  const r = Math.round(pos);
+  handle.setAttribute('aria-valuenow', r);
+  handle.setAttribute('aria-valuetext', r + '% before, ' + (100 - r) + '% after');
+  readout.textContent = r + '%';
+  onChange &amp;&amp; onChange(pos, src);                          // the read-out card
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Drag once, for mouse and touch</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Pointer events unify mouse, touch and pen, so one set of handlers covers all input. On <code>pointerdown</code> we call <code>setPointerCapture</code> so every later move/up routes to the stage even if the finger slides outside it &mdash; the drag never "sticks". <code>touch-action:none</code> on the stage stops the browser from scrolling the page mid-drag on touch.</p>
+        <div class="relative"><pre>let dragging = false;
+stage.addEventListener('pointerdown', e =&gt; {
+  dragging = true;
+  stage.setPointerCapture(e.pointerId);     // keep events even outside the box
+  setPos(pctFromEvent(e), 'drag');
+});
+stage.addEventListener('pointermove', e =&gt; { if (dragging) setPos(pctFromEvent(e), 'drag'); });
+stage.addEventListener('pointerup',   () =&gt; { dragging = false; });
+stage.addEventListener('pointercancel', () =&gt; { dragging = false; });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">The handle is a real slider</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Give the handle <code>role="slider"</code> with <code>aria-valuemin/max/now</code> and a <code>tabindex</code>, and it becomes an assistive-tech slider for free. On <code>keydown</code>, <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> nudge one percent, <kbd>Shift</kbd> or <kbd>PageUp/Down</kbd> jump ten, and <kbd>Home</kbd>/<kbd>End</kbd> snap to the edges &mdash; each just calls the same <code>setPos</code>. <code>preventDefault</code> stops the arrows from scrolling the page.</p>
+        <div class="relative"><pre>handle.addEventListener('keydown', e =&gt; {
+  const step = e.shiftKey ? 10 : 1; let done = true;
+  if      (e.key === 'ArrowRight' || e.key === 'ArrowUp')   setPos(pos + step, 'keyboard');
+  else if (e.key === 'ArrowLeft'  || e.key === 'ArrowDown') setPos(pos - step, 'keyboard');
+  else if (e.key === 'PageUp')   setPos(pos + 10, 'keyboard');
+  else if (e.key === 'PageDown') setPos(pos - 10, 'keyboard');
+  else if (e.key === 'Home')     setPos(0,   'keyboard');
+  else if (e.key === 'End')      setPos(100, 'keyboard');
+  else done = false;
+  if (done) e.preventDefault();
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Flip the axis for the horizontal variant</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A horizontal divider is not a new component &mdash; it is the same code with one flag. When <code>orient === 'h'</code>, read <code>clientY</code> against the stage <em>height</em>, clip the <em>bottom</em> instead of the right with <code>inset(0 0 (100&minus;pos)% 0)</code>, and move the divider's <code>top</code> rather than its <code>left</code>. The arrow keys and everything else are untouched.</p>
+        <div class="relative"><pre>const vertical = orient === 'v';
+
+function pctFromEvent(e){
+  const r = stage.getBoundingClientRect();
+  const frac = vertical ? (e.clientX - r.left) / r.width
+                        : (e.clientY - r.top)  / r.height;   // Y instead of X
+  return clamp(frac * 100, 0, 100);
+}
+// in setPos:
+before.style.clipPath = vertical ? `inset(0 ${100-pos}% 0 0)`   // trim right
+                                 : `inset(0 0 ${100-pos}% 0)`;  // trim bottom
+divider.style[vertical ? 'left' : 'top'] = pos + '%';</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Accessibility &amp; the read-out</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The handle carries <code>role="slider"</code>, live <code>aria-valuenow</code> and a spoken <code>aria-valuetext</code> ("70% before, 30% after"); its <code>aria-orientation</code> matches the axis it moves along. Decorative bits (the chevrons, the corner tags) are <code>aria-hidden</code>. The read-out card is a pure reader of <code>pos</code> &mdash; a split meter and a few pills &mdash; so it is impossible for the numbers to drift from the wipe.</p>
+        <div class="relative"><pre>// value axis: a vertical divider slides horizontally, and vice-versa
+handle.setAttribute('aria-orientation', vertical ? 'horizontal' : 'vertical');
+handle.setAttribute('aria-valuetext', r + '% before, ' + (100 - r) + '% after');
+
+function paintReadout(pos){                 // the card only READS pos
+  const r = Math.round(pos);
+  meterBefore.style.width = r + '%';
+  meterAfter.style.width  = (100 - r) + '%';
+  pPos.textContent = r + '%';
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 56 of DesignFromZero done &mdash; Image Comparison Slider.</h3><p class="text-sm text-indigo-700 mt-2">You built a before/after slider from nothing: <strong>two layers in one clipped box</strong>, a single <code>clip-path: inset</code> that trims the top image at the divider, and <strong>self-contained scenes drawn on a canvas</strong> so there are no image files at all. Everything rides on <strong>one percentage</strong> &mdash; a live <strong>pointer-to-percent</strong> mapping <strong>clamped</strong> to the track, funnelled through one <code>setPos</code> that writes the clip, the divider, the ARIA and the read-out together. Mouse and touch share a single <strong>pointer-event</strong> path with <code>setPointerCapture</code>, the handle is a real <code>role="slider"</code> with full <strong>keyboard</strong> control, and flipping to a <strong>horizontal</strong> wipe is one flag swapping X for Y. <strong>&#128075; The comparison slider behind every "before / after", rebuilt in one file.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== IMAGE COMPARISON SLIDER ==========================================
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// --- self-contained sample scenes (no external image URLs) --------------
+// one landscape, identical geometry, two colour grades. Same-seed ridges
+// so the mountains line up exactly across the divider.
+function ridge(ctx, W, baseY, amp, seed, fill){
+  ctx.beginPath();
+  ctx.moveTo(0, baseY);
+  const n = 48;
+  for (let i = 0; i <= n; i++){
+    const t = i / n, x = W * t;
+    const y = baseY - amp * (0.45
+        + 0.32 * Math.sin(t * 7  + seed)
+        + 0.14 * Math.sin(t * 17 + seed * 2)
+        + 0.09 * Math.sin(t * 31 + seed));
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, baseY); ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+}
+
+function drawScene(ctx, W, H, after){
+  ctx.clearRect(0, 0, W, H);
+  const horizon = H * 0.60;
+
+  // sky
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  if (after){
+    sky.addColorStop(0, '#1e2a4a'); sky.addColorStop(0.42, '#6b3f7a');
+    sky.addColorStop(0.72, '#ff7a3d'); sky.addColorStop(1, '#ffd270');
+  } else {
+    sky.addColorStop(0, '#aab5c0'); sky.addColorStop(0.7, '#c6cdd4'); sky.addColorStop(1, '#d8dee3');
+  }
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, horizon);
+
+  // sun + glow
+  const sunX = W * 0.70, sunY = horizon * 0.72, sunR = W * 0.055;
+  if (after){
+    const g = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, W * 0.55);
+    g.addColorStop(0, 'rgba(255,210,130,0.9)');
+    g.addColorStop(0.5, 'rgba(255,150,80,0.35)');
+    g.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon);
+  }
+  ctx.beginPath(); ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+  ctx.fillStyle = after ? '#fff4d0' : '#e9edf0'; ctx.fill();
+
+  // two mountain ridges (same seeds in both grades -> aligned)
+  ridge(ctx, W, horizon, horizon * 0.42, 1.1, after ? '#4a3568' : '#93a0ac');
+  ridge(ctx, W, horizon, horizon * 0.62, 3.7, after ? '#2b1f42' : '#76828e');
+
+  // water
+  const wg = ctx.createLinearGradient(0, horizon, 0, H);
+  if (after){ wg.addColorStop(0, '#b64e28'); wg.addColorStop(0.5, '#7d3a52'); wg.addColorStop(1, '#2c2340'); }
+  else      { wg.addColorStop(0, '#aab4bd'); wg.addColorStop(1, '#8c98a2'); }
+  ctx.fillStyle = wg; ctx.fillRect(0, horizon, W, H - horizon);
+
+  // warm sun reflection column (after only)
+  if (after){
+    const rg = ctx.createLinearGradient(0, horizon, 0, H);
+    rg.addColorStop(0, 'rgba(255,200,120,0.75)'); rg.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = rg; ctx.fillRect(sunX - sunR * 1.3, horizon, sunR * 2.6, H - horizon);
+  }
+  // ripple lines
+  ctx.strokeStyle = after ? 'rgba(255,220,170,0.22)' : 'rgba(255,255,255,0.16)';
+  ctx.lineWidth = 1.4;
+  for (let i = 1; i < 7; i++){
+    const y = horizon + (H - horizon) * i / 7;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // grade overlay: warm vignette (after) vs flat wash (before)
+  if (after){
+    const v = ctx.createRadialGradient(W / 2, H * 0.5, H * 0.2, W / 2, H * 0.5, W * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(20,6,30,0.45)');
+    ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = 'rgba(210,216,222,0.28)'; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// --- wire one slider (reused for both orientations) ---------------------
+function makeCompare(stage, opts){
+  opts = opts || {};
+  const vertical = stage.dataset.orient !== 'h';
+  const after   = stage.querySelector('.ic-after');
+  const before  = stage.querySelector('.ic-before');
+  const divider = stage.querySelector('.ic-divider');
+  const handle  = stage.querySelector('.ic-handle');
+  const readout = stage.querySelector('.ic-readout');
+
+  // fixed internal resolution — the scene scales with the stage via CSS
+  const RES_W = 1200, RES_H = 750;
+  [after, before].forEach(c => { c.width = RES_W; c.height = RES_H; });
+  drawScene(after.getContext('2d'),  RES_W, RES_H, true);    // AFTER  = background
+  drawScene(before.getContext('2d'), RES_W, RES_H, false);   // BEFORE = clipped top layer
+
+  let pos = 50, lastSrc = 'init', dragging = false;
+
+  function apply(){
+    const r = Math.round(pos);
+    if (vertical){
+      before.style.clipPath = 'inset(0 ' + (100 - pos) + '% 0 0)';   // trim right
+      divider.style.left = pos + '%';
+    } else {
+      before.style.clipPath = 'inset(0 0 ' + (100 - pos) + '% 0)';   // trim bottom
+      divider.style.top = pos + '%';
+    }
+    handle.setAttribute('aria-valuenow', r);
+    handle.setAttribute('aria-valuetext', r + '% before, ' + (100 - r) + '% after');
+    if (readout) readout.textContent = r + '%';
+    if (opts.onChange) opts.onChange(pos, vertical, lastSrc);
+  }
+  function setPos(p, src){ if (src) lastSrc = src; pos = clamp(p, 0, 100); apply(); }
+
+  function pctFromEvent(e){
+    const rect = stage.getBoundingClientRect();
+    const frac = vertical ? (e.clientX - rect.left) / rect.width
+                          : (e.clientY - rect.top)  / rect.height;
+    return clamp(frac * 100, 0, 100);
+  }
+
+  // drag — one path for mouse + touch + pen
+  stage.addEventListener('pointerdown', e => {
+    dragging = true;
+    stage.setPointerCapture(e.pointerId);
+    setPos(pctFromEvent(e), 'drag');
+    handle.focus({ preventScroll: true });
+    e.preventDefault();
+  });
+  stage.addEventListener('pointermove', e => { if (dragging) setPos(pctFromEvent(e), 'drag'); });
+  const end = e => { if (dragging){ dragging = false; try { stage.releasePointerCapture(e.pointerId); } catch (_) {} } };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+
+  // keyboard — the handle is a real slider
+  handle.addEventListener('keydown', e => {
+    const inc = vertical ? ['ArrowRight', 'ArrowUp'] : ['ArrowDown', 'ArrowRight'];
+    const dec = vertical ? ['ArrowLeft', 'ArrowDown'] : ['ArrowUp', 'ArrowLeft'];
+    const step = e.shiftKey ? 10 : 1;
+    let done = true;
+    if      (inc.includes(e.key)) setPos(pos + step, 'keyboard');
+    else if (dec.includes(e.key)) setPos(pos - step, 'keyboard');
+    else if (e.key === 'PageUp')   setPos(pos + 10, 'keyboard');
+    else if (e.key === 'PageDown') setPos(pos - 10, 'keyboard');
+    else if (e.key === 'Home')     setPos(0, 'keyboard');
+    else if (e.key === 'End')      setPos(100, 'keyboard');
+    else done = false;
+    if (done) e.preventDefault();
+  });
+
+  // a vertical divider slides horizontally -> value axis is horizontal
+  handle.setAttribute('aria-orientation', vertical ? 'horizontal' : 'vertical');
+  setPos(opts.start != null ? opts.start : 50, 'init');
+  return { setPos };
+}
+
+// --- the read-out card (a pure reader of pos; demo 1 only) --------------
+const roMB    = document.getElementById('roMB');
+const roMA    = document.getElementById('roMA');
+const roPos   = document.getElementById('roPos');
+const roPosA  = document.getElementById('roPosA');
+const pPos    = document.getElementById('pPos');
+const pBefore = document.getElementById('pBefore');
+const pAfter  = document.getElementById('pAfter');
+const pClip   = document.getElementById('pClip');
+const pOrient = document.getElementById('pOrient');
+const pAria   = document.getElementById('pAria');
+const pSrc    = document.getElementById('pSrc');
+
+function paintReadout(pos, vertical, src){
+  const r = Math.round(pos);
+  roMB.style.width = r + '%';
+  roMA.style.width = (100 - r) + '%';
+  roPos.textContent  = r;
+  roPosA.textContent = 100 - r;
+  pPos.textContent    = r + '%';
+  pBefore.textContent = r + '%';
+  pAfter.textContent  = (100 - r) + '%';
+  pClip.textContent   = 'inset ' + (100 - r) + '%';
+  pOrient.textContent = vertical ? 'Vertical' : 'Horizontal';
+  pAria.textContent   = r;
+  const label = { init: '—', drag: 'drag', keyboard: 'keyboard' }[src] || src;
+  pSrc.textContent = label;
+  pSrc.className = 'pill' + (src === 'init' ? '' : ' a');
+}
+
+// --- boot ----------------------------------------------------------------
+makeCompare(document.getElementById('icV'), { start: 50, onChange: paintReadout });
+makeCompare(document.getElementById('icH'), { start: 50 });
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. Two layers stacked in one box",
+   why:"A before/after slider begins as two pictures occupying the exact same rectangle. Put them in a position:relative stage with overflow:hidden, and make each layer position:absolute filling the box, so they register pixel-for-pixel. DOM order is z-order: paint the AFTER image first as the full background, then lay the BEFORE image on top. Nothing moves and nothing is hidden yet - both are fully drawn, one simply covers the other. Every later trick is just deciding how much of that top layer to show.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">stage (overflow:hidden)<br><br>[ AFTER&nbsp;&nbsp;&mdash; full background ]<br>[ BEFORE &mdash; on top, will be clipped ]<br><br>both fill inset:0, perfectly aligned</div>',
+   code:".ic-stage  { position:relative; overflow:hidden; }\n.ic-canvas { position:absolute; inset:0; width:100%; height:100%; }\n\n// AFTER painted first (behind), BEFORE second (on top)" },
+ { title:"2. One clip-path does the reveal",
+   why:"The whole illusion is a single CSS property. clip-path: inset(top right bottom left) hides a slice from each edge of an element. To show only the left pos percent of the top image, trim the right side by (100 minus pos) percent: inset(0 (100-pos)% 0 0). At pos 50 the box splits down the middle; at 0 the top layer disappears entirely and the AFTER shows through; at 100 it covers everything. There is no mask, no second draw, no compositing - moving the divider is literally editing one number inside one string.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">clip-path: inset(0&nbsp;&nbsp;<b>(100-pos)%</b>&nbsp;&nbsp;0&nbsp;&nbsp;0)<br><br>pos 70 &rarr; inset(0 30% 0 0)<br>left 70% = BEFORE &middot; right 30% = AFTER</div>',
+   code:"before.style.clipPath = `inset(0 ${100 - pos}% 0 0)`;\n// trims (100-pos)% off the RIGHT, leaving the left pos% visible" },
+ { title:"3. The scenes are drawn, not loaded",
+   why:"To stay in one file with no external image URLs, the two pictures are drawn on a canvas rather than fetched. A single drawScene(ctx, W, H, after) lays down the same landscape - a sky gradient, a sun, two mountain ridges, water - and the after flag swaps the palette: a flat, low-contrast overcast grade for BEFORE, a saturated golden-hour grade for AFTER. The ridge geometry comes from a fixed sine formula with fixed seeds, so both layers produce identical mountains that line up seamlessly across the divider; only the colour and lighting differ, exactly like a photo edit.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drawScene(ctx, W, H, after)<br><br>same geometry (fixed seeds)<br>after=false &rarr; grey / flat<br>after=true&nbsp;&nbsp;&rarr; warm / golden hour</div>',
+   code:"function drawScene(ctx, W, H, after){\n  // sky gradient: grey when !after, sunset when after\n  ridge(ctx, W, H*0.6, amp, seed, after ? '#2b1f42' : '#76828e');\n  // ...sun, water, vignette - identical shapes, different grade\n}" },
+ { title:"4. Pointer to percent",
+   why:"The one calculation the component lives on. A pointer event carries clientX, a coordinate in the viewport. Subtract the stage's left edge, read live from getBoundingClientRect(), to get an offset inside the box; divide by the box width for a fraction from 0 to 1; multiply by 100 for a percent. Reading the rect on every event means the answer is correct after any scroll or resize, with no cached measurements to go stale. That percent is the divider position, and it is the only value the rest of the code needs.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">clientX&nbsp;&minus;&nbsp;rect.left<br>&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash; &times; 100&nbsp;&nbsp;=&nbsp;&nbsp;pos%<br>rect.width<br><br>rect read live &rarr; scroll/resize safe</div>',
+   code:"function pctFromEvent(e){\n  const rect = stage.getBoundingClientRect();\n  const frac = (e.clientX - rect.left) / rect.width; // 0..1\n  return frac * 100;\n}" },
+ { title:"5. Clamp to the track",
+   why:"Inputs overshoot. A drag can carry the pointer past the edge of the frame, giving a fraction below 0 or above 1; an arrow key held at the end tries to push past 100. A single clamp(v, 0, 100) at the one place every value is written keeps the divider inside its track no matter the source. The clip-path stays a legal percentage, the handle stays on the line, and the announced value never becomes nonsense. Clamp once at the choke-point and nothing downstream ever has to check bounds again.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">drag off the right edge<br>&rarr; frac 1.4 &rarr; 140%<br>&rarr; clamp(140, 0, 100) = 100<br><br>divider physically cannot escape</div>',
+   code:"const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));\n\nsetPos(clamp(pctFromEvent(e), 0, 100));" },
+ { title:"6. One setPos writes everything",
+   why:"There is a single source of truth, pos, and one function that applies it. setPos clamps and stores the value, then fans out to every view of it: the clip-path on the top layer produces the wipe, the divider's left places the line and the handle riding on it, aria-valuenow and aria-valuetext keep assistive tech in step, the in-frame pill shows the percent, and a callback updates the read-out card. Because drag, tap and keyboard all funnel through this one function, the image, the ARIA and the read-out are mathematically incapable of disagreeing.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">input &rarr; setPos(p) &rarr; clamp &rarr; store<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>clip&nbsp;&nbsp;divider&nbsp;&nbsp;aria&nbsp;&nbsp;read-out<br><br>write once, fan out once</div>',
+   code:"function setPos(p, src){\n  pos = clamp(p, 0, 100);\n  before.style.clipPath = `inset(0 ${100 - pos}% 0 0)`;\n  divider.style.left = pos + '%';\n  handle.setAttribute('aria-valuenow', Math.round(pos));\n  readout.textContent = Math.round(pos) + '%';\n  onChange && onChange(pos, src);\n}" },
+ { title:"7. Drag once, for mouse and touch",
+   why:"Pointer events unify mouse, touch and pen behind a single API, so one set of handlers serves every device - no duplicate touchstart/mousedown code. The key move is setPointerCapture on pointerdown: it routes all subsequent move and up events to the stage even when the pointer slides outside it, so a fast drag never 'sticks' at the edge or drops halfway. Pairing that with touch-action:none on the stage tells the browser not to scroll or zoom the page while a finger is dragging the divider, which is what makes touch feel solid.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">pointerdown &rarr; setPointerCapture<br>pointermove &rarr; setPos (even outside box)<br>pointerup&nbsp;&nbsp; &rarr; dragging = false<br><br>mouse = touch = pen, one path</div>',
+   code:"stage.addEventListener('pointerdown', e => {\n  dragging = true;\n  stage.setPointerCapture(e.pointerId);\n  setPos(pctFromEvent(e), 'drag');\n});\nstage.addEventListener('pointermove', e => { if (dragging) setPos(pctFromEvent(e), 'drag'); });\nstage.addEventListener('pointerup', () => { dragging = false; });" },
+ { title:"8. The handle is a real slider",
+   why:"Rather than a decorative circle, the handle is marked role=slider with aria-valuemin, aria-valuemax and aria-valuenow, and it is focusable. That single set of attributes makes it a genuine slider to a screen reader and unlocks the keyboard: on keydown, Left/Right nudge one percent, holding Shift or pressing PageUp/PageDown jumps ten, and Home/End snap to the ends - each branch simply calls the same setPos. Calling preventDefault on the handled keys stops the arrows from also scrolling the page, so focus stays put and the divider is fully operable without a mouse.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&larr; &rarr;&nbsp;&nbsp;&plusmn;1%&nbsp;&nbsp;&nbsp;&nbsp;Shift+&larr;&rarr; / PgUp&middot;PgDn&nbsp;&nbsp;&plusmn;10%<br>Home &rarr; 0%&nbsp;&nbsp;&nbsp;End &rarr; 100%<br><br>role=slider + aria-valuenow</div>',
+   code:"handle.addEventListener('keydown', e => {\n  const step = e.shiftKey ? 10 : 1; let done = true;\n  if      (e.key === 'ArrowRight') setPos(pos + step, 'keyboard');\n  else if (e.key === 'ArrowLeft')  setPos(pos - step, 'keyboard');\n  else if (e.key === 'Home')       setPos(0, 'keyboard');\n  else if (e.key === 'End')        setPos(100, 'keyboard');\n  else done = false;\n  if (done) e.preventDefault();\n});" },
+ { title:"9. Flip the axis for the horizontal variant",
+   why:"A horizontal divider is not a second component; it is the same one with a single boolean. When vertical is false, three lines change and nothing else. The pointer maps clientY against the stage height instead of clientX against the width. The clip trims the bottom - inset(0 0 (100-pos)% 0) - rather than the right, so the top of the frame is BEFORE and the bottom is AFTER. And the divider moves via its top rather than its left. The clamp, the setPos fan-out, the keyboard and the read-out are all untouched, which is the payoff of driving everything from one percentage.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">vertical=false<br><br>clientY / height&nbsp;&nbsp;(not clientX / width)<br>inset(0 0 (100-pos)% 0)&nbsp;&nbsp;(trim bottom)<br>divider.style.top&nbsp;&nbsp;(not left)</div>',
+   code:"const vertical = orient === 'v';\nconst frac = vertical ? (e.clientX - r.left) / r.width\n                      : (e.clientY - r.top)  / r.height;\nbefore.style.clipPath = vertical ? `inset(0 ${100-pos}% 0 0)`\n                                 : `inset(0 0 ${100-pos}% 0)`;\ndivider.style[vertical ? 'left' : 'top'] = pos + '%';" },
+ { title:"10. Accessibility and the read-out",
+   why:"The finishing layer makes it honest. The handle exposes aria-valuenow plus a spoken aria-valuetext like '70% before, 30% after', and its aria-orientation matches the axis it actually moves along - horizontal for a vertical divider, and vice-versa. Purely decorative pieces, the chevron icon and the corner Before/After tags, are marked aria-hidden so they are not announced twice. The read-out card is a pure reader of pos: a split meter bar and a handful of pills, recomputed on every change. Because it never writes state, only reads it, the numbers can never drift from what the wipe is showing.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">aria-valuetext = "70% before, 30% after"<br>aria-orientation follows the axis<br>chevrons / tags = aria-hidden<br><br>read-out READS pos, never writes it</div>',
+   code:"handle.setAttribute('aria-orientation', vertical ? 'horizontal' : 'vertical');\nhandle.setAttribute('aria-valuetext', r + '% before, ' + (100 - r) + '% after');\n\nfunction paintReadout(pos){         // card only reads pos\n  meterBefore.style.width = Math.round(pos) + '%';\n}" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
