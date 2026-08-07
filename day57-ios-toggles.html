@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 57 — iOS Toggle Switches</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+
+  /* ============================================================
+     THE TOGGLE SWITCH — a native <input type=checkbox> in disguise
+     ============================================================ */
+  .sw {
+    --w: 52px; --h: 32px; --pad: 3px;
+    --track-off: #e5e7eb;      /* grey rail (OFF)   */
+    --track-on:  #34c759;      /* iOS green (ON)    */
+    --thumb-bg:  #ffffff;
+    --dur: .42s; --ease: cubic-bezier(.34, 1.56, .64, 1);   /* spring / overshoot */
+    position:relative; display:inline-flex; align-items:center; vertical-align:middle;
+    width:var(--w); height:var(--h); flex:none; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* the REAL control: visually invisible but fully present — focusable,
+     clickable, Space-togglable, and the source of :checked. */
+  .sw > input {
+    position:absolute; inset:0; width:100%; height:100%;
+    margin:0; opacity:0; cursor:inherit; z-index:2;
+  }
+  .sw-track {
+    position:absolute; inset:0; border-radius:999px;
+    background:var(--track-off); transition:background var(--dur) ease;
+    pointer-events:none;
+  }
+  .sw-thumb {
+    position:absolute; top:var(--pad); left:var(--pad);
+    width:calc(var(--h) - var(--pad) * 2); height:calc(var(--h) - var(--pad) * 2);
+    border-radius:50%; background:var(--thumb-bg);
+    box-shadow:0 1px 2px rgba(15,23,42,.28), 0 3px 8px rgba(15,23,42,.14);
+    transition:transform var(--dur) var(--ease);
+    pointer-events:none;
+  }
+  /* ON state — the entire illusion is these two rules, driven by :checked */
+  .sw > input:checked ~ .sw-track           { background:var(--track-on); }
+  .sw > input:checked ~ .sw-track .sw-thumb { transform:translateX(calc(var(--w) - var(--h))); }
+  /* focus ring on the visible track when the hidden input has focus */
+  .sw > input:focus-visible ~ .sw-track { box-shadow:0 0 0 4px rgba(99,102,241,.45); }
+  /* while dragging, kill the spring so the thumb tracks the finger 1:1 */
+  .sw.dragging .sw-thumb, .sw.dragging .sw-track { transition:none; }
+  /* disabled */
+  .sw:has(> input:disabled), .sw.is-disabled { cursor:not-allowed; opacity:.45; }
+  .sw > input:disabled { cursor:not-allowed; }
+
+  /* sizes — nothing but three custom properties */
+  .sw.sw-sm { --w:40px; --h:24px; --pad:2px; }
+  .sw.sw-lg { --w:66px; --h:40px; --pad:4px; }
+
+  /* colour themes — repoint one variable */
+  .sw.t-indigo { --track-on:#6366f1; }
+  .sw.t-green  { --track-on:#34c759; }
+  .sw.t-rose   { --track-on:#f43f5e; }
+  .sw.t-amber  { --track-on:#f59e0b; }
+  .sw.t-sky    { --track-on:#0ea5e9; }
+  .sw.t-slate  { --track-on:#334155; }
+
+  /* MATERIAL variant — thin track, a larger thumb that overshoots above/below it */
+  .sw.sw-material {
+    --w:46px; --h:20px; height:28px;
+    --track-off:#b0b7c3; --track-on:#6366f1;
+    --ease:cubic-bezier(.2, 1.75, .3, 1);   /* punchier overshoot */
+  }
+  .sw.sw-material .sw-track { top:7px; bottom:7px; inset:auto; left:0; right:0; }   /* thin 14px bar, centred */
+  .sw.sw-material .sw-thumb {
+    top:50%; left:0; margin-top:-10px; width:20px; height:20px;
+    background:#fff; box-shadow:0 1px 3px rgba(15,23,42,.32), 0 2px 6px rgba(15,23,42,.2);
+  }
+  .sw.sw-material > input:checked ~ .sw-track           { background:rgba(99,102,241,.42); }
+  .sw.sw-material > input:checked ~ .sw-track .sw-thumb { transform:translateX(26px); background:var(--track-on); }
+
+  /* LOADING — a spinner inside the thumb; interaction is blocked (aria-busy) */
+  .sw.sw-loading { cursor:progress; }
+  .sw.sw-loading .sw-thumb::after {
+    content:""; position:absolute; inset:22%; border-radius:50%;
+    border:2px solid rgba(15,23,42,.22); border-top-color:var(--track-on);
+    animation:sw-spin .7s linear infinite;
+  }
+  @keyframes sw-spin { to { transform:rotate(360deg); } }
+
+  /* settings-row usage — the WHOLE row is one <label>, so it is one big target */
+  .settings-row {
+    display:flex; align-items:center; gap:14px; padding:14px 16px; cursor:pointer;
+    background:#fff; border-bottom:1px solid #eef2f6;
+  }
+  .settings-row:last-child { border-bottom:0; }
+  .settings-row:hover { background:#f8fafc; }
+  .settings-ico { width:34px; height:34px; flex:none; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#fff; }
+  .settings-text { flex:1; min-width:0; }
+  .settings-title { display:block; font-weight:700; font-size:14px; color:#0f172a; }
+  .settings-desc  { display:block; font-size:12px; color:#94a3b8; margin-top:1px; }
+
+  .demo-cell { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 10px;
+               background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; }
+  .demo-cell .lab { font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.04em; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in { animation:none !important; }
+    .sw-thumb, .sw-track { transition-duration:.001s !important; }
+    .sw.sw-loading .sw-thumb::after { animation:none !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 57</div>
+      <h1 class="text-xl font-bold">iOS Toggle Switch &mdash; the sliding on/off control, built as a <strong>real <code>&lt;input type=checkbox&gt;</code> in disguise</strong>. The checkbox is <strong>visually hidden but fully present</strong> &mdash; still focusable, still <kbd>Space</kbd>-togglable, still the single source of <code>:checked</code> &mdash; and a <code>&lt;span&gt;</code> track + round thumb are layered over it. The whole animation is <strong>two CSS rules</strong>: <code>input:checked ~ .sw-track</code> swaps the rail colour and <code>~ .sw-track .sw-thumb</code> slides the knob one <code>translateX(width&minus;height)</code> on a <strong>spring-y overshoot bezier</strong>, so a pure-CSS switch works with <strong>zero JavaScript</strong>. Adding <code>role="switch"</code> makes assistive tech announce <em>&ldquo;on / off&rdquo;</em> instead of <em>&ldquo;checked&rdquo;</em>, and JS only ever <strong>mirrors <code>aria-checked</code></strong> and feeds a live state panel. A gallery shows the <strong>iOS</strong> green, a <strong>Material</strong> thin-track overshoot thumb, <strong>sm / md / lg</strong> sizes and colour themes (all just CSS custom properties), plus <strong>disabled</strong> and <strong>loading</strong> states and a <strong>settings-row</strong> usage where the whole row is one label. Finally a <strong>JS drag-to-toggle</strong> variant uses pointer capture to let you fling the thumb &mdash; it kills the transition mid-drag, then commits past the 50% mark and hands motion back to CSS for the settle. No libraries, no placeholders.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">A switch is a <span class="text-indigo-600">checkbox</span> you cannot see &mdash; slide, click, or <kbd>Tab</kbd>+<kbd>Space</kbd> it.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">Every toggle below is a genuine <code>&lt;input type="checkbox" role="switch"&gt;</code>. The checkbox does all the real work &mdash; focus, keyboard, form value, the <code>:checked</code> flag &mdash; while a track and a round thumb are painted on top. Move the thumb and you are only ever flipping that one native boolean. The card on the right is a pure <strong>read-out</strong> of those booleans and their <code>aria-checked</code>.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-start justify-center">
+          <!-- the widgets -->
+          <div class="flex-1 w-full">
+            <div class="grid sm:grid-cols-2 gap-4">
+              <div class="demo-cell">
+                <span class="lab">Pure CSS &middot; iOS</span>
+                <label class="sw t-green" style="--h:38px;--w:62px;">
+                  <input type="checkbox" role="switch" data-name="Wi-Fi" aria-label="Wi-Fi" checked>
+                  <span class="sw-track"><span class="sw-thumb"></span></span>
+                </label>
+                <span class="text-xs text-slate-400 text-center px-2">Zero JavaScript. Click the knob, or <kbd>Tab</kbd> to it and press <kbd>Space</kbd> &mdash; <code>:checked</code> slides the thumb.</span>
+              </div>
+              <div class="demo-cell">
+                <span class="lab">JS drag-to-toggle</span>
+                <label class="sw sw-drag t-indigo" style="--h:38px;--w:62px;">
+                  <input type="checkbox" role="switch" data-name="Bluetooth" aria-label="Bluetooth">
+                  <span class="sw-track"><span class="sw-thumb"></span></span>
+                </label>
+                <span class="text-xs text-slate-400 text-center px-2"><strong>Drag</strong> the thumb and let go &mdash; past halfway it commits, then springs to rest. A plain tap still toggles.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-80 flex-shrink-0 w-full">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live state &mdash; the native booleans</div>
+              <div id="sw-list" class="mb-2"></div>
+              <div class="flex items-center justify-between pt-2 text-xs">
+                <span class="text-slate-400 font-semibold">total on</span>
+                <span id="sw-summary" class="pill mono">0 of 0 on</span>
+              </div>
+              <div class="flex items-center justify-between pt-2 text-xs">
+                <span class="text-slate-400 font-semibold">last event</span>
+                <span id="sw-lastevt" class="pill">&mdash;</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Click, drag and <kbd>Space</kbd> all flip the <em>same</em> <code>input.checked</code>. JS only mirrors it into <code>aria-checked</code> and this panel &mdash; it never drives the animation.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- variant gallery -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <h3 class="font-bold text-lg mb-1">One component, every variant &mdash; all from <span class="text-indigo-600">CSS custom properties</span></h3>
+        <p class="text-slate-500 text-sm mb-5 max-w-3xl">Same markup each time. Sizes are three variables (<code>--w --h --pad</code>), colours repoint <code>--track-on</code>, and the whole thing stays a real checkbox underneath.</p>
+
+        <div class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="demo-cell"><span class="lab">Small</span>
+            <label class="sw sw-sm t-green"><input type="checkbox" role="switch" aria-label="Small" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Medium</span>
+            <label class="sw t-green"><input type="checkbox" role="switch" aria-label="Medium" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Large</span>
+            <label class="sw sw-lg t-green"><input type="checkbox" role="switch" aria-label="Large" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Material</span>
+            <label class="sw sw-material"><input type="checkbox" role="switch" aria-label="Material" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+        </div>
+
+        <div class="grid gap-4 mt-4" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
+          <div class="demo-cell"><span class="lab">Indigo</span>
+            <label class="sw t-indigo"><input type="checkbox" role="switch" aria-label="Indigo theme" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Green</span>
+            <label class="sw t-green"><input type="checkbox" role="switch" aria-label="Green theme" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Rose</span>
+            <label class="sw t-rose"><input type="checkbox" role="switch" aria-label="Rose theme" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Amber</span>
+            <label class="sw t-amber"><input type="checkbox" role="switch" aria-label="Amber theme" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+          <div class="demo-cell"><span class="lab">Sky</span>
+            <label class="sw t-sky"><input type="checkbox" role="switch" aria-label="Sky theme" checked><span class="sw-track"><span class="sw-thumb"></span></span></label></div>
+        </div>
+
+        <div class="grid gap-4 mt-4" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="demo-cell"><span class="lab">Disabled off</span>
+            <label class="sw is-disabled t-green"><input type="checkbox" role="switch" aria-label="Disabled off" disabled><span class="sw-track"><span class="sw-thumb"></span></span></label>
+            <span class="text-xs text-slate-400">can&rsquo;t focus or flip</span></div>
+          <div class="demo-cell"><span class="lab">Disabled on</span>
+            <label class="sw is-disabled t-green"><input type="checkbox" role="switch" aria-label="Disabled on" checked disabled><span class="sw-track"><span class="sw-thumb"></span></span></label>
+            <span class="text-xs text-slate-400">locked ON</span></div>
+          <div class="demo-cell"><span class="lab">Loading (static)</span>
+            <label class="sw sw-loading t-indigo" aria-busy="true"><input type="checkbox" role="switch" aria-label="Loading" checked disabled><span class="sw-track"><span class="sw-thumb"></span></span></label>
+            <span class="text-xs text-slate-400">spinner in the thumb</span></div>
+          <div class="demo-cell"><span class="lab">Async &middot; try it</span>
+            <label class="sw sw-async t-sky"><input type="checkbox" role="switch" data-name="Sync" aria-label="Sync"><span class="sw-track"><span class="sw-thumb"></span></span></label>
+            <span class="text-xs text-slate-400 text-center px-2">flip it &rarr; spins &amp; locks ~1.2s, then settles</span></div>
+        </div>
+      </div>
+
+      <!-- settings-row usage -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-2">
+        <h3 class="font-bold text-lg mb-1">Real usage &mdash; a <span class="text-indigo-600">settings list</span></h3>
+        <p class="text-slate-500 text-sm mb-4 max-w-3xl">Each row is a single <code>&lt;label&gt;</code> wrapping icon + text + switch, so <strong>tapping anywhere on the row</strong> flips it &mdash; a big, forgiving target. The switch's name comes from <code>aria-label</code>, not the long description.</p>
+        <div class="max-w-xl mx-auto border border-slate-200 rounded-2xl overflow-hidden">
+          <label class="settings-row">
+            <span class="settings-ico" style="background:#f43f5e;">&#128276;</span>
+            <span class="settings-text"><span class="settings-title">Notifications</span><span class="settings-desc">Banners, sounds and badges on the lock screen</span></span>
+            <span class="sw t-green"><input type="checkbox" role="switch" data-name="Notifications" aria-label="Notifications" checked><span class="sw-track"><span class="sw-thumb"></span></span></span>
+          </label>
+          <label class="settings-row">
+            <span class="settings-ico" style="background:#0ea5e9;">&#128205;</span>
+            <span class="settings-text"><span class="settings-title">Location Services</span><span class="settings-desc">Let apps use your approximate location</span></span>
+            <span class="sw t-green"><input type="checkbox" role="switch" data-name="Location" aria-label="Location Services"><span class="sw-track"><span class="sw-thumb"></span></span></span>
+          </label>
+          <label class="settings-row">
+            <span class="settings-ico" style="background:#334155;">&#127765;</span>
+            <span class="settings-text"><span class="settings-title">Dark Mode</span><span class="settings-desc">Use a dark colour scheme system-wide</span></span>
+            <span class="sw t-indigo"><input type="checkbox" role="switch" data-name="Dark Mode" aria-label="Dark Mode"><span class="sw-track"><span class="sw-thumb"></span></span></span>
+          </label>
+          <label class="settings-row">
+            <span class="settings-ico" style="background:#f59e0b;">&#9992;&#65039;</span>
+            <span class="settings-text"><span class="settings-title">Airplane Mode</span><span class="settings-desc">Turn off all wireless radios instantly</span></span>
+            <span class="sw t-amber"><input type="checkbox" role="switch" data-name="Airplane" aria-label="Airplane Mode"><span class="sw-track"><span class="sw-thumb"></span></span></span>
+          </label>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Every settings screen, feature flag and dark-mode switch is this same shape: a <strong>hidden native checkbox</strong> for behaviour, a <strong>track + thumb</strong> for looks, <strong>one <code>:checked</code> selector</strong> that slides the knob with a spring, and <strong><code>role="switch"</code></strong> so it announces on / off. Keep the checkbox real and you inherit focus, the keyboard, forms and a11y for free &mdash; the div-based knock-offs have to re-implement all four, and usually skip three.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a toggle switch works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A toggle switch is a <strong>native checkbox in disguise</strong>. We start from the <strong>markup</strong> (label + input + track + thumb), <strong>hide the input</strong> without removing it, style the <strong>track and thumb</strong>, do the whole reveal in <strong>one <code>:checked</code> selector</strong>, add a <strong>focus ring</strong> and a <strong>spring transition</strong>, spin up <strong>variants</strong> (sizes, themes, Material) from CSS custom properties, handle <strong>disabled and loading</strong>, wire a live <strong>state panel</strong> that mirrors <code>aria-checked</code>, and finish with a <strong>JS drag-to-toggle</strong>. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The markup: a real checkbox inside a label</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A <code>&lt;label&gt;</code> wraps a <code>&lt;input type="checkbox"&gt;</code> plus two spans &mdash; the track and, inside it, the thumb. Because the input lives inside the label, clicking <em>anywhere</em> on the switch toggles it, and the label is the click / tap target for free. <code>role="switch"</code> tells assistive tech to say <em>&ldquo;on / off&rdquo;</em> rather than <em>&ldquo;checked&rdquo;</em>.</p>
+        <div class="relative"><pre>&lt;label class="sw"&gt;
+  &lt;input type="checkbox" role="switch" aria-label="Wi-Fi"&gt;
+  &lt;span class="sw-track"&gt;
+    &lt;span class="sw-thumb"&gt;&lt;/span&gt;
+  &lt;/span&gt;
+&lt;/label&gt;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Hide the input &mdash; but keep it real</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do <strong>not</strong> use <code>display:none</code> or <code>visibility:hidden</code> &mdash; that would kill focus and the keyboard. Instead lay the input over the whole switch at <code>opacity:0</code>. It is invisible, yet still focusable, still clickable, still <kbd>Space</kbd>-togglable, and still the element that owns <code>:checked</code>. Give it the top <code>z-index</code> so it catches the clicks; the track and thumb are <code>pointer-events:none</code>.</p>
+        <div class="relative"><pre>.sw          { position:relative; display:inline-flex; width:52px; height:32px; cursor:pointer; }
+.sw &gt; input  { position:absolute; inset:0; width:100%; height:100%;
+               margin:0; opacity:0; cursor:inherit; z-index:2; }  /* invisible, not gone */
+.sw-track, .sw-thumb { pointer-events:none; }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">Style the track &amp; thumb</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The track is a pill (<code>border-radius:999px</code>) filling the switch. The thumb is a circle inset by <code>--pad</code> on every side, so its diameter is <code>height &minus; 2&times;pad</code>. A soft shadow lifts it off the rail. Everything is expressed against three custom properties &mdash; <code>--w</code>, <code>--h</code>, <code>--pad</code> &mdash; which is what makes sizing trivial later.</p>
+        <div class="relative"><pre>.sw { --w:52px; --h:32px; --pad:3px; --track-off:#e5e7eb; --track-on:#34c759; }
+
+.sw-track { position:absolute; inset:0; border-radius:999px; background:var(--track-off); }
+.sw-thumb { position:absolute; top:var(--pad); left:var(--pad);
+            width:calc(var(--h) - var(--pad)*2); height:calc(var(--h) - var(--pad)*2);
+            border-radius:50%; background:#fff;
+            box-shadow:0 1px 2px rgba(15,23,42,.28), 0 3px 8px rgba(15,23,42,.14); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">The reveal is one <code>:checked</code> selector</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Here is the entire behaviour. When the hidden input is checked, the sibling combinator <code>~</code> repaints the track and slides the thumb. The travel distance is exactly <code>width &minus; height</code>: the thumb starts <code>pad</code> from the left and must end <code>pad</code> from the right, and the two <code>pad</code>s cancel. No JavaScript touches this &mdash; a pure-CSS switch is fully working right here.</p>
+        <div class="relative"><pre>.sw &gt; input:checked ~ .sw-track           { background:var(--track-on); }
+.sw &gt; input:checked ~ .sw-track .sw-thumb { transform:translateX(calc(var(--w) - var(--h))); }
+
+/* 52 - 32 = 20px of travel. start:pad(3) end:52-3-26 => 23, delta = 20. */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">Focus ring on the track</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because the real control is invisible, its focus outline would be invisible too. Catch <code>:focus-visible</code> on the input and paint a ring on the <em>track</em> instead. <code>:focus-visible</code> (not <code>:focus</code>) means the ring shows for keyboard users but not on a mouse click &mdash; the modern default.</p>
+        <div class="relative"><pre>.sw &gt; input:focus-visible ~ .sw-track {
+  box-shadow:0 0 0 4px rgba(99,102,241,.45);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">The spring &mdash; an overshoot bezier</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A linear slide feels mechanical. Transition the thumb's <code>transform</code> with a <code>cubic-bezier</code> whose second control point pokes above 1 &mdash; the curve overshoots the target and eases back, so the knob lands with a tiny bounce. Only <code>transform</code> and <code>background</code> animate; both are compositor-friendly, so it stays 60fps.</p>
+        <div class="relative"><pre>.sw-thumb { transition:transform .42s cubic-bezier(.34, 1.56, .64, 1); }  /* 1.56 &gt; 1 = overshoot */
+.sw-track { transition:background .42s ease; }
+
+/* Material wants more punch: */
+.sw-material { --ease:cubic-bezier(.2, 1.75, .3, 1); }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Variants from custom properties</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because every dimension and colour is a variable, a variant is just a class that re-sets a few of them &mdash; the base rules and the travel math are untouched. Sizes swap <code>--w --h --pad</code>; themes repoint <code>--track-on</code>; Material thins the track and grows the thumb so it overshoots the rail.</p>
+        <div class="relative"><pre>.sw.sw-sm { --w:40px; --h:24px; --pad:2px; }
+.sw.sw-lg { --w:66px; --h:40px; --pad:4px; }
+
+.sw.t-indigo { --track-on:#6366f1; }
+.sw.t-rose   { --track-on:#f43f5e; }
+
+.sw.sw-material { --w:46px; --h:20px; height:28px; }          /* box taller than the thin track */
+.sw.sw-material .sw-track { top:7px; bottom:7px; }            /* 14px rail, centred */
+.sw.sw-material .sw-thumb { top:50%; margin-top:-10px; width:20px; height:20px; }  /* overshoots */</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Disabled &amp; loading</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A disabled native checkbox already refuses clicks, keyboard and focus &mdash; we only need to <em>look</em> disabled: dim the switch and change the cursor, keyed off <code>:has(&gt; input:disabled)</code>. Loading is a spinner drawn as a <code>::after</code> ring inside the thumb; pair it with <code>aria-busy="true"</code> and a disabled input so the value can't change mid-flight.</p>
+        <div class="relative"><pre>.sw:has(&gt; input:disabled) { cursor:not-allowed; opacity:.45; }
+
+.sw.sw-loading .sw-thumb::after {
+  content:""; position:absolute; inset:22%; border-radius:50%;
+  border:2px solid rgba(15,23,42,.22); border-top-color:var(--track-on);
+  animation:sw-spin .7s linear infinite;
+}
+@keyframes sw-spin { to { transform:rotate(360deg); } }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Mirror aria-checked + a live panel</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The CSS switch already works; JS is optional polish. On every <code>change</code> we copy <code>input.checked</code> into <code>aria-checked</code> (belt-and-braces for a <code>role="switch"</code>) and repaint a read-out. Because the checkbox is the single source of truth, click, drag and keyboard all flow through the same <code>change</code> event &mdash; the panel can never drift from the switch.</p>
+        <div class="relative"><pre>document.querySelectorAll('.sw &gt; input').forEach(inp =&gt; {
+  const sync = () =&gt; inp.setAttribute('aria-checked', inp.checked ? 'true' : 'false');
+  sync();                              // reflect the initial state
+  inp.addEventListener('change', () =&gt; { sync(); paintPanel(inp); });
+});</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">JS drag-to-toggle</h3></div>
+        <p class="text-sm text-slate-600 mb-3">To let users <em>fling</em> the thumb, capture the pointer on <code>pointerdown</code>, add a <code>.dragging</code> class that kills the transition (so the thumb tracks the finger 1:1), and set an inline <code>translateX</code> clamped to the track. On release, drop the class to re-enable the spring, decide the final state by whether you passed the halfway mark, write it back to <code>input.checked</code>, then <strong>clear the inline transform</strong> so CSS animates the settle. If the pointer actually moved, cancel the click that would otherwise double-toggle.</p>
+        <div class="relative"><pre>sw.addEventListener('pointerdown', e =&gt; {
+  if (input.disabled) return;
+  maxX = sw.clientWidth - thumb.offsetWidth - thumb.offsetLeft * 2;  // = width - height
+  startX = e.clientX; startPos = input.checked ? maxX : 0; moved = false;
+  sw.classList.add('dragging'); sw.setPointerCapture(e.pointerId);
+});
+sw.addEventListener('pointermove', e =&gt; {
+  if (!dragging) return;
+  const d = e.clientX - startX; if (Math.abs(d) &gt; 3) moved = true;
+  cur = Math.min(maxX, Math.max(0, startPos + d));
+  thumb.style.transform = `translateX(${cur}px)`;
+});
+function end(e){
+  sw.classList.remove('dragging');          // spring is back
+  if (moved){
+    const final = cur &gt; maxX / 2;           // committed past halfway?
+    void thumb.offsetWidth;                 // flush: transition on, thumb still at `cur`
+    input.checked = final;                  // flip the native boolean
+    input.dispatchEvent(new Event('change', { bubbles:true }));
+    thumb.style.transform = '';             // hand back to CSS -&gt; it animates the settle
+    suppressClick = true;                   // a drag must not also fire a toggle-click
+  } else { thumb.style.transform = ''; }    // a tap -&gt; let the native click toggle
+}
+input.addEventListener('click', e =&gt; { if (suppressClick){ e.preventDefault(); suppressClick = false; } });</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 57 of DesignFromZero done &mdash; iOS Toggle Switch.</h3><p class="text-sm text-indigo-700 mt-2">You built the sliding on/off control from a <strong>real <code>&lt;input type=checkbox&gt;</code></strong>: hidden at <code>opacity:0</code> but still focusable, <kbd>Space</kbd>-togglable and the sole owner of <code>:checked</code>, with a track and thumb layered over it. The whole animation is <strong>two <code>:checked</code> rules</strong> &mdash; a colour swap and a <code>translateX(width&minus;height)</code> slide on a <strong>spring-y overshoot bezier</strong> &mdash; so the pure-CSS version needs <strong>no JavaScript at all</strong>. Sizes, colour themes and the Material look are just <strong>CSS custom properties</strong>; disabled and loading fall out of <code>:has()</code> and a <code>::after</code> spinner; <code>role="switch"</code> makes it announce <em>on / off</em> and JS only ever <strong>mirrors <code>aria-checked</code></strong>. The optional <strong>drag-to-toggle</strong> flings the thumb with pointer capture, commits past halfway, and hands the settle back to CSS. <strong>&#128075; Keep the checkbox real and you inherit focus, the keyboard, forms and a11y for free.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== THE TOGGLE SWITCHES =============================================
+// A switch is a native <input type=checkbox role=switch>; CSS does all the
+// motion. JS is optional polish: mirror aria-checked, feed a live panel,
+// and add drag-to-toggle.
+
+// --- track the input source (for the read-out) --------------------------
+const srcOf = new WeakMap();
+
+// --- 1) mirror aria-checked on EVERY switch (keeps role=switch honest) ---
+const allInputs = document.querySelectorAll('.sw > input[type=checkbox]');
+allInputs.forEach(inp => {
+  const sync = () => inp.setAttribute('aria-checked', inp.checked ? 'true' : 'false');
+  sync();
+  inp.addEventListener('change', sync);
+  inp.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter' || e.key === 'Spacebar') srcOf.set(inp, 'keyboard');
+  });
+  inp.addEventListener('pointerdown', () => { if (!srcOf.get(inp)) srcOf.set(inp, 'click'); });
+});
+
+// --- 2) the live state panel (a pure reader of the native booleans) -----
+const listEl    = document.getElementById('sw-list');
+const summaryEl  = document.getElementById('sw-summary');
+const lastEvtEl  = document.getElementById('sw-lastevt');
+const tracked = Array.from(document.querySelectorAll('.sw > input[data-name]'));
+
+function rowId(i){ return 'swrow-' + i; }
+
+tracked.forEach((inp, i) => {
+  const row = document.createElement('div');
+  row.className = 'flex items-center justify-between text-sm py-1.5 border-b border-slate-100';
+  row.id = rowId(i);
+  listEl.appendChild(row);
+  inp.addEventListener('change', () => {
+    const src = srcOf.get(inp) || 'click';
+    paintPanel(inp);
+    lastEvtEl.textContent = inp.dataset.name + ' → ' + (inp.checked ? 'ON' : 'OFF') + ' · ' + src;
+    srcOf.set(inp, null);
+  });
+});
+
+function paintPanel(changed){
+  let on = 0;
+  tracked.forEach((inp, i) => {
+    if (inp.checked) on++;
+    const row = document.getElementById(rowId(i));
+    if (!row) return;
+    const st = inp.checked;
+    row.innerHTML =
+      '<span class="font-semibold text-slate-600">' + inp.dataset.name + '</span>' +
+      '<span class="flex items-center gap-2">' +
+        '<span class="pill mono" style="font-size:10px;">aria-checked=' + (st ? 'true' : 'false') + '</span>' +
+        '<span class="pill ' + (st ? 'g' : '') + '" style="min-width:42px;text-align:center;">' + (st ? 'ON' : 'OFF') + '</span>' +
+      '</span>';
+    row.style.background = (changed === inp) ? '#eef2ff' : '';
+    row.style.borderRadius = (changed === inp) ? '8px' : '';
+  });
+  summaryEl.textContent = on + ' of ' + tracked.length + ' on';
+}
+paintPanel(null);
+
+// --- 3) drag-to-toggle (only on .sw-drag) -------------------------------
+document.querySelectorAll('.sw-drag').forEach(sw => {
+  const input = sw.querySelector('input');
+  const thumb = sw.querySelector('.sw-thumb');
+  let dragging = false, moved = false, startX = 0, startPos = 0, maxX = 0, cur = 0, suppressClick = false;
+
+  sw.addEventListener('pointerdown', e => {
+    if (input.disabled) return;
+    maxX = sw.clientWidth - thumb.offsetWidth - thumb.offsetLeft * 2;   // = width - height
+    dragging = true; moved = false;
+    startX = e.clientX; startPos = input.checked ? maxX : 0; cur = startPos;
+    sw.classList.add('dragging');
+    try { sw.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  sw.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const d = e.clientX - startX;
+    if (Math.abs(d) > 3) moved = true;
+    cur = Math.min(maxX, Math.max(0, startPos + d));
+    thumb.style.transform = 'translateX(' + cur + 'px)';
+  });
+  function end(e){
+    if (!dragging) return;
+    dragging = false;
+    sw.classList.remove('dragging');            // re-enable the spring
+    if (moved){
+      const final = cur > maxX / 2;             // committed past halfway?
+      void thumb.offsetWidth;                   // flush: transition on, thumb still at `cur`
+      srcOf.set(input, 'drag');
+      if (input.checked !== final){
+        input.checked = final;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      thumb.style.transform = '';               // hand back to CSS -> it animates the settle
+      suppressClick = true;                     // a real drag must not also toggle via click
+    } else {
+      thumb.style.transform = '';               // a tap -> let the native click toggle
+    }
+    try { sw.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  sw.addEventListener('pointerup', end);
+  sw.addEventListener('pointercancel', end);
+  input.addEventListener('click', e => { if (suppressClick){ e.preventDefault(); suppressClick = false; } });
+});
+
+// --- 4) async / loading demo --------------------------------------------
+document.querySelectorAll('.sw-async').forEach(sw => {
+  const input = sw.querySelector('input');
+  input.addEventListener('change', () => {
+    sw.classList.add('sw-loading'); sw.setAttribute('aria-busy', 'true'); input.disabled = true;
+    setTimeout(() => {
+      sw.classList.remove('sw-loading'); sw.removeAttribute('aria-busy'); input.disabled = false;
+    }, 1200);
+  });
+});
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. A switch is a checkbox in disguise",
+   why:"A toggle switch and a checkbox are the same thing: one boolean, on or off. So the honest way to build a switch is to start from a real <input type=checkbox> and restyle it, rather than inventing a <div> that pretends. The checkbox already carries everything hard to reproduce - it is focusable, it toggles on Space, it submits a value in a form, it exposes a checked state to assistive tech, and it owns the CSS :checked pseudo-class. Build on it and every one of those behaviours is inherited for free; the visual track and thumb are the only new work.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&lt;input type="checkbox"&gt;<br><br>focus &middot; Space &middot; form value<br>:checked &middot; a11y state<br><br>a switch = a checkbox, restyled</div>',
+   code:"<!-- the switch IS a checkbox -->\n<label class=\"sw\">\n  <input type=\"checkbox\" role=\"switch\">\n  <span class=\"sw-track\"><span class=\"sw-thumb\"></span></span>\n</label>" },
+ { title:"2. Hide it, but keep it real",
+   why:"The trick is hiding the checkbox's default box without disabling it. display:none and visibility:hidden both remove it from the tab order and kill the keyboard - fatal for a control. Instead we stretch the input over the whole switch and set opacity:0. It is completely invisible, yet it still receives focus, still fires on Space, still clicks, and still drives :checked. It sits at the top z-index so it catches every pointer event, while the decorative track and thumb are marked pointer-events:none so they never steal a click.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">opacity:0  &#10003; still focusable<br>display:none  &#10007; tab order gone<br>visibility:hidden  &#10007; keyboard gone<br><br>invisible, not absent</div>',
+   code:".sw > input {\n  position:absolute; inset:0; width:100%; height:100%;\n  opacity:0; z-index:2;      /* invisible, on top, still live */\n}\n.sw-track, .sw-thumb { pointer-events:none; }" },
+ { title:"3. role=switch: on / off, not checked",
+   why:"By default a checkbox is announced as 'checkbox, checked' or 'checkbox, not checked'. A toggle switch should read as 'switch, on' / 'switch, off', which is exactly what adding role=switch does. Crucially the browser still derives the on/off state from the checkbox's native checked property, so you get correct semantics without managing state by hand. Mirroring aria-checked in JS is a harmless belt-and-braces that also makes the state trivially inspectable, but the checkbox remains the single source of truth.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">checkbox  &rarr; "checked / not checked"<br>role=switch &rarr; "on / off"<br><br>state still comes from input.checked</div>',
+   code:"<input type=\"checkbox\" role=\"switch\" aria-label=\"Wi-Fi\">\n\n// optional mirror, purely for inspection:\ninput.setAttribute('aria-checked', input.checked);" },
+ { title:"4. The label wraps everything",
+   why:"Putting the input, track and thumb all inside one <label> gives two wins at once. First, the entire switch becomes the click and tap target - press anywhere on it and the wrapped checkbox toggles, no id/for wiring needed. Second, that same wrapping is what lets a whole settings row (icon + title + description + switch) be a single label, so a careless tap on the description still flips the switch. The visible accessible name is set with aria-label so the long description text does not get read as the control's name.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">&lt;label&gt; icon &middot; text &middot; [switch] &lt;/label&gt;<br><br>click ANYWHERE in the label &rarr; toggles<br>aria-label names the control cleanly</div>',
+   code:"<label class=\"settings-row\">\n  <span class=\"settings-title\">Notifications</span>\n  <span class=\"sw\">\n    <input type=\"checkbox\" role=\"switch\" aria-label=\"Notifications\">\n    <span class=\"sw-track\"><span class=\"sw-thumb\"></span></span>\n  </span>\n</label>" },
+ { title:"5. One :checked selector is the whole machine",
+   why:"With a real checkbox underneath, the switch needs no state variable and no event handler to move - CSS reads the state directly. The sibling combinator ~ lets the checked input restyle its following siblings: it repaints the track to the ON colour and translates the thumb to the far end. Because CSS is declarative, the two states are always consistent and there is nothing to get out of sync. Flip the checkbox by any means - mouse, keyboard, JS - and these rules just apply.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">input:checked ~ .sw-track { background: green }<br>input:checked ~ .sw-track .sw-thumb { translateX }<br><br>no JS, no state var - CSS reads :checked</div>',
+   code:".sw > input:checked ~ .sw-track           { background:var(--track-on); }\n.sw > input:checked ~ .sw-track .sw-thumb { transform:translateX(calc(var(--w) - var(--h))); }" },
+ { title:"6. The thumb slides on transform",
+   why:"The knob moves with transform: translateX, never with left or margin. Transform is handled by the compositor - it does not trigger layout or paint, so the animation stays smooth even on a weak device, and it can run off the main thread. The distance is exactly width minus height: the thumb sits pad from the left edge and must finish pad from the right, and since both ends carry the same pad, the two cancel and the travel is simply w - h. That single expression is why every size just works.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">travel = width &minus; height<br><br>start: left = pad<br>end:&nbsp;&nbsp; left = w &minus; pad &minus; thumb<br>&rarr; delta = w &minus; h (pads cancel)</div>',
+   code:"/* thumb diameter = h - 2*pad; travel = w - h */\n.sw-thumb { transform:translateX(0); }\n.sw > input:checked ~ .sw-track .sw-thumb {\n  transform:translateX(calc(var(--w) - var(--h)));\n}" },
+ { title:"7. The spring is a cubic-bezier",
+   why:"A constant-speed slide looks robotic; real switches have a little life. Easing the transform with a cubic-bezier whose second control point rises above 1 makes the curve shoot slightly past the target and settle back - a spring-like overshoot in a single line, no keyframes needed. Only transform and background-color transition, both compositor-friendly properties, so the bounce never costs a layout. A stronger overshoot reads as 'Material', a gentler one as 'iOS'.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">cubic-bezier(.34, <b>1.56</b>, .64, 1)<br><br>y &gt; 1 &rarr; overshoots the target<br>&rarr; lands with a tiny bounce</div>',
+   code:".sw-thumb { transition:transform .42s cubic-bezier(.34, 1.56, .64, 1); }\n.sw-track { transition:background .42s ease; }\n\n.sw-material { --ease:cubic-bezier(.2, 1.75, .3, 1); } /* punchier */" },
+ { title:"8. Variants are just custom properties",
+   why:"Every measurement and colour lives in a CSS variable - --w, --h, --pad, --track-off, --track-on - so a variant never touches the base rules or the travel math. A size class re-sets the three dimensions; a theme class repoints one colour; the Material look thins the track and enlarges the thumb until it overshoots the rail. This is the payoff of driving the whole component from variables: dozens of looks, one implementation, and the :checked machine keeps working for all of them.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">sw-sm / sw-lg &rarr; --w --h --pad<br>t-indigo / t-rose &rarr; --track-on<br>sw-material &rarr; thin rail + big thumb<br><br>base rules never change</div>',
+   code:".sw.sw-lg   { --w:66px; --h:40px; --pad:4px; }\n.sw.t-rose  { --track-on:#f43f5e; }\n.sw.sw-material { --w:46px; --h:20px; height:28px; }" },
+ { title:"9. Disabled and loading",
+   why:"A disabled native checkbox already refuses focus, clicks and the keyboard, so we only need to make it look disabled - dim it and switch the cursor, selected with :has(> input:disabled) so the styling follows the real state. Loading is a busy switch you should not toggle mid-flight: draw a spinner as an ::after ring inside the thumb, set aria-busy=true, and disable the input until the async work resolves. The demo async switch flips, shows the spinner and locks for a beat, then settles - exactly the pattern for a setting that hits the server.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">:has(&gt; input:disabled) &rarr; dim + not-allowed<br>.sw-loading .sw-thumb::after &rarr; spinner<br>aria-busy="true" + input.disabled<br><br>native disabled already blocks input</div>',
+   code:".sw:has(> input:disabled) { opacity:.45; cursor:not-allowed; }\n.sw.sw-loading .sw-thumb::after {\n  content:\"\"; position:absolute; inset:22%; border-radius:50%;\n  border:2px solid rgba(15,23,42,.22); border-top-color:var(--track-on);\n  animation:sw-spin .7s linear infinite;\n}" },
+ { title:"10. Drag-to-toggle, and why a div can't",
+   why:"For a native-feeling fling, capture the pointer on pointerdown, add a class that kills the transition so the thumb tracks the finger exactly, and set an inline translateX clamped to the track. On release, drop that class to bring the spring back, decide the result by whether you crossed the halfway mark, write it to input.checked, and clear the inline transform so CSS animates the settle - suppressing the trailing click if you actually dragged. Notice the theme of the whole day: the checkbox is still the source of truth. A <div>-based switch could fake this motion, but it would have to hand-build focus, Space, the form value and the a11y state - four things the checkbox gave us for nothing. Keep the control real.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">down: capture + kill transition<br>move: thumb follows finger (clamped)<br>up: past 50%? &rarr; input.checked; CSS springs<br><br>div switch = rebuild focus/kbd/form/a11y</div>',
+   code:"sw.classList.add('dragging');            // transition:none while dragging\nthumb.style.transform = `translateX(${cur}px)`;\n// on release:\nsw.classList.remove('dragging');         // spring back\ninput.checked = cur > maxX / 2;          // commit past halfway\nthumb.style.transform = '';              // CSS animates the settle" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
