@@ -59,6 +59,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 55 — Date Range Picker](https://dev48v.infy.uk/design/day55-date-range-picker.html) — `day55-date-range-picker.html`
 - [DesignFromZero · Day 56 — Image Comparison Slider](https://dev48v.infy.uk/design/day56-image-compare-slider.html) — `day56-image-compare-slider.html`
 - [DesignFromZero · Day 57 — iOS Toggle Switches](https://dev48v.infy.uk/design/day57-ios-toggles.html) — `day57-ios-toggles.html`
+- [DesignFromZero · Day 58 — macOS Finder](https://dev48v.infy.uk/design/day58-macos-finder.html) — `day58-macos-finder.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

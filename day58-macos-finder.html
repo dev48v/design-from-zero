@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 58 — macOS Finder</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+
+  /* ============================================================
+     THE macOS FINDER WINDOW — one in-memory tree, three renderers
+     ============================================================ */
+  .mac-window {
+    --chrome:#ecebeb; --chrome-b:#d7d6d6; --sidebar:#e7e6ea; --sel:#0a69da;
+    width:100%; border-radius:12px; overflow:hidden; background:#fff;
+    border:1px solid #cfcfcf; box-shadow:0 24px 60px rgba(15,23,42,.28), 0 2px 6px rgba(15,23,42,.14);
+    font-family:-apple-system,"SF Pro Text","Inter",sans-serif; color:#1d1d1f;
+    -webkit-font-smoothing:antialiased; user-select:none;
+  }
+
+  /* --- title bar + traffic lights --- */
+  .mac-titlebar { display:flex; align-items:center; gap:14px; height:52px; padding:0 14px;
+    background:linear-gradient(#f3f2f2,#e8e7e7); border-bottom:1px solid var(--chrome-b); }
+  .mac-lights { display:flex; gap:8px; flex:none; }
+  .mac-lights .l { width:12px; height:12px; border-radius:50%; position:relative;
+    box-shadow:inset 0 0 0 .5px rgba(0,0,0,.16); display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:800; color:rgba(0,0,0,.5); line-height:1; }
+  .mac-lights .l.r { background:#ff5f57; } .mac-lights .l.y { background:#febc2e; } .mac-lights .l.g { background:#28c840; }
+  .mac-lights .l span { opacity:0; }
+  .mac-lights:hover .l span { opacity:1; }
+
+  .mac-nav { display:flex; gap:6px; flex:none; }
+  .mac-navbtn { width:28px; height:26px; border-radius:7px; border:1px solid transparent; background:transparent;
+    color:#6b6b70; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+  .mac-navbtn:hover:not(:disabled) { background:rgba(0,0,0,.06); }
+  .mac-navbtn:disabled { color:#c4c4c8; cursor:default; }
+  .mac-navbtn svg { width:16px; height:16px; }
+
+  .mac-folder-title { font-weight:700; font-size:14px; flex:1; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:7px; }
+  .mac-folder-title .fi { width:18px; height:18px; flex:none; }
+
+  /* --- view segmented switcher --- */
+  .mac-viewseg { display:inline-flex; background:rgba(0,0,0,.06); border-radius:8px; padding:2px; flex:none; }
+  .mac-viewseg button { width:34px; height:24px; border:0; background:transparent; border-radius:6px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; color:#5b5b60; padding:0; }
+  .mac-viewseg button.active { background:#fff; color:#1d1d1f; box-shadow:0 1px 2px rgba(0,0,0,.16); }
+  .mac-viewseg svg { width:16px; height:16px; }
+
+  /* --- body: sidebar + main --- */
+  .mac-body { display:flex; height:440px; }
+  .mac-sidebar { width:200px; flex:none; background:var(--sidebar); border-right:1px solid #d7d6da;
+    overflow-y:auto; padding:10px 8px; -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); }
+  .mac-side-group { font-size:11px; font-weight:800; color:#8a8a90; text-transform:none; padding:10px 8px 4px; letter-spacing:.01em; }
+  .mac-side-item { display:flex; align-items:center; gap:9px; width:100%; text-align:left; border:0; background:transparent;
+    padding:5px 8px; border-radius:7px; cursor:pointer; font-size:13.5px; color:#26262a; font-weight:500; }
+  .mac-side-item:hover { background:rgba(0,0,0,.055); }
+  .mac-side-item.active { background:var(--sel); color:#fff; }
+  .mac-side-item .si { width:17px; height:17px; flex:none; display:flex; align-items:center; justify-content:center; }
+  .mac-side-item.active .si svg { color:#fff !important; }
+  .mac-side-item .dot { width:11px; height:11px; border-radius:50%; }
+
+  .mac-main { flex:1; min-width:0; background:#fff; overflow:auto; position:relative; }
+
+  /* --- ICON view --- */
+  .mac-iconwrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr));
+    gap:8px 4px; padding:18px 14px; align-content:start; }
+  .mac-icon { display:flex; flex-direction:column; align-items:center; gap:5px; padding:8px 4px 6px; border-radius:8px; cursor:default; }
+  .mac-icon .gl { width:58px; height:52px; display:flex; align-items:flex-end; justify-content:center; }
+  .mac-icon .gl svg { max-width:100%; max-height:100%; }
+  .mac-icon .nm { font-size:12px; text-align:center; line-height:1.2; padding:1px 6px; border-radius:6px;
+    max-width:100%; word-break:break-word; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .mac-icon.sel .nm { background:var(--sel); color:#fff; }
+
+  /* --- LIST view --- */
+  .mac-list { width:100%; border-collapse:collapse; font-size:13px; }
+  .mac-list th { position:sticky; top:0; z-index:1; background:#f6f6f6; border-bottom:1px solid #e2e2e4;
+    text-align:left; font-weight:600; color:#5b5b60; padding:6px 12px; cursor:pointer; white-space:nowrap; user-select:none; }
+  .mac-list th:hover { background:#eeeeef; }
+  .mac-list th .arr { font-size:9px; margin-left:4px; color:#9a9aa0; }
+  .mac-list th.num, .mac-list td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .mac-list td { padding:5px 12px; border-bottom:1px solid #f1f1f2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#3a3a3e; }
+  .mac-list tr:nth-child(even) td { background:#fafafa; }
+  .mac-list td.name { display:flex; align-items:center; gap:8px; font-weight:500; color:#1d1d1f; }
+  .mac-list td.name .gl { width:20px; height:18px; flex:none; display:flex; align-items:center; justify-content:center; }
+  .mac-list tr.sel td { background:var(--sel) !important; color:#fff; }
+  .mac-list tr.sel td.name { color:#fff; }
+  .mac-list tr.sel td .disc { color:rgba(255,255,255,.8); }
+
+  /* --- COLUMN (Miller) view --- */
+  .mac-cols { display:flex; height:100%; overflow-x:auto; }
+  .mac-col { width:216px; flex:none; border-right:1px solid #e6e6e8; overflow-y:auto; padding:6px; }
+  .mac-col-row { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:6px; cursor:default;
+    font-size:13px; color:#26262a; }
+  .mac-col-row .gl { width:18px; height:16px; flex:none; display:flex; align-items:center; justify-content:center; }
+  .mac-col-row .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mac-col-row .chev { color:#9a9aa0; font-size:11px; flex:none; }
+  .mac-col-row.lead { background:rgba(0,0,0,.07); }        /* on the path to the open folder */
+  .mac-col-row.sel  { background:var(--sel); color:#fff; }
+  .mac-col-row.sel .chev { color:rgba(255,255,255,.85); }
+
+  .mac-preview { width:240px; flex:none; padding:20px 16px; display:flex; flex-direction:column;
+    align-items:center; gap:12px; text-align:center; }
+  .mac-preview .big { width:96px; height:88px; display:flex; align-items:flex-end; justify-content:center; }
+  .mac-preview .big svg { max-width:100%; max-height:100%; }
+  .mac-preview .pv-name { font-weight:700; font-size:14px; word-break:break-word; }
+  .mac-preview .pv-meta { font-size:12px; color:#8a8a90; line-height:1.7; }
+  .mac-preview .pv-meta b { color:#3a3a3e; font-weight:600; }
+
+  /* --- AirDrop special pane --- */
+  .mac-airdrop { padding:34px 20px; display:flex; flex-direction:column; align-items:center; gap:22px; }
+  .mac-airdrop .halo { font-size:13px; color:#8a8a90; text-align:center; max-width:280px; }
+  .mac-pucks { display:flex; flex-wrap:wrap; gap:26px; justify-content:center; }
+  .mac-puck { display:flex; flex-direction:column; align-items:center; gap:8px; cursor:default; }
+  .mac-puck .av { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:22px; box-shadow:0 4px 12px rgba(15,23,42,.18); }
+  .mac-puck .pl { font-size:12px; color:#3a3a3e; }
+
+  .mac-empty { display:flex; height:100%; align-items:center; justify-content:center; color:#a8a8ae; font-size:14px; }
+
+  /* --- status bar --- */
+  .mac-status { height:26px; display:flex; align-items:center; justify-content:center; gap:10px;
+    background:linear-gradient(#fbfbfb,#f1f1f1); border-top:1px solid #e2e2e4; font-size:12px; color:#6b6b70; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none !important; } }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div>
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 58</div>
+      <h1 class="text-xl font-bold">macOS Finder &mdash; a real file browser driven by <strong>one in-memory tree</strong>. A plain nested-object <strong>virtual filesystem</strong> (folders with <code>children</code>, files with <code>size</code> / <code>modified</code> / <code>kind</code>) is decorated once with <strong>parent pointers</strong>, so the entire application state collapses to <strong>a single node</strong> &mdash; <code>current</code> &mdash; and everything else is <em>derived</em>: the <strong>breadcrumb</strong> is the parent-chain of <code>current</code>, and Back / Forward are just a <strong>history array + index</strong> of the nodes you have visited. That one folder feeds <strong>three renderers of the same data</strong>: an <strong>icon grid</strong> of drawn glyphs, a <strong>list table</strong> whose Name / Date / Size / Kind columns <strong>sort</strong> on click, and a <strong>Miller column</strong> view that maps <code>chainOf(current)</code> to a row of panes and <strong>pushes a new pane to the right</strong> every time you drill deeper. <strong>Single click</strong> selects (blue highlight), <strong>double-click</strong> a folder opens it, the <strong>sidebar Favourites</strong> jump straight to Applications / Desktop / Documents / Downloads while <strong>Recents</strong> and <strong>AirDrop</strong> are synthetic pseudo-nodes that flow through the same code path. Traffic-light window controls, a live read-out of the derived state, no libraries, no external images &mdash; every icon is inline <strong>SVG</strong>.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">One <span class="text-indigo-600">tree</span>, one <span class="text-purple-600">current node</span> &mdash; three views that render it three ways.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto">Everything you see below is drawn from a single nested-object filesystem. <strong>Double-click a folder</strong> to open it, use <strong>&larr; &rarr;</strong> in the toolbar to walk your history, click a <strong>breadcrumb</strong> to jump up, or pick a <strong>Favourite</strong> in the sidebar. Flip between <strong>Icon</strong>, <strong>List</strong> and <strong>Column</strong> with the switch on the right of the toolbar &mdash; the same folder, re-rendered. Click a <strong>column header</strong> in List view to sort. The card on the right is a pure read-out of the derived state.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-1 w-full min-w-0">
+            <div class="mac-window" id="finder">
+              <div class="mac-titlebar">
+                <div class="mac-lights"><span class="l r"><span>&times;</span></span><span class="l y"><span>&minus;</span></span><span class="l g"><span>+</span></span></div>
+                <div class="mac-nav">
+                  <button class="mac-navbtn" id="mac-back"  title="Back" aria-label="Back">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+                  <button class="mac-navbtn" id="mac-fwd"   title="Forward" aria-label="Forward">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+                </div>
+                <div class="mac-folder-title" id="mac-title"></div>
+                <div class="mac-viewseg" id="mac-views">
+                  <button data-view="icon" title="Icon view" aria-label="Icon view">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+                  <button data-view="list" title="List view" aria-label="List view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg></button>
+                  <button data-view="column" title="Column view" aria-label="Column view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16M12 4v16M20 4v16" stroke-linecap="round"/></svg></button>
+                </div>
+              </div>
+
+              <!-- path breadcrumb bar -->
+              <div class="mac-crumbs" id="mac-crumbs" style="display:flex;align-items:center;gap:2px;padding:5px 14px;background:#f6f6f6;border-bottom:1px solid #e6e6e8;font-size:12px;color:#6b6b70;overflow-x:auto;white-space:nowrap;"></div>
+
+              <div class="mac-body">
+                <aside class="mac-sidebar" id="mac-sidebar"></aside>
+                <main class="mac-main" id="mac-main"></main>
+              </div>
+
+              <div class="mac-status" id="mac-status">&mdash;</div>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3">Real component &mdash; double-click folders, drag the breadcrumb, sort the list, drill the columns. Not one pixel is a screenshot.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live state &mdash; all derived from <code>current</code></div>
+              <div id="ro-list" class="space-y-2 text-sm"></div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">There is no per-view state. <code>current</code> is the only source of truth &mdash; the breadcrumb, the three renderers and Back/Forward all read from it, so they can never disagree.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Every file browser &mdash; Finder, Explorer, the picker in your IDE &mdash; is this same shape: a <strong>tree of nodes</strong>, a <strong>pointer to the current one</strong>, a <strong>history of where you have been</strong>, and one or more <strong>renderers</strong> that turn a folder's <code>children</code> into rows. Get the model right and Icon / List / Column are not three features &mdash; they are <strong>three functions of the same data</strong>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2">
+      <h3 class="font-bold text-lg mb-3">How a file browser works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">Finder looks like a lot of UI, but it is <strong>one tree and one pointer</strong>. We define the <strong>virtual filesystem</strong>, wire <strong>parent pointers</strong> so any node knows its ancestors, keep the whole app state as a single <code>current</code> node, derive the <strong>breadcrumb</strong> from its parent-chain, add a <strong>history stack</strong> for Back / Forward, then write the <strong>three renderers</strong> &mdash; icon grid, sortable list, Miller columns &mdash; that all read the same folder. Selection, double-click-to-open and the sidebar favourites fall out of the same model. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies, no images.</p>
+    <ol class="space-y-6">
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">1</div><h3 class="font-bold text-lg">The virtual filesystem is a nested object</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A folder is a node with a <code>children</code> array; a file is a leaf with <code>size</code>, <code>modified</code> and <code>kind</code>. That is the entire data model &mdash; a tree of plain objects. Everything the browser shows is a projection of this one structure.</p>
+        <div class="relative"><pre>const VFS = {
+  name:"devanshu", kind:"folder", children:[
+    { name:"Documents", kind:"folder", children:[
+      { name:"resume.pdf", kind:"PDF document", size:284000, modified:"2026-07-22 14:23" },
+      { name:"Work", kind:"folder", children:[ /* ... */ ] }
+    ]},
+    { name:"Downloads", kind:"folder", children:[ /* ... */ ] }
+  ]
+};</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">2</div><h3 class="font-bold text-lg">Parent pointers &mdash; so a node knows where it is</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Walk the tree once and hang a non-enumerable <code>parent</code> off every child. Now any node can trace its way back to the root, which is what makes the breadcrumb and the column view almost free. <code>chainOf(node)</code> just climbs those pointers.</p>
+        <div class="relative"><pre>(function link(node, parent){
+  node.parent = parent || null;
+  (node.children || []).forEach(c =&gt; link(c, node));
+})(VFS, null);
+
+function chainOf(node){                 // root ... node
+  const a = []; for (let n = node; n; n = n.parent) a.unshift(n); return a;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">3</div><h3 class="font-bold text-lg">One pointer is the whole state</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The app has almost no state: <code>current</code> (the open folder), <code>view</code>, <code>sel</code> (the highlighted item) and a <code>sort</code>. A single <code>render()</code> reads <code>current</code> and repaints the breadcrumb, the chosen view and the status bar. Change <code>current</code>, call <code>render()</code>, done.</p>
+        <div class="relative"><pre>const state = { current: VFS, view:"icon", sel:null, sort:{ key:"name", dir:1 } };
+
+function render(){
+  renderCrumbs();                 // from chainOf(current)
+  renderStatus();                 // "N items"
+  ({ icon:renderIcon, list:renderList, column:renderColumn })[state.view]();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">4</div><h3 class="font-bold text-lg">Navigate + a history stack for Back / Forward</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>go(node)</code> sets <code>current</code> and pushes it onto a history array, <strong>truncating any forward entries</strong> first (exactly like a browser). Back and Forward just move an index and read the node back out &mdash; no re-computation, because a node fully describes a location.</p>
+        <div class="relative"><pre>let history = [VFS], hi = 0;
+function go(node){
+  if (node === state.current) return;
+  history = history.slice(0, hi + 1);   // drop the forward branch
+  history.push(node); hi = history.length - 1;
+  state.current = node; state.sel = null; render();
+}
+function back(){    if (hi &gt; 0)                 { state.current = history[--hi]; state.sel = null; render(); } }
+function forward(){ if (hi &lt; history.length-1) { state.current = history[++hi]; state.sel = null; render(); } }</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">5</div><h3 class="font-bold text-lg">The breadcrumb is just the parent-chain</h3></div>
+        <p class="text-sm text-slate-600 mb-3">No separate breadcrumb state to keep in sync &mdash; map <code>chainOf(current)</code> to buttons, each of which calls <code>go()</code> on its node. Clicking &ldquo;Documents&rdquo; in the trail jumps straight up to it. The trail is always correct because it is computed, never stored.</p>
+        <div class="relative"><pre>function renderCrumbs(){
+  crumbsEl.innerHTML = "";
+  chainOf(state.current).forEach((node, i, arr) =&gt; {
+    if (i) crumbsEl.append(sep("\u203a"));      // › separator
+    const b = document.createElement("button");
+    b.textContent = node.name;
+    b.onclick = () =&gt; go(node);
+    crumbsEl.append(b);
+  });
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">6</div><h3 class="font-bold text-lg">Renderer #1 &mdash; the icon grid</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Lay <code>current.children</code> into a CSS grid of tiles. Each tile is a drawn SVG glyph plus a name label. <strong>Single click</strong> sets <code>state.sel</code> and re-renders (blue label); <strong>double-click</strong> a folder calls <code>go()</code> to open it. Files ignore the double-click.</p>
+        <div class="relative"><pre>function renderIcon(){
+  main.innerHTML = "";
+  const grid = el("div","mac-iconwrap");
+  current.children.forEach(node =&gt; {
+    const cell = el("div","mac-icon" + (node === state.sel ? " sel" : ""));
+    cell.innerHTML = `&lt;div class="gl"&gt;${iconSVG(node)}&lt;/div&gt;&lt;div class="nm"&gt;${esc(node.name)}&lt;/div&gt;`;
+    cell.onclick    = () =&gt; { state.sel = node; render(); };
+    cell.ondblclick = () =&gt; { if (isFolder(node)) go(node); };
+    grid.append(cell);
+  });
+  main.append(grid);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">7</div><h3 class="font-bold text-lg">Renderer #2 &mdash; the sortable list</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A table with Name / Date Modified / Size / Kind headers. Clicking a header sets <code>state.sort.key</code> (or flips <code>dir</code> if it is already the key). The comparator keeps folders grouped, then orders by the chosen field, and an arrow shows the direction. Same rows, re-ordered.</p>
+        <div class="relative"><pre>function sorted(items){
+  const { key, dir } = state.sort;
+  return [...items].sort((a,b) =&gt; {
+    if (isFolder(a) !== isFolder(b)) return isFolder(a) ? -1 : 1;   // folders first
+    let av = key === "size" ? (a.size||0) : (a[key] ?? a.name).toString().toLowerCase();
+    let bv = key === "size" ? (b.size||0) : (b[key] ?? b.name).toString().toLowerCase();
+    return (av &lt; bv ? -1 : av &gt; bv ? 1 : 0) * dir;
+  });
+}
+function onHeader(key){
+  if (state.sort.key === key) state.sort.dir *= -1;      // toggle direction
+  else state.sort = { key, dir:1 };                      // new column, ascending
+  render();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">8</div><h3 class="font-bold text-lg">Renderer #3 &mdash; Miller columns</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is where parent pointers pay off. <code>chainOf(current)</code> is the list of open folders; render <strong>one pane per folder</strong>, each showing that folder's children, and highlight the child that leads to the next pane. Click a folder in any pane and <code>go()</code> makes the chain longer &mdash; so a <strong>new pane appears to the right</strong>. Click a file and a preview pane replaces the tail.</p>
+        <div class="relative"><pre>function renderColumn(){
+  const chain = chainOf(state.current);            // folders currently open
+  const wrap  = el("div","mac-cols");
+  chain.forEach((folder, i) =&gt; {
+    const next = chain[i + 1];                      // the folder drilled into
+    const col  = el("div","mac-col");
+    folder.children.forEach(node =&gt; {
+      const row = el("div","mac-col-row" +
+        (node === next ? " lead" : node === state.sel ? " sel" : ""));
+      row.innerHTML = `${iconSVG(node)}&lt;span class="nm"&gt;${esc(node.name)}&lt;/span&gt;` +
+                      (isFolder(node) ? `&lt;span class="chev"&gt;\u203a&lt;/span&gt;` : "");
+      row.onclick = () =&gt; isFolder(node) ? go(node) : selectFile(node);
+      col.append(row);
+    });
+    wrap.append(col);
+  });
+  if (state.sel && !isFolder(state.sel)) wrap.append(previewPane(state.sel));
+  main.append(wrap);
+  main.scrollLeft = main.scrollWidth;               // keep the newest pane in view
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">9</div><h3 class="font-bold text-lg">Icons are drawn, not downloaded</h3></div>
+        <p class="text-sm text-slate-600 mb-3">No image files. A folder is one blue SVG path; an app is a coloured squircle with an initial; a document is a page-with-a-folded-corner tinted by kind, carrying a three-letter tag (PDF, TXT, ZIP&hellip;). One <code>iconSVG(node)</code> switch returns the right markup, so every view shares the same glyphs.</p>
+        <div class="relative"><pre>function iconSVG(node){
+  if (isFolder(node)) return FOLDER_SVG;
+  if (node.kind === "Application") return appSVG(node);      // squircle + initial
+  if (/image/.test(node.kind))     return imageSVG(node);    // little photo
+  return docSVG(tagFor(node.kind), colorFor(node.kind));     // page + folded corner + tag
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+      <li class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">10</div><h3 class="font-bold text-lg">Sidebar favourites &amp; synthetic pseudo-nodes</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Applications / Desktop / Documents / Downloads are just <code>go(lookup(path))</code>. <strong>Recents</strong> and <strong>AirDrop</strong> are not in the tree &mdash; they are <em>pseudo-nodes</em> built on the fly. Recents is a folder whose <code>children</code> are the newest files gathered by walking the whole tree, so it flows through the same renderers unchanged; AirDrop carries a special <code>kind</code> the renderer draws as device pucks. New sources cost a node, not a new code path.</p>
+        <div class="relative"><pre>function allFiles(node, out=[]){
+  (node.children||[]).forEach(c =&gt; isFolder(c) ? allFiles(c, out) : out.push(c));
+  return out;
+}
+const RECENTS = { name:"Recents", kind:"folder", synthetic:true,
+  children: allFiles(VFS).sort((a,b) =&gt; b.modified.localeCompare(a.modified)).slice(0,12) };
+const AIRDROP = { name:"AirDrop", kind:"airdrop", synthetic:true, children:[] };
+// sidebar click → go(RECENTS) / go(AIRDROP) / go(lookup("Documents"))</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 58 of DesignFromZero done &mdash; macOS Finder.</h3><p class="text-sm text-indigo-700 mt-2">You built a working file browser from a <strong>nested-object tree</strong> and a <strong>single <code>current</code> pointer</strong>. Parent pointers made <code>chainOf()</code> trivial, which handed you the <strong>breadcrumb</strong> and the <strong>Miller columns</strong> for free; a <strong>history array + index</strong> gave real <strong>Back / Forward</strong>; and one <code>render()</code> drove <strong>three views of the same folder</strong> &mdash; an icon grid, a sortable list and drill-right columns. Selection and double-click-to-open are two event handlers, the sidebar is <code>go()</code> calls, and even Recents / AirDrop are just <strong>pseudo-nodes</strong> that reuse every renderer. Every icon is inline SVG. <strong>&#128075; Model the data as a tree with a pointer, and the UI becomes a set of pure functions of that state.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== THE macOS FINDER ================================================
+// One nested-object virtual filesystem (VFS). Parent pointers make every
+// node self-locating, so the ENTIRE app state is a single `current` node;
+// the breadcrumb, three views and back/forward are all derived from it.
+
+// --- 1) the virtual filesystem (folders have children; files are leaves) -
+function F(name, mod, children){ return { name, kind:"folder", modified:mod, children }; }
+function D(name, kind, size, mod){ return { name, kind, size, modified:mod }; }
+function A(name, size, mod, color, glyph){ return { name, kind:"Application", size, modified:mod, color, glyph }; }
+
+const VFS = F("devanshu", "2026-08-06 09:00", [
+  F("Applications", "2026-07-30 11:12", [
+    A("Safari.app",   142_800_000, "2026-06-01 10:00", "#1e90ff", "S"),
+    A("Mail.app",      88_400_000, "2026-06-01 10:00", "#0a84ff", "M"),
+    A("Notes.app",     54_100_000, "2026-06-01 10:00", "#febc2e", "N"),
+    A("Terminal.app",  12_600_000, "2026-05-14 08:20", "#1d1d1f", ">_"),
+    A("Music.app",    212_500_000, "2026-06-01 10:00", "#fb2c78", "\u266a"),
+    A("Xcode.app",  12_400_000_000, "2026-07-18 22:41", "#147efb", "X"),
+    A("Photos.app",   118_900_000, "2026-06-01 10:00", "#34c759", "P")
+  ]),
+  F("Desktop", "2026-08-06 08:41", [
+    D("Screenshot 2026-08-01 at 14.22.png", "PNG image", 1_840_000, "2026-08-01 14:22"),
+    D("project-notes.txt", "Plain Text", 4_200, "2026-08-05 19:03"),
+    D("budget-2026.numbers", "Numbers spreadsheet", 96_000, "2026-07-28 12:15")
+  ]),
+  F("Documents", "2026-08-04 16:30", [
+    F("Work", "2026-08-03 10:10", [
+      D("report-Q3.pages", "Pages document", 512_000, "2026-08-03 10:10"),
+      D("roadmap.key", "Keynote presentation", 4_680_000, "2026-07-31 17:44"),
+      D("contract-signed.pdf", "PDF document", 1_120_000, "2026-07-19 09:02"),
+      F("Designs", "2026-08-02 13:37", [
+        D("mockup-v1.png", "PNG image", 2_240_000, "2026-07-29 11:11"),
+        D("mockup-v2.png", "PNG image", 2_610_000, "2026-08-02 13:37"),
+        D("palette.sketch", "Sketch document", 780_000, "2026-07-25 15:50")
+      ])
+    ]),
+    F("Personal", "2026-07-30 21:00", [
+      D("journal.txt", "Plain Text", 18_400, "2026-07-30 21:00"),
+      D("recipes.md", "Markdown", 6_100, "2026-07-12 20:12")
+    ]),
+    D("resume-2026.pdf", "PDF document", 284_000, "2026-07-22 14:23"),
+    D("taxes-2025.pdf", "PDF document", 940_000, "2026-06-28 11:30")
+  ]),
+  F("Downloads", "2026-08-06 07:55", [
+    D("Install macOS Sequoia.dmg", "Disk Image", 13_200_000_000, "2026-08-06 07:55"),
+    D("invoice-8842.pdf", "PDF document", 132_000, "2026-08-05 16:40"),
+    D("beach.jpg", "JPEG image", 3_920_000, "2026-08-04 18:21"),
+    D("source-archive.zip", "ZIP archive", 44_600_000, "2026-08-02 09:14"),
+    D("trailer.mp4", "Movie", 208_400_000, "2026-07-30 23:02")
+  ]),
+  F("Pictures", "2026-08-01 12:00", [
+    F("Wallpapers", "2026-07-20 10:00", [
+      D("sonoma.heic", "HEIC image", 6_400_000, "2026-07-20 10:00"),
+      D("ventura.heic", "HEIC image", 5_900_000, "2026-07-20 10:00"),
+      D("monterey.heic", "HEIC image", 5_100_000, "2026-07-20 10:00")
+    ]),
+    D("IMG_0421.jpg", "JPEG image", 4_180_000, "2026-08-01 12:00"),
+    D("IMG_0422.jpg", "JPEG image", 4_050_000, "2026-08-01 12:01")
+  ]),
+  F("Music", "2026-07-15 19:00", [
+    D("favourites.m3u", "M3U playlist", 2_400, "2026-07-15 19:00")
+  ])
+]);
+
+// --- 2) parent pointers + chainOf (root ... node) -----------------------
+(function link(node, parent){
+  node.parent = parent || null;
+  (node.children || []).forEach(c => link(c, node));
+})(VFS, null);
+
+function chainOf(node){
+  const a = [];
+  for (let n = node; n; n = n.parent) a.unshift(n);
+  return a;
+}
+const isFolder = n => n.kind === "folder";
+
+// --- synthetic pseudo-nodes (not in the tree; reuse every renderer) -----
+function allFiles(node, out){
+  out = out || [];
+  (node.children || []).forEach(c => isFolder(c) ? allFiles(c, out) : out.push(c));
+  return out;
+}
+const RECENTS = { name:"Recents", kind:"folder", synthetic:true, parent:null,
+  children: allFiles(VFS).sort((a,b) => b.modified.localeCompare(a.modified)).slice(0, 12) };
+const AIRDROP = { name:"AirDrop", kind:"airdrop", synthetic:true, parent:null, children:[] };
+
+function lookup(name){ return VFS.children.find(c => c.name === name) || VFS; }
+
+// --- 3) THE STATE — one pointer + a couple of view flags ----------------
+const state = { current: VFS, view: "icon", sel: null, sort: { key:"name", dir:1 } };
+let history = [VFS], hi = 0, lastAction = "opened devanshu";
+
+// --- 4) navigation + history (browser-style back/forward) ---------------
+function go(node){
+  if (node === state.current) return;
+  history = history.slice(0, hi + 1);
+  history.push(node);
+  hi = history.length - 1;
+  state.current = node; state.sel = null;
+  lastAction = "opened " + node.name;
+  render();
+}
+function back(){
+  if (hi > 0){ hi--; state.current = history[hi]; state.sel = null; lastAction = "back \u2192 " + state.current.name; render(); }
+}
+function forward(){
+  if (hi < history.length - 1){ hi++; state.current = history[hi]; state.sel = null; lastAction = "forward \u2192 " + state.current.name; render(); }
+}
+function selectFile(node){ state.sel = node; lastAction = "selected " + node.name; render(); }
+
+// --- 5) icon drawing (all inline SVG — no external images) --------------
+const FOLDER_SVG =
+  '<svg viewBox="0 0 48 40"><defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">' +
+  '<stop offset="0" stop-color="#7cc0ff"/><stop offset="1" stop-color="#3a94f6"/></linearGradient></defs>' +
+  '<path d="M3 9c0-2 1.4-3.4 3.4-3.4h11.4l3.4 3.6h20c2 0 3.4 1.4 3.4 3.4v20.4c0 2-1.4 3.4-3.4 3.4H6.4C4.4 39.4 3 38 3 36V9z" fill="#2f86ef"/>' +
+  '<path d="M3 13.6h42V36c0 2-1.4 3.4-3.4 3.4H6.4C4.4 39.4 3 38 3 36V13.6z" fill="url(#fg)"/></svg>';
+
+function docSVG(tag, color){
+  return '<svg viewBox="0 0 40 48">' +
+    '<path d="M6 2h20l8 8v34a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#ffffff" stroke="#d0d0d4" stroke-width="1.4"/>' +
+    '<path d="M26 2l8 8h-8V2z" fill="#e4e4ea"/>' +
+    '<rect x="4" y="30" width="30" height="12" rx="2" fill="' + color + '"/>' +
+    '<text x="19" y="39" text-anchor="middle" font-size="8" font-weight="800" fill="#fff" font-family="-apple-system,sans-serif">' + tag + '</text>' +
+    '</svg>';
+}
+function imageSVG(){
+  return '<svg viewBox="0 0 40 48">' +
+    '<path d="M6 2h20l8 8v34a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#ffffff" stroke="#d0d0d4" stroke-width="1.4"/>' +
+    '<path d="M26 2l8 8h-8V2z" fill="#e4e4ea"/>' +
+    '<rect x="8" y="16" width="24" height="18" rx="2" fill="#eaf3ff"/>' +
+    '<circle cx="14" cy="22" r="2.4" fill="#febc2e"/>' +
+    '<path d="M10 33l6-7 4 4 5-6 6 9z" fill="#34c759"/>' +
+    '</svg>';
+}
+function appSVG(node){
+  const c = node.color || "#8e8e93", g = node.glyph || node.name[0];
+  return '<svg viewBox="0 0 48 48">' +
+    '<rect x="3" y="3" width="42" height="42" rx="11" fill="' + c + '"/>' +
+    '<text x="24" y="24" text-anchor="middle" dominant-baseline="central" font-size="' + (g.length > 1 ? 15 : 22) +
+    '" font-weight="800" fill="#fff" font-family="-apple-system,sans-serif">' + g + '</text></svg>';
+}
+const KIND_META = {
+  "PDF document":         ["PDF",  "#e5484d"],
+  "Plain Text":           ["TXT",  "#8e8e93"],
+  "Markdown":             ["MD",   "#6b7280"],
+  "Pages document":       ["PAGES","#f7a600"],
+  "Keynote presentation": ["KEY",  "#2b9cff"],
+  "Numbers spreadsheet":  ["NUM",  "#34c759"],
+  "Disk Image":           ["DMG",  "#8e8e93"],
+  "ZIP archive":          ["ZIP",  "#a1a1a6"],
+  "Movie":                ["MOV",  "#a855f7"],
+  "Sketch document":      ["SKT",  "#f7a600"],
+  "M3U playlist":         ["M3U",  "#fb2c78"]
+};
+function tagFor(kind){ return (KIND_META[kind] || ["FILE","#8e8e93"])[0]; }
+function colorFor(kind){ return (KIND_META[kind] || ["FILE","#8e8e93"])[1]; }
+
+function iconSVG(node){
+  if (isFolder(node)) return FOLDER_SVG;
+  if (node.kind === "Application") return appSVG(node);
+  if (/image/i.test(node.kind))    return imageSVG(node);
+  return docSVG(tagFor(node.kind), colorFor(node.kind));
+}
+
+// --- 6) formatting helpers ----------------------------------------------
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c])); }
+function el(tag, cls){ const n = document.createElement(tag); if (cls) n.className = cls; return n; }
+function fmtSize(node){
+  if (isFolder(node)) return "--";
+  let b = node.size || 0;
+  if (b < 1000) return b + " bytes";
+  const u = ["KB","MB","GB","TB"]; let i = -1;
+  do { b /= 1000; i++; } while (b >= 1000 && i < u.length - 1);
+  return (b >= 100 ? Math.round(b) : b.toFixed(1)) + " " + u[i];
+}
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(s){
+  if (!s) return "--";
+  const [d, t] = s.split(" "), [y, m, day] = d.split("-");
+  return (+day) + " " + MON[(+m) - 1] + " " + y + ", " + t;
+}
+function kindLabel(node){ return isFolder(node) ? "Folder" : node.kind; }
+
+// --- 7) the three renderers ---------------------------------------------
+const main    = document.getElementById("mac-main");
+const crumbsEl = document.getElementById("mac-crumbs");
+const titleEl  = document.getElementById("mac-title");
+const statusEl = document.getElementById("mac-status");
+
+function renderCrumbs(){
+  crumbsEl.innerHTML = "";
+  if (state.current.synthetic){
+    const only = el("button"); only.textContent = state.current.name;
+    only.style.cssText = "border:0;background:transparent;cursor:default;font-weight:600;color:#3a3a3e;font-size:12px;";
+    crumbsEl.append(only);
+    return;
+  }
+  chainOf(state.current).forEach((node, i) => {
+    if (i){ const s = el("span"); s.textContent = " \u203a "; s.style.color = "#c0c0c6"; crumbsEl.append(s); }
+    const b = el("button");
+    b.textContent = node.name;
+    b.style.cssText = "border:0;background:transparent;cursor:pointer;font-size:12px;color:" +
+      (node === state.current ? "#1d1d1f;font-weight:700" : "#6b6b70") + ";padding:1px 2px;border-radius:4px;";
+    b.onmouseenter = () => b.style.background = "rgba(0,0,0,.06)";
+    b.onmouseleave = () => b.style.background = "transparent";
+    b.onclick = () => go(node);
+    crumbsEl.append(b);
+  });
+}
+
+function renderIcon(){
+  main.innerHTML = "";
+  if (state.current.kind === "airdrop") return renderAirdrop();
+  if (!state.current.children.length) return renderEmpty();
+  const grid = el("div", "mac-iconwrap fade-in");
+  state.current.children.forEach(node => {
+    const cell = el("div", "mac-icon" + (node === state.sel ? " sel" : ""));
+    cell.innerHTML = '<div class="gl">' + iconSVG(node) + '</div><div class="nm">' + esc(node.name) + '</div>';
+    cell.onclick    = () => { state.sel = node; lastAction = "selected " + node.name; render(); };
+    cell.ondblclick = () => { if (isFolder(node)) go(node); };
+    grid.append(cell);
+  });
+  main.append(grid);
+}
+
+function sortedChildren(){
+  const { key, dir } = state.sort;
+  return [...state.current.children].sort((a, b) => {
+    if (isFolder(a) !== isFolder(b)) return isFolder(a) ? -1 : 1;   // folders grouped first
+    let av, bv;
+    if (key === "size"){ av = a.size || 0; bv = b.size || 0; }
+    else if (key === "kind"){ av = kindLabel(a).toLowerCase(); bv = kindLabel(b).toLowerCase(); }
+    else { av = (a[key] || a.name).toString().toLowerCase(); bv = (b[key] || b.name).toString().toLowerCase(); }
+    const cmp = av < bv ? -1 : av > bv ? 1 : (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1);
+    return cmp * dir;
+  });
+}
+
+function renderList(){
+  main.innerHTML = "";
+  if (state.current.kind === "airdrop") return renderAirdrop();
+  if (!state.current.children.length) return renderEmpty();
+  const arr = state.sort.dir > 0 ? "\u25b2" : "\u25bc";
+  const cols = [["name","Name",""],["modified","Date Modified",""],["size","Size","num"],["kind","Kind",""]];
+  const table = el("table", "mac-list fade-in");
+  let head = "<thead><tr>";
+  cols.forEach(([key, label, cls]) => {
+    head += '<th class="' + cls + '" data-key="' + key + '">' + label +
+            (state.sort.key === key ? '<span class="arr">' + arr + '</span>' : '') + '</th>';
+  });
+  head += "</tr></thead>";
+  let body = "<tbody>";
+  sortedChildren().forEach((node, i) => {
+    body += '<tr data-i="' + i + '"' + (node === state.sel ? ' class="sel"' : '') + '>' +
+      '<td class="name"><span class="gl">' + iconSVG(node) + '</span>' + esc(node.name) + '</td>' +
+      '<td class="disc">' + fmtDate(node.modified) + '</td>' +
+      '<td class="num disc">' + fmtSize(node) + '</td>' +
+      '<td class="disc">' + esc(kindLabel(node)) + '</td></tr>';
+  });
+  body += "</tbody>";
+  table.innerHTML = head + body;
+  const rows = sortedChildren();
+  table.querySelectorAll("th").forEach(th => th.onclick = () => onHeader(th.dataset.key));
+  table.querySelectorAll("tbody tr").forEach(tr => {
+    const node = rows[+tr.dataset.i];
+    tr.onclick    = () => { state.sel = node; lastAction = "selected " + node.name; render(); };
+    tr.ondblclick = () => { if (isFolder(node)) go(node); };
+  });
+  main.append(table);
+}
+function onHeader(key){
+  if (state.sort.key === key) state.sort.dir *= -1;
+  else state.sort = { key, dir: 1 };
+  lastAction = "sort by " + key + (state.sort.dir > 0 ? " \u2191" : " \u2193");
+  render();
+}
+
+function renderColumn(){
+  main.innerHTML = "";
+  if (state.current.kind === "airdrop") return renderAirdrop();
+  const chain = chainOf(state.current);
+  const wrap = el("div", "mac-cols fade-in");
+  chain.forEach((folder, i) => {
+    const next = chain[i + 1];
+    const col = el("div", "mac-col");
+    if (!folder.children.length){
+      const e = el("div"); e.textContent = "Empty";
+      e.style.cssText = "color:#b0b0b6;font-size:12px;padding:8px;"; col.append(e);
+    }
+    folder.children.forEach(node => {
+      const lead = node === next;
+      const seld = !next && node === state.sel;
+      const row = el("div", "mac-col-row" + (lead ? " lead" : seld ? " sel" : ""));
+      row.innerHTML = '<span class="gl">' + iconSVG(node) + '</span><span class="nm">' + esc(node.name) + '</span>' +
+                      (isFolder(node) ? '<span class="chev">\u203a</span>' : '');
+      row.onclick = () => isFolder(node) ? go(node) : selectFile(node);
+      col.append(row);
+    });
+    wrap.append(col);
+  });
+  if (state.sel && !isFolder(state.sel)) wrap.append(previewPane(state.sel));
+  main.append(wrap);
+  main.scrollLeft = main.scrollWidth;    // reveal the newest pane on the right
+}
+function previewPane(node){
+  const p = el("div", "mac-preview");
+  p.innerHTML =
+    '<div class="big">' + iconSVG(node) + '</div>' +
+    '<div class="pv-name">' + esc(node.name) + '</div>' +
+    '<div class="pv-meta"><b>' + esc(kindLabel(node)) + '</b><br>' +
+    fmtSize(node) + '<br>' + fmtDate(node.modified) + '</div>';
+  return p;
+}
+
+function renderAirdrop(){
+  const wrap = el("div", "mac-airdrop fade-in");
+  const people = [
+    ["Barnali R.", "#f43f5e", "BR"], ["MacBook Pro", "#0a84ff", "\u2318"],
+    ["iPhone 16", "#34c759", "iP"], ["Priya S.", "#a855f7", "PS"]
+  ];
+  const pucks = el("div", "mac-pucks");
+  people.forEach(([name, color, initials]) => {
+    const puck = el("div", "mac-puck");
+    puck.innerHTML = '<div class="av" style="background:' + color + '">' + initials + '</div>' +
+                     '<div class="pl">' + esc(name) + '</div>';
+    pucks.append(puck);
+  });
+  const halo = el("div", "halo");
+  halo.textContent = "AirDrop lets you share instantly with people nearby. Nearby devices appear here.";
+  wrap.append(pucks); wrap.append(halo);
+  main.append(wrap);
+}
+function renderEmpty(){
+  const e = el("div", "mac-empty fade-in"); e.textContent = "This folder is empty";
+  main.append(e);
+}
+
+// --- 8) the sidebar (favourites + tags) ---------------------------------
+const FAVS = [
+  { id:"airdrop",   label:"AirDrop",      node:AIRDROP,               si:sideGlyph("airdrop") },
+  { id:"recents",   label:"Recents",      node:RECENTS,               si:sideGlyph("clock")   },
+  { id:"apps",      label:"Applications", node:lookup("Applications"),si:sideGlyph("apps")    },
+  { id:"desktop",   label:"Desktop",      node:lookup("Desktop"),     si:sideGlyph("desktop") },
+  { id:"documents", label:"Documents",    node:lookup("Documents"),   si:sideGlyph("folder")  },
+  { id:"downloads", label:"Downloads",    node:lookup("Downloads"),   si:sideGlyph("down")    },
+  { id:"pictures",  label:"Pictures",     node:lookup("Pictures"),    si:sideGlyph("pic")     }
+];
+const TAGS = [["Red","#ff5f57"],["Orange","#febc2e"],["Green","#28c840"],["Blue","#0a84ff"]];
+
+function sideGlyph(kind){
+  const s = 'width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7a7a80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  const g = {
+    airdrop:'<path d="M12 20a2 2 0 100-4 2 2 0 000 4z"/><path d="M6 14a8 8 0 018-8M9 17a4 4 0 014-4"/>',
+    clock:  '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/>',
+    apps:   '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    desktop:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+    folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+    down:   '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>',
+    pic:    '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5-7 7"/>'
+  }[kind] || g;
+  return '<svg ' + s + '>' + g + '</svg>';
+}
+
+function renderSidebar(){
+  const bar = document.getElementById("mac-sidebar");
+  bar.innerHTML = "";
+  const gh = el("div", "mac-side-group"); gh.textContent = "Favourites"; bar.append(gh);
+  const chainSet = new Set(chainOf(state.current));
+  FAVS.forEach(f => {
+    const active = f.node === state.current || (!state.current.synthetic && chainSet.has(f.node));
+    const b = el("button", "mac-side-item" + (active ? " active" : ""));
+    b.innerHTML = '<span class="si">' + f.si + '</span>' + esc(f.label);
+    b.onclick = () => go(f.node);
+    bar.append(b);
+  });
+  const gt = el("div", "mac-side-group"); gt.textContent = "Tags"; bar.append(gt);
+  TAGS.forEach(([name, color]) => {
+    const b = el("button", "mac-side-item");
+    b.innerHTML = '<span class="si"><span class="dot" style="background:' + color + '"></span></span>' + name;
+    b.onclick = () => { lastAction = "tag: " + name; render(); };
+    bar.append(b);
+  });
+}
+
+// --- 9) status bar + the live read-out card -----------------------------
+function renderStatus(){
+  const n = state.current.synthetic || !state.current.children ? (state.current.children || []).length : state.current.children.length;
+  let txt = n + " item" + (n === 1 ? "" : "s");
+  if (state.sel) txt += ",  " + esc(state.sel.name) + " selected";
+  statusEl.textContent = txt;
+}
+
+const roList = document.getElementById("ro-list");
+function renderReadout(){
+  const path = state.current.synthetic ? state.current.name : chainOf(state.current).map(n => n.name).join(" / ");
+  const rows = [
+    ["current",  path],
+    ["view",     state.view],
+    ["selection", state.sel ? state.sel.name : "\u2014"],
+    ["items",    (state.current.children || []).length],
+    ["sort",     state.sort.key + " " + (state.sort.dir > 0 ? "\u2191" : "\u2193")],
+    ["history",  (hi + 1) + " / " + history.length],
+    ["back",     hi > 0 ? "available" : "\u2014"],
+    ["forward",  hi < history.length - 1 ? "available" : "\u2014"],
+    ["last",     lastAction]
+  ];
+  roList.innerHTML = rows.map(([k, v]) =>
+    '<div class="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">' +
+      '<span class="text-slate-400 font-semibold">' + k + '</span>' +
+      '<span class="pill mono" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(String(v)) + '</span>' +
+    '</div>').join("");
+}
+
+// --- 10) the master render + wiring -------------------------------------
+function render(){
+  titleEl.innerHTML = '<span class="fi">' + (state.current.synthetic ? "" : FOLDER_SVG) + '</span>' + esc(state.current.name);
+  document.getElementById("mac-back").disabled = hi === 0;
+  document.getElementById("mac-fwd").disabled  = hi >= history.length - 1;
+  document.querySelectorAll("#mac-views button").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === state.view));
+  renderCrumbs();
+  ({ icon: renderIcon, list: renderList, column: renderColumn })[state.view]();
+  renderSidebar();
+  renderStatus();
+  renderReadout();
+}
+
+document.getElementById("mac-back").onclick = back;
+document.getElementById("mac-fwd").onclick  = forward;
+document.querySelectorAll("#mac-views button").forEach(b => {
+  b.onclick = () => { state.view = b.dataset.view; lastAction = state.view + " view"; render(); };
+});
+render();
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. A filesystem is a tree of nodes",
+   why:"Finder is not really about windows and icons - it is about a tree. A folder is a node that owns a children array; a file is a leaf that carries metadata like size, modified date and kind. Model the data as that nested object first and the whole UI becomes a way of drawing one node of the tree. Everything downstream - the breadcrumb, the three views, back and forward - is a projection of this single structure, so getting the shape right is 80% of the work.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">devanshu<br>&nbsp;&nbsp;&#9500; Documents<br>&nbsp;&nbsp;&#9474;&nbsp;&nbsp;&#9500; resume.pdf<br>&nbsp;&nbsp;&#9474;&nbsp;&nbsp;&#9492; Work/<br>&nbsp;&nbsp;&#9492; Downloads/<br><br>folder = node + children[]<br>file = leaf + {size, modified, kind}</div>',
+   code:"const VFS = {\n  name:\"devanshu\", kind:\"folder\", children:[\n    { name:\"resume.pdf\", kind:\"PDF document\", size:284000, modified:\"2026-07-22 14:23\" },\n    { name:\"Work\", kind:\"folder\", children:[ /* ... */ ] }\n  ]\n};" },
+ { title:"2. Parent pointers make a node self-locating",
+   why:"By default a child does not know its parent - the arrows only point downward. Walk the tree once at startup and attach a parent to every node, and now any node can climb back to the root. chainOf(node) does exactly that: it follows parent links up and reverses them into root..node. This single helper is what makes both the breadcrumb and the Miller column view almost free, because both are just 'the list of folders from the root to here'.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">link(node, parent) for every node<br><br>chainOf(Work) climbs parents:<br>Work &rarr; Documents &rarr; devanshu<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;reversed = the breadcrumb</div>',
+   code:"(function link(node, parent){\n  node.parent = parent || null;\n  (node.children||[]).forEach(c => link(c, node));\n})(VFS, null);\n\nfunction chainOf(node){\n  const a = []; for (let n = node; n; n = n.parent) a.unshift(n); return a;\n}" },
+ { title:"3. One pointer is the entire state",
+   why:"Resist the urge to store a copy of the folder, a breadcrumb array, a list of columns and a current-view model. All of that can drift out of sync. Instead keep one source of truth: current, the node being viewed (plus tiny flags for which view and what is selected). A single render() reads current and repaints everything. To change what the user sees you only ever set current and call render() - there is nothing else to update.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">state = { current, view, sel, sort }<br><br>set current &rarr; render()<br>&nbsp;&nbsp;breadcrumb, view, status all recomputed<br><br>no derived state to keep in sync</div>',
+   code:"const state = { current: VFS, view:\"icon\", sel:null, sort:{ key:\"name\", dir:1 } };\n\nfunction render(){\n  renderCrumbs();\n  ({ icon:renderIcon, list:renderList, column:renderColumn })[state.view]();\n  renderStatus();\n}" },
+ { title:"4. Back / Forward is a history array + index",
+   why:"Real navigation needs history. Keep an array of visited nodes and an index pointing at the current one. Opening a new folder pushes it - but first you slice off anything after the index, so a fresh navigation abandons the old forward branch, exactly like a web browser. Back and Forward then do nothing but move the index and read the node back out. Because a node fully describes a location, restoring it is a single assignment - no state to rebuild.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">history: [devanshu, Documents, Work]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#8593; hi<br><br>go(x): slice(0,hi+1); push(x)<br>back: hi--&nbsp;&nbsp;forward: hi++</div>',
+   code:"let history = [VFS], hi = 0;\nfunction go(node){\n  history = history.slice(0, hi + 1);   // drop forward branch\n  history.push(node); hi = history.length - 1;\n  state.current = node; state.sel = null; render();\n}\nfunction back(){ if (hi > 0){ state.current = history[--hi]; render(); } }" },
+ { title:"5. The breadcrumb is computed, never stored",
+   why:"A common bug is a breadcrumb that disagrees with the folder you are in, because they are tracked separately. Avoid it entirely: render the trail straight from chainOf(current) every time. Each crumb is a button that calls go() on its own node, so clicking 'Documents' in the trail jumps up to Documents and history behaves correctly. The breadcrumb has no state of its own - it is a pure function of current, so it is always right.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">devanshu &rsaquo; Documents &rsaquo; Work<br>&nbsp;&nbsp;(each is a &lt;button&gt; &rarr; go(node))<br><br>trail = chainOf(current).map(...)<br>always matches the open folder</div>',
+   code:"function renderCrumbs(){\n  crumbsEl.innerHTML = \"\";\n  chainOf(state.current).forEach((node, i) => {\n    if (i) crumbsEl.append(sep(\"\\u203a\"));\n    const b = document.createElement(\"button\");\n    b.textContent = node.name; b.onclick = () => go(node);\n    crumbsEl.append(b);\n  });\n}" },
+ { title:"6. Icon view - a grid of the folder's children",
+   why:"The simplest renderer: take current.children and lay them into a CSS grid, one tile each - a drawn glyph plus a name label. Two events give it life. A single click sets state.sel and re-renders so the clicked tile shows the blue selection label. A double-click on a folder calls go() to open it; on a file it does nothing. Notice the renderer owns no data - it only reads current.children, so it can never show a stale folder.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[&#128193;]&nbsp;&nbsp;[&#128193;]&nbsp;&nbsp;[&#128196;]&nbsp;&nbsp;[&#128196;]<br>Docs&nbsp;&nbsp;DL&nbsp;&nbsp;&nbsp;pdf&nbsp;&nbsp;&nbsp;txt<br><br>click &rarr; select&nbsp;&nbsp;dblclick folder &rarr; go()</div>',
+   code:"current.children.forEach(node => {\n  const cell = el(\"div\", \"mac-icon\" + (node===state.sel ? \" sel\" : \"\"));\n  cell.innerHTML = `<div class=gl>${iconSVG(node)}</div><div class=nm>${esc(node.name)}</div>`;\n  cell.onclick    = () => { state.sel = node; render(); };\n  cell.ondblclick = () => { if (isFolder(node)) go(node); };\n  grid.append(cell);\n});" },
+ { title:"7. List view - the same rows, sortable",
+   why:"List view renders the same children as a table with Name, Date Modified, Size and Kind columns. The only new state is sort = { key, dir }. Clicking a header sets the key, or flips the direction if it is already the key. A comparator keeps folders grouped ahead of files, then compares the chosen field, multiplied by dir for ascending/descending, with name as a stable tie-break. An arrow marks the active column. It is the very same data - just ordered.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Name &#9650;&nbsp;&nbsp;Date&nbsp;&nbsp;Size&nbsp;&nbsp;Kind<br>click a header &rarr; sort by it<br>click again &rarr; reverse<br><br>folders grouped, then field &times; dir</div>',
+   code:"function sorted(items){\n  const { key, dir } = state.sort;\n  return [...items].sort((a,b) => {\n    if (isFolder(a)!==isFolder(b)) return isFolder(a) ? -1 : 1;\n    const av = key===\"size\" ? (a.size||0) : (a[key]||a.name).toLowerCase();\n    const bv = key===\"size\" ? (b.size||0) : (b[key]||b.name).toLowerCase();\n    return (av<bv ? -1 : av>bv ? 1 : 0) * dir;\n  });\n}" },
+ { title:"8. Column (Miller) view - panes from the chain",
+   why:"The column view is where the tree model shines. chainOf(current) is the list of folders currently open, so render one pane per folder, each showing that folder's children, and highlight the child that leads to the next pane. When you click a folder inside a pane, go() makes the chain one longer, so on the next render a brand-new pane appears to the right - the classic drill-down. Click a file instead and a preview pane is appended showing its icon and metadata. The navigation stack IS the parent chain.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">[ devanshu ][ Documents ][ Work ][ &rarr; ]<br>&nbsp;&nbsp;Documents&#9642;&nbsp;&nbsp;Work&#9642;&nbsp;&nbsp;report&#9642;<br><br>drill a folder &rarr; new pane on the right<br>click a file &rarr; preview pane</div>',
+   code:"chainOf(state.current).forEach((folder, i) => {\n  const next = chainOf(state.current)[i+1];\n  const col = el(\"div\", \"mac-col\");\n  folder.children.forEach(node => {\n    const row = el(\"div\", \"mac-col-row\" + (node===next ? \" lead\" : \"\"));\n    row.onclick = () => isFolder(node) ? go(node) : selectFile(node);\n    col.append(row);\n  });\n  wrap.append(col);\n});" },
+ { title:"9. Icons are drawn as SVG, not loaded",
+   why:"A self-contained component cannot depend on image files. Every icon here is inline SVG returned by one iconSVG(node) switch: a folder is a single blue path, an application is a rounded squircle with an initial, an image is a little framed photo, and any other document is a white page with a folded corner and a three-letter kind tag (PDF, TXT, ZIP). Because all three views call the same function, the glyphs are identical everywhere and there is nothing external to fetch.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">folder &rarr; blue path<br>app&nbsp;&nbsp;&nbsp;&rarr; squircle + initial<br>image&nbsp;&rarr; framed photo<br>doc&nbsp;&nbsp;&nbsp;&rarr; page + fold + [PDF]</div>',
+   code:"function iconSVG(node){\n  if (isFolder(node)) return FOLDER_SVG;\n  if (node.kind === \"Application\") return appSVG(node);\n  if (/image/i.test(node.kind))    return imageSVG(node);\n  return docSVG(tagFor(node.kind), colorFor(node.kind));\n}" },
+ { title:"10. Sidebar favourites and pseudo-nodes",
+   why:"The sidebar Favourites are trivial: each is a go() call to a real node found by name. The interesting ones are Recents and AirDrop, which are not in the tree at all. Recents is a synthetic folder whose children are the newest files gathered by walking the whole tree, so it flows through the exact same renderers with zero special-casing. AirDrop is a pseudo-node carrying a special kind that the renderer draws as nearby-device pucks. The lesson of the whole day: a new data source costs you a node, not a new code path.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono">Applications &rarr; go(realNode)<br>Recents &rarr; synthetic folder of newest files<br>AirDrop &rarr; pseudo-node, kind=\"airdrop\"<br><br>same renderers, no branching</div>',
+   code:"function allFiles(node, out=[]){\n  (node.children||[]).forEach(c => isFolder(c) ? allFiles(c, out) : out.push(c));\n  return out;\n}\nconst RECENTS = { name:\"Recents\", kind:\"folder\", synthetic:true,\n  children: allFiles(VFS).sort((a,b) => b.modified.localeCompare(a.modified)).slice(0,12) };\nconst AIRDROP = { name:\"AirDrop\", kind:\"airdrop\", synthetic:true, children:[] };" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="\u25b6 Auto-play";return;} autoB.textContent="\u23f8 Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="\u25b6 Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="\u2713 Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
