@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 60 &mdash; Spreadsheet grid</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; overflow-x: hidden; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; font-family:"SF Mono",Menlo,Consolas,monospace; }
+  .concept-box { max-width:100%; overflow-x:auto; }
+
+  /* ============================================================
+     THE SPREADSHEET — a sparse Map keyed by A1 address, a real
+     formula engine (tokenize -> parse -> evaluate) and a
+     dependency graph recalculated in topological order.
+     ============================================================ */
+  .ss-app {
+    --line:#e1e3e1; --head:#f8f9fa; --blue:#1a73e8; --ink:#202124; --dim:#5f6368; --green:#188038;
+    position:relative; width:100%; max-width:100%; background:#fff; border:1px solid #dadce0; border-radius:12px;
+    overflow:hidden; box-shadow:0 18px 44px rgba(15,23,42,.16), 0 2px 6px rgba(15,23,42,.10);
+    color:var(--ink); font-family:"Google Sans",Roboto,-apple-system,"Inter",sans-serif;
+    -webkit-font-smoothing:antialiased; user-select:none;
+  }
+  .ss-app:focus { outline:none; }
+  .ss-app:focus-visible { box-shadow:0 0 0 3px rgba(26,115,232,.35), 0 18px 44px rgba(15,23,42,.16); }
+
+  /* --- title + menu row --- */
+  .ss-head { display:flex; align-items:center; gap:10px; padding:8px 12px 6px; }
+  .ss-mark { width:26px; height:26px; flex:none; }
+  .ss-doc { min-width:0; }
+  .ss-doc .t { font-size:15px; font-weight:600; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ss-menu { display:flex; gap:13px; font-size:12px; color:var(--dim); margin-top:1px; flex-wrap:wrap; }
+  .ss-menu span { white-space:nowrap; }
+
+  /* --- toolbar --- */
+  .ss-tb { display:flex; align-items:center; gap:2px; flex-wrap:wrap; padding:5px 8px; border-top:1px solid var(--line);
+           border-bottom:1px solid var(--line); background:var(--head); }
+  .ss-b { height:28px; min-width:28px; padding:0 7px; border:0; background:transparent; border-radius:6px;
+          display:inline-flex; align-items:center; justify-content:center; gap:5px; cursor:pointer; color:#3c4043;
+          font-size:12px; font-weight:700; font-family:inherit; }
+  .ss-b:hover:not(:disabled) { background:#e8eaed; }
+  .ss-b:disabled { color:#bdc1c6; cursor:default; }
+  .ss-b.on { background:#d3e3fd; color:#041e49; }
+  .ss-b svg { width:16px; height:16px; }
+  .ss-sep { width:1px; height:20px; background:#dadce0; margin:0 5px; flex:none; }
+
+  /* --- formula bar --- */
+  .ss-fbar { display:flex; align-items:stretch; height:32px; border-bottom:1px solid var(--line); background:#fff; }
+  .ss-name { width:74px; flex:none; display:flex; align-items:center; justify-content:center; font-size:12px;
+             font-weight:700; border-right:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .ss-fx { width:32px; flex:none; display:flex; align-items:center; justify-content:center; font-style:italic;
+           font-size:13px; font-weight:700; color:var(--dim); border-right:1px solid var(--line); }
+  .ss-finput { flex:1; min-width:0; border:0; outline:none; padding:0 10px; font-size:13px; background:#fff;
+               font-family:"SF Mono",Menlo,Consolas,monospace; color:var(--ink); }
+
+  /* --- the scrolling grid --- */
+  .ss-gridwrap { position:relative; overflow:auto; max-width:100%; height:392px; background:#fff;
+                 overscroll-behavior:contain; }
+  .ss-inner { position:relative; display:inline-block; min-width:100%; }
+  table.ss-t { border-collapse:separate; border-spacing:0; table-layout:fixed; }
+  .ss-t th, .ss-t td { border-right:1px solid var(--line); border-bottom:1px solid var(--line); height:25px; box-sizing:border-box; }
+  .ss-t thead th { position:sticky; top:0; z-index:3; background:var(--head); font-size:11px; font-weight:600;
+                   color:var(--dim); text-align:center; padding:0; }
+  .ss-t thead th.ss-corner { left:0; z-index:5; }
+  .ss-t tbody th { position:sticky; left:0; z-index:2; background:var(--head); font-size:11px; font-weight:600;
+                   color:var(--dim); text-align:center; padding:0; }
+  .ss-t th.hsel { background:#d3e3fd; color:#041e49; }
+  .ss-t td { font-size:12.5px; padding:0 6px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+             background:#fff; color:var(--ink); cursor:cell; }
+  .ss-t td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .ss-t td.head { font-weight:700; background:#f1f3f4; }
+  .ss-t td.err { color:#d93025; font-weight:700; text-align:left; }
+  .ss-t td.sel { background:#e8f0fe; }
+  .ss-t td.act { background:#fff; }
+  .ss-t td.dep { box-shadow:inset 0 0 0 2px #f9ab00; }
+  .ss-hd { position:relative; }
+  .ss-grip { position:absolute; top:0; right:-3px; width:7px; height:100%; cursor:col-resize; z-index:6; }
+  .ss-grip:hover { background:rgba(26,115,232,.35); }
+
+  /* --- overlays that live in the scrolled coordinate space --- */
+  .ss-selbox { position:absolute; border:2px solid var(--blue); pointer-events:none; z-index:6; display:none; }
+  .ss-fillh { position:absolute; width:9px; height:9px; background:var(--blue); border:1px solid #fff;
+              z-index:7; cursor:crosshair; display:none; border-radius:1px; }
+  .ss-ghost { position:absolute; border:2px dashed #5f6368; pointer-events:none; z-index:6; display:none;
+              background:rgba(26,115,232,.06); }
+  .ss-march { position:absolute; border:2px dashed var(--blue); pointer-events:none; z-index:6; display:none; }
+  .ss-editor { position:absolute; z-index:8; border:2px solid var(--blue); outline:none; padding:0 4px; margin:0;
+               font-size:12.5px; font-family:"SF Mono",Menlo,Consolas,monospace; background:#fff; display:none;
+               box-shadow:0 2px 8px rgba(60,64,67,.3); box-sizing:border-box; color:var(--ink); }
+
+  /* --- status bar --- */
+  .ss-status { display:flex; align-items:center; gap:6px 14px; flex-wrap:wrap; padding:6px 12px;
+               border-top:1px solid var(--line); background:var(--head); font-size:12px; color:var(--dim); }
+  .ss-status b { color:var(--ink); font-variant-numeric:tabular-nums; font-weight:700; }
+  .ss-tabs { display:flex; align-items:center; gap:6px; padding:5px 10px; border-top:1px solid var(--line);
+             background:#f8f9fa; font-size:12px; color:var(--dim); }
+  .ss-sheettab { padding:3px 12px; border-radius:6px 6px 0 0; background:#fff; color:#041e49; font-weight:700;
+                 box-shadow:0 -1px 0 var(--line) inset; }
+
+  /* --- inspector --- */
+  .ss-inspect { display:none; border-top:1px solid var(--line); background:#0f172a; color:#e2e8f0; font-size:11px;
+                font-family:"SF Mono",Menlo,Consolas,monospace; padding:10px 12px; max-height:180px; overflow:auto; line-height:1.7; }
+  .ss-app.inspecting .ss-inspect { display:block; }
+  .ss-inspect .k { color:#7dd3fc; } .ss-inspect .v { color:#fcd34d; } .ss-inspect .m { color:#94a3b8; }
+  .ss-inspect h4 { color:#f8fafc; font-weight:700; margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none !important; } }
+  @media (max-width: 640px) {
+    .ss-gridwrap { height:330px; }
+    .ss-name { width:62px; }
+  }
+  /* on a phone the intro paragraph must not swallow the whole screen under the sticky header */
+  @media (max-width: 767px) {
+    header h1 { max-height:9rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+    <div class="min-w-0">
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 60</div>
+      <h1 class="text-xl font-bold">Spreadsheet grid &mdash; a Google-Sheets-style editable grid with a <strong>real formula engine</strong>. The sheet is <strong>not a 2-D array of DOM nodes</strong>: it is a <strong>sparse Map keyed by A1 address</strong> where each cell keeps <em>two</em> fields &mdash; the <code>raw</code> text you typed and the <code>val</code> the engine computed &mdash; which is exactly why the cell shows <code>182,760</code> while the formula bar shows <code>=SUM(E2:E8)</code>. Anything starting with <code>=</code> is run through a hand-written pipeline: a <strong>tokenizer</strong> splits <code>=ROUND(E10/$B$12,2)</code> into numbers, strings, refs and operators, a <strong>Pratt parser</strong> turns that flat list into a tree with correct precedence and parentheses, and a <strong>tree-walking evaluator</strong> produces a number, a string, a boolean or an <strong>error value</strong> &mdash; no <code>eval()</code> anywhere. The refs found while parsing become edges in a <strong>dependency graph</strong>, so editing one cell walks its <strong>transitive dependents</strong>, sorts just those in <strong>topological order</strong> (Kahn) and recalculates them once each &mdash; never the whole sheet, never twice, and anything left with a non-zero in-degree is a cycle and gets <code>#CIRC!</code>. Errors are <strong>first-class values</strong> that propagate: <code>#DIV/0!</code>, <code>#NAME?</code>, <code>#REF!</code>, <code>#VALUE!</code>. Selection is an <strong>anchor + focus rectangle</strong>, never a list of cells; the <strong>fill handle</strong> and copy/paste rewrite formulas through <strong>relative reference translation</strong> so <code>=A1*2</code> filled down becomes <code>=A2*2</code> while <code>$A$1</code> stays anchored; and the editor is <strong>one input element</strong> that is repositioned, never re-created mid-edit, so the caret survives every render. Full keyboard model &mdash; <kbd>&larr;&uarr;&rarr;&darr;</kbd> <kbd>Enter</kbd> <kbd>Tab</kbd> <kbd>F2</kbd> <kbd>Esc</kbd> <kbd>Shift</kbd>+arrows <kbd>Ctrl</kbd>+<kbd>A</kbd>/<kbd>C</kbd>/<kbd>V</kbd>/<kbd>Z</kbd>. No libraries, no images &mdash; every icon is inline SVG.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 sm:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">A <span class="text-indigo-600">sparse map</span>, a <span class="text-purple-600">parser</span> and a <span class="text-emerald-600">dependency graph</span> &mdash; a sheet that really calculates.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto"><strong>Click a formula cell</strong> (try <code>E10</code> or <code>J3</code>) and watch the formula bar show the raw <code>=SUM(...)</code> while the cell shows the number. <strong>Type over a figure</strong> &mdash; change <code>B3</code> to <code>9000</code> and the Q1 total, the grand total, the variance, the % used and the Over/OK status all move in one pass. <strong>Drag the blue square</strong> at the corner of the selection to fill down or right and see <code>=SUM(B2:D2)</code> become <code>=SUM(B3:D3)</code> while <code>$B$12</code> stays put. <strong>Shift+arrows</strong> extend the selection and the status bar totals it live. Try a deliberate mistake: put <code>=A1</code> in <code>A1</code> for <code>#CIRC!</code>, or <code>=1/0</code> for <code>#DIV/0!</code> and watch the error travel downstream. Then hit <strong>Inspect</strong> to see the real dependency graph and the exact recalculation order.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-3 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-1 w-full min-w-0">
+            <div class="ss-app" id="sheet" tabindex="0">
+
+              <div class="ss-head">
+                <svg class="ss-mark" viewBox="0 0 48 48" aria-hidden="true">
+                  <path d="M30 4H12a4 4 0 0 0-4 4v32a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4V14z" fill="#188038"/>
+                  <path d="M30 4v10h10z" fill="#0f6b2e"/>
+                  <path d="M16 20h16v14H16z" fill="#fff"/>
+                  <path d="M16 24.5h16M16 29.5h16M21.3 20v14M26.6 20v14" stroke="#188038" stroke-width="1.6"/>
+                </svg>
+                <div class="ss-doc">
+                  <div class="t">Q1 budget &mdash; 2026</div>
+                  <div class="ss-menu"><span>File</span><span>Edit</span><span>View</span><span>Insert</span><span>Format</span><span>Data</span></div>
+                </div>
+              </div>
+
+              <div class="ss-tb" id="ss-tb"></div>
+
+              <div class="ss-fbar">
+                <div class="ss-name" id="ss-name">A1</div>
+                <div class="ss-fx" aria-hidden="true">fx</div>
+                <input class="ss-finput" id="ss-fin" spellcheck="false" autocomplete="off" aria-label="Formula bar" />
+              </div>
+
+              <div class="ss-gridwrap" id="ss-wrap">
+                <div class="ss-inner" id="ss-inner">
+                  <table class="ss-t" id="ss-table">
+                    <colgroup id="ss-cols"></colgroup>
+                    <thead id="ss-thead"></thead>
+                    <tbody id="ss-tbody"></tbody>
+                  </table>
+                  <div class="ss-march" id="ss-march"></div>
+                  <div class="ss-selbox" id="ss-selbox"></div>
+                  <div class="ss-ghost" id="ss-ghost"></div>
+                  <div class="ss-fillh" id="ss-fillh" title="Drag to fill"></div>
+                  <input class="ss-editor" id="ss-editor" spellcheck="false" autocomplete="off" aria-label="Cell editor" />
+                </div>
+              </div>
+
+              <div class="ss-status" id="ss-status"></div>
+              <div class="ss-tabs"><span class="ss-sheettab">Budget</span><span>+</span><span style="margin-left:auto;">10 &times; 24 cells &middot; sparse map, not a 2-D array</span></div>
+              <div class="ss-inspect" id="ss-inspect"></div>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3">Real component &mdash; type, fill, copy, paste, resize a column, break it on purpose. Not one pixel is a screenshot.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live state &mdash; raw vs computed</div>
+              <div id="ro-list" class="space-y-2 text-sm"></div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">A cell stores <code>raw</code> (what you typed) and <code>val</code> (what the engine produced). The grid paints <code>val</code>, the formula bar paints <code>raw</code>. Two fields, one edit &mdash; that single split is what makes a spreadsheet a spreadsheet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Every spreadsheet, every reactive signal library and every build system you have used is this same shape: <strong>values with declared inputs</strong>, a <strong>graph</strong> built from those declarations, and a <strong>topological pass</strong> that touches each node exactly once. Model it that way and incremental recalculation, cycle detection and error propagation stop being features &mdash; they are consequences. <em>Tomorrow: Notion database views &mdash; one record collection, four renderers.</em></p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2 min-w-0">
+      <h3 class="font-bold text-lg mb-3">How a spreadsheet works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2 flex-wrap">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4 min-w-0">
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-4 sm:p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A spreadsheet looks like the hardest component on the list, but it is four small machines bolted together. We store the sheet as a <strong>sparse Map keyed by A1 address</strong>, write the <strong>address math</strong> that converts between <code>"AB10"</code> and <code>(row, col)</code>, give every cell a <strong>raw</strong> and a <strong>computed</strong> field, then build the engine properly: a <strong>tokenizer</strong>, a <strong>Pratt parser</strong> with real precedence, and a <strong>tree-walking evaluator</strong> with functions and <strong>error values</strong>. The refs the parser found become a <strong>dependency graph</strong>, so one edit recalculates only its <strong>transitive dependents</strong> in <strong>topological order</strong> and anything left over is a <strong>cycle</strong>. Then the UI: render from state, one reusable <strong>editor input</strong>, an <strong>anchor+focus</strong> selection, and a <strong>fill handle</strong> that rewrites relative references. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies, no <code>eval()</code>.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">1</div><h3 class="font-bold text-lg">Address math &mdash; the base-26-ish column letters</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Everything downstream needs to move between <code>"AB10"</code> and <code>(row 9, col 27)</code>. Column letters look like base 26 but there is no zero digit &mdash; after <code>Z</code> comes <code>AA</code>, not <code>BA</code> &mdash; so both directions carry a <code>&plusmn;1</code>. Get this pair right once, test it over a sweep, and never think about it again.</p>
+        <div class="relative"><pre>function colName(c){                 // 0 -&gt; A, 25 -&gt; Z, 26 -&gt; AA
+  let s = "", n = c + 1;
+  while (n &gt; 0){
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+function colIndex(s){                // "A" -&gt; 0, "AA" -&gt; 26
+  let n = 0;
+  const up = String(s).toUpperCase();
+  for (let i = 0; i &lt; up.length; i++) n = n * 26 + (up.charCodeAt(i) - 64);
+  return n - 1;
+}
+const addrOf = (r, c) =&gt; colName(c) + (r + 1);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">2</div><h3 class="font-bold text-lg">The sheet is a sparse Map, and a cell has two fields</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not allocate rows &times; cols of anything. Store only the cells somebody touched, keyed by address, and keep <code>raw</code> (what was typed) separate from <code>val</code> (what the engine produced). That one split is the whole illusion: the grid paints <code>val</code>, the formula bar paints <code>raw</code>. A missing key is a blank cell &mdash; and blank is a real value, not <code>undefined</code>.</p>
+        <div class="relative"><pre>const BLANK = null;
+const SHEET = {
+  cells:      new Map(),   // "B2" -&gt; { raw, ast, refs, val }
+  dependents: new Map()    // "B2" -&gt; Set("E2","B10")  (who reads me)
+};
+const cellAt  = a =&gt; SHEET.cells.get(a) || null;
+const rawAt   = a =&gt; { const c = cellAt(a); return c ? c.raw : ""; };
+const valueAt = a =&gt; { const c = cellAt(a); return c ? c.val : BLANK; };</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">3</div><h3 class="font-bold text-lg">Tokenize the formula &mdash; and disambiguate <code>LOG10</code> from a cell</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The scanner walks the text once and emits numbers, quoted strings (<code>""</code> is an escaped quote), identifiers, operators and punctuation. Identifiers are ambiguous: <code>SUM</code> is a function, <code>A1</code> is a reference, and <code>LOG10</code> looks exactly like a cell. Real spreadsheets resolve it the same way we do &mdash; peek at the next non-space character: a <code>(</code> means function, otherwise test it against the address pattern.</p>
+        <div class="relative"><pre>const ADDR_RE = /^(\$?)([A-Za-z]{1,3})(\$?)([1-9][0-9]{0,6})$/;
+
+if (/[A-Za-z_$]/.test(ch)){
+  while (i &lt; s.length &amp;&amp; /[A-Za-z0-9_$.]/.test(s[i])) i++;
+  const text = s.slice(start, i), up = text.toUpperCase();
+  let j = i; while (s[j] === " ") j++;              // peek past spaces
+  if (up === "TRUE" || up === "FALSE") push("bool", up === "TRUE");
+  else if (s[j] === "(")               push("func", up);   // SUM(  LOG10(
+  else if (ADDR_RE.test(text))         push("ref");        // A1  $B$12
+  else                                 push("name", up);   // -&gt; #NAME?
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">4</div><h3 class="font-bold text-lg">A Pratt parser gives you precedence for free</h3></div>
+        <p class="text-sm text-slate-600 mb-3">One binding-power table plus a five-line loop is the entire grammar. Each operator says how tightly it binds; the loop keeps absorbing operators at least that tight and recurses with <code>bp + 1</code>, which makes everything left-associative &mdash; including <code>^</code>, because Sheets evaluates <code>2^3^2</code> as <code>64</code>, not the mathematician's <code>512</code>. Unary minus is parsed above <code>^</code> so <code>-2^2</code> is <code>4</code>, matching Excel.</p>
+        <div class="relative"><pre>const BINP = { "=":1,"&lt;&gt;":1,"&lt;":1,"&gt;":1,"&lt;=":1,"&gt;=":1, "&amp;":2, "+":3,"-":3, "*":4,"/":4, "^":5 };
+
+function parseExpr(minp){
+  let left = parseUnary();
+  for (;;){
+    const t = peek();
+    if (!t || t.type !== "op") break;
+    const bp = BINP[t.text];
+    if (bp === undefined || bp &lt; minp) break;
+    next();
+    const right = parseExpr(bp + 1);      // +1 =&gt; left-associative
+    left = { t:"bin", op:t.text, l:left, r:right };
+  }
+  return left;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">5</div><h3 class="font-bold text-lg">A range is a rectangle, not a list &mdash; until a function asks</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>A1:C3</code> parses into two corners. Keep it that way in the tree and expand it to nine addresses only when a function flattens its arguments; that keeps <code>=A1:C3 + 1</code> honestly an error (<code>#VALUE!</code>) instead of silently guessing. Normalise while expanding, so <code>C3:A1</code> and <code>A1:C3</code> are the same nine cells.</p>
+        <div class="relative"><pre>function rangeAddrs(a, b){
+  const r1 = Math.min(a.r, b.r), r2 = Math.max(a.r, b.r);
+  const c1 = Math.min(a.c, b.c), c2 = Math.max(a.c, b.c);
+  const out = [];
+  for (let r = r1; r &lt;= r2; r++)
+    for (let c = c1; c &lt;= c2; c++) out.push(addrOf(r, c));
+  return out;                       // A1:C3 -&gt; 9 addresses, always in order
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">6</div><h3 class="font-bold text-lg">Evaluate the tree &mdash; and make errors first-class values</h3></div>
+        <p class="text-sm text-slate-600 mb-3">An error is not an exception, it is a value: <code>{ e:"#DIV/0!" }</code>. Check for it at the top of every operator and every function argument and return it unchanged, and propagation is automatic &mdash; a cell reading a broken cell breaks the same way, all the way down the graph. Division guards zero, an unknown function is <code>#NAME?</code>, and text where a number was needed is <code>#VALUE!</code>.</p>
+        <div class="relative"><pre>const err   = code =&gt; ({ e: code });
+const isErr = v =&gt; !!v &amp;&amp; typeof v === "object" &amp;&amp; typeof v.e === "string";
+
+case "bin": {
+  const a = evalNode(n.l, ctx); if (isErr(a)) return a;   // propagate
+  const b = evalNode(n.r, ctx); if (isErr(b)) return b;
+  if (n.op === "&amp;") return strOf(a) + strOf(b);
+  const x = numOf(a); if (isErr(x)) return x;             // "abc" -&gt; #VALUE!
+  const y = numOf(b); if (isErr(y)) return y;
+  if (n.op === "/") return y === 0 ? err("#DIV/0!") : x / y;
+  ...
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">7</div><h3 class="font-bold text-lg">Parsing hands you the dependency graph</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Walk the tree you already built and collect every ref (ranges expanded). Those are the cell's <em>precedents</em>; store the reverse map too, so every cell knows who reads it. Rebuild both on each edit &mdash; unhook the old edges first, or a deleted reference will keep firing recalculations forever.</p>
+        <div class="relative"><pre>function refsOf(ast){
+  const out = [];
+  (function walk(n){
+    if (!n || typeof n !== "object") return;
+    if (n.t === "ref")   return void out.push(addrOf(n.a.r, n.a.c));
+    if (n.t === "range") return void rangeAddrs(n.a, n.b).forEach(a =&gt; out.push(a));
+    if (n.t === "bin")   { walk(n.l); walk(n.r); return; }
+    if (n.t === "un" || n.t === "pct") return walk(n.x);
+    if (n.t === "call")  n.args.forEach(walk);
+  })(ast);
+  return Array.from(new Set(out));
+}
+// unhook old edges, then: refs.forEach(d =&gt; dependents.get(d).add(addr));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">8</div><h3 class="font-bold text-lg">Recalculate in topological order &mdash; leftovers are the cycle</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Collect the edited cell plus its transitive dependents, count in-degrees inside that set only, and drain with Kahn's algorithm. Every cell is evaluated exactly once and always after its inputs. The elegant part is free cycle detection: if the queue empties while cells remain, those cells can never be ordered &mdash; that <em>is</em> the definition of a cycle &mdash; so mark them <code>#CIRC!</code>.</p>
+        <div class="relative"><pre>function recalcSet(set){
+  const order = [], indeg = new Map();
+  set.forEach(a =&gt; indeg.set(a, 0));
+  set.forEach(a =&gt; (cellAt(a)?.refs || []).forEach(d =&gt; {
+    if (set.has(d)) indeg.set(a, indeg.get(a) + 1);
+  }));
+  const q = [...set].filter(a =&gt; indeg.get(a) === 0).sort();
+  while (q.length){
+    const a = q.shift(); order.push(a);
+    (SHEET.dependents.get(a) || []).forEach(d =&gt; {
+      if (!set.has(d)) return;
+      indeg.set(d, indeg.get(d) - 1);
+      if (indeg.get(d) === 0) q.push(d);
+    });
+  }
+  order.forEach(a =&gt; { const c = cellAt(a); if (c &amp;&amp; c.ast) c.val = evalNode(c.ast, CTX); });
+  set.forEach(a =&gt; { if (order.indexOf(a) &lt; 0) cellAt(a).val = err("#CIRC!"); });
+  return order;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">9</div><h3 class="font-bold text-lg">Fill and copy rewrite the text &mdash; relative reference translation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Dragging the fill handle does not copy a value, it copies a <em>formula shifted by the row/column delta</em>. Re-tokenize the raw text, shift only the ref tokens, and splice them back <strong>from the end</strong> so earlier positions stay valid. A <code>$</code> pins its half of the address; falling off the sheet becomes <code>#REF!</code>. Everything else &mdash; strings, function names, spacing &mdash; is left byte-for-byte alone.</p>
+        <div class="relative"><pre>function translateFormula(raw, dr, dc){
+  if (typeof raw !== "string" || raw[0] !== "=") return raw;
+  const body = raw.slice(1), toks = tokenize(body);
+  let out = body;
+  for (let i = toks.length - 1; i &gt;= 0; i--){          // back to front
+    const t = toks[i];
+    if (t.type !== "ref") continue;
+    out = out.slice(0, t.pos) + shiftRef(t.text, dr, dc) + out.slice(t.pos + t.text.length);
+  }
+  return "=" + out;
+}
+// =A1*2  filled down 1  -&gt;  =A2*2
+// =A$1*2 filled down 1  -&gt;  =A$1*2      (row pinned)
+// =$A$1  filled anywhere -&gt; =$A$1       (both pinned)</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">10</div><h3 class="font-bold text-lg">Selection is a rectangle; editing is a state machine</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep two points &mdash; <code>anchor</code> (where the selection started) and <code>focus</code> (where the arrow keys are) &mdash; and derive the rectangle by min/max, so shift-arrow works in every direction without a special case. Editing is <code>idle &rarr; editing &rarr; commit | cancel</code> with the pre-edit raw text stashed, because <kbd>Esc</kbd> must put it back. Crucially, the editor is <strong>one persistent input</strong> that gets moved and shown &mdash; re-creating it mid-edit would destroy the caret on every keystroke.</p>
+        <div class="relative"><pre>const normRect = (a, f) =&gt; ({
+  r1: Math.min(a.r, f.r), r2: Math.max(a.r, f.r),
+  c1: Math.min(a.c, f.c), c2: Math.max(a.c, f.c)
+});
+
+function startEdit(seed){                 // seed = typed char, or the raw text
+  state.editing = true;
+  state.preEdit = rawAt(activeAddr());    // Escape restores this
+  editor.value = seed;                    // ONE element, never re-created
+  placeEditor(); editor.focus();
+  editor.setSelectionRange(seed.length, seed.length);   // caret at the end
+}
+function commitEdit(dr, dc){ setCell(activeAddr(), editor.value); stopEdit(); move(dr, dc); }
+function cancelEdit(){ stopEdit(); render(); }          // nothing was written yet</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 60 of DesignFromZero done &mdash; Spreadsheet grid.</h3><p class="text-sm text-indigo-700 mt-2">You built a real spreadsheet: a <strong>sparse Map</strong> keyed by A1 address instead of a grid of DOM nodes, a cell that keeps <strong>raw and computed</strong> side by side, and a hand-written <strong>tokenizer &rarr; Pratt parser &rarr; evaluator</strong> with precedence, parentheses, ranges, comparisons, string concatenation and real functions &mdash; no <code>eval()</code>. The refs the parser collected became a <strong>dependency graph</strong>, so one edit recalculates only its <strong>transitive dependents</strong> in <strong>topological order</strong>, exactly once each, and the cells the sort could not order <em>are</em> the <strong>cycle</strong>. Errors became <strong>values</strong> that propagate on their own. The fill handle and clipboard rewrite formulas through <strong>relative reference translation</strong> with <code>$</code> anchoring, selection stayed an <strong>anchor+focus rectangle</strong>, and one <strong>persistent input</strong> kept the caret alive through every render. <strong>&#128075; Declare what a value depends on, build the graph from the declaration, and walk it in order &mdash; then incremental recalculation stops being an optimisation and starts being the design.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== ENGINE:BEGIN =====
+// Pure logic — no DOM below this line until ENGINE:END. The node test file
+// extracts exactly this block out of the HTML so the tests can never drift
+// away from the code the page actually runs.
+
+// --- 1) addresses: 0 <-> "A", 26 <-> "AA" (base-26 with no zero digit) ---
+function colName(c){
+  let s = "", n = c + 1;
+  while (n > 0){ const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+function colIndex(s){
+  let n = 0; const up = String(s).toUpperCase();
+  for (let i = 0; i < up.length; i++) n = n * 26 + (up.charCodeAt(i) - 64);
+  return n - 1;
+}
+function addrOf(r, c){ return colName(c) + (r + 1); }
+const ADDR_RE = /^(\$?)([A-Za-z]{1,3})(\$?)([1-9][0-9]{0,6})$/;
+function parseAddr(a){
+  const m = ADDR_RE.exec(String(a).trim());
+  if (!m) return null;
+  return { r: +m[4] - 1, c: colIndex(m[2]), absR: m[3] === "$", absC: m[1] === "$" };
+}
+
+// --- 2) values: numbers, strings, booleans, BLANK and ERRORS -------------
+const BLANK = null;
+const ERR = { DIV:"#DIV/0!", NAME:"#NAME?", REF:"#REF!", VAL:"#VALUE!", CIRC:"#CIRC!", NUM:"#NUM!" };
+function err(code){ return { e: code }; }
+function isErr(v){ return !!v && typeof v === "object" && typeof v.e === "string"; }
+function isRange(v){ return !!v && typeof v === "object" && Array.isArray(v.range); }
+function numOf(v){
+  if (v === BLANK) return 0;
+  if (typeof v === "number") return v;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (isErr(v)) return v;
+  if (typeof v === "string"){
+    const s = v.trim();
+    if (s === "") return 0;
+    const n = Number(s);
+    return isNaN(n) ? err(ERR.VAL) : n;
+  }
+  return err(ERR.VAL);
+}
+function strOf(v){
+  if (v === BLANK) return "";
+  if (isErr(v)) return v.e;
+  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (typeof v === "number") return String(Math.round(v * 1e10) / 1e10);
+  return String(v);
+}
+function truthy(v){
+  if (v === BLANK) return false;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") return v.toUpperCase() === "TRUE";
+  return false;
+}
+function cmp(a, b){
+  if (typeof a === "number" && typeof b === "number") return a < b ? -1 : a > b ? 1 : 0;
+  if (a === BLANK && typeof b === "number") return cmp(0, b);
+  if (b === BLANK && typeof a === "number") return cmp(a, 0);
+  const x = strOf(a).toLowerCase(), y = strOf(b).toLowerCase();
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+// --- 3) tokenizer -------------------------------------------------------
+function tokenize(src){
+  const s = String(src), t = [];
+  let i = 0;
+  while (i < s.length){
+    const ch = s[i];
+    if (ch === " " || ch === "\t" || ch === "\n"){ i++; continue; }
+    const start = i;
+    if ((ch >= "0" && ch <= "9") || (ch === "." && s[i+1] >= "0" && s[i+1] <= "9")){
+      while (i < s.length && /[0-9.]/.test(s[i])) i++;
+      if (s[i] === "e" || s[i] === "E"){
+        let j = i + 1;
+        if (s[j] === "+" || s[j] === "-") j++;
+        if (/[0-9]/.test(s[j] || "")){ i = j; while (i < s.length && /[0-9]/.test(s[i])) i++; }
+      }
+      t.push({ type:"num", text:s.slice(start, i), pos:start, value:parseFloat(s.slice(start, i)) });
+      continue;
+    }
+    if (ch === '"'){
+      i++;
+      let out = "";
+      while (i < s.length){
+        if (s[i] === '"'){ if (s[i+1] === '"'){ out += '"'; i += 2; continue; } i++; break; }
+        out += s[i++];
+      }
+      t.push({ type:"str", text:s.slice(start, i), pos:start, value:out });
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(ch)){
+      while (i < s.length && /[A-Za-z0-9_$.]/.test(s[i])) i++;
+      const text = s.slice(start, i), up = text.toUpperCase();
+      let j = i; while (s[j] === " ") j++;
+      if (up === "TRUE" || up === "FALSE") t.push({ type:"bool", text, pos:start, value: up === "TRUE" });
+      else if (s[j] === "(")               t.push({ type:"func", text, pos:start, value:up });
+      else if (ADDR_RE.test(text))         t.push({ type:"ref",  text, pos:start });
+      else                                 t.push({ type:"name", text, pos:start, value:up });
+      continue;
+    }
+    if (ch === "#"){
+      while (i < s.length && s[i] !== "!" && s[i] !== "?") i++;
+      i++;
+      t.push({ type:"errlit", text:s.slice(start, i), pos:start, value:s.slice(start, i).toUpperCase() });
+      continue;
+    }
+    const two = s.substr(i, 2);
+    if (two === "<=" || two === ">=" || two === "<>"){ t.push({ type:"op", text:two, pos:start }); i += 2; continue; }
+    if ("+-*/^&%=<>(),:".indexOf(ch) >= 0){ t.push({ type:"op", text:ch, pos:start }); i++; continue; }
+    t.push({ type:"bad", text:ch, pos:start }); i++;
+  }
+  return t;
+}
+
+// --- 4) Pratt parser ----------------------------------------------------
+const BINP = { "=":1, "<>":1, "<":1, ">":1, "<=":1, ">=":1, "&":2, "+":3, "-":3, "*":4, "/":4, "^":5 };
+
+function parseFormula(src){
+  const toks = tokenize(src);
+  let p = 0;
+  const peek = () => toks[p];
+  const next = () => toks[p++];
+
+  function parseExpr(minp){
+    let left = parseUnary();
+    for (;;){
+      const t = peek();
+      if (!t || t.type !== "op") break;
+      const bp = BINP[t.text];
+      if (bp === undefined || bp < minp) break;
+      next();
+      const right = parseExpr(bp + 1);      // +1 => left-associative, like Sheets
+      left = { t:"bin", op:t.text, l:left, r:right };
+    }
+    return left;
+  }
+  function parseUnary(){
+    const t = peek();
+    if (t && t.type === "op" && (t.text === "-" || t.text === "+")){ next(); return { t:"un", op:t.text, x:parseUnary() }; }
+    return parsePostfix();
+  }
+  function parsePostfix(){
+    let x = parsePrimary();
+    while (peek() && peek().type === "op" && peek().text === "%"){ next(); x = { t:"pct", x }; }
+    return x;
+  }
+  function parsePrimary(){
+    const t = next();
+    if (!t) throw new SyntaxError("unexpected end of formula");
+    if (t.type === "num")    return { t:"num",  v:t.value };
+    if (t.type === "str")    return { t:"str",  v:t.value };
+    if (t.type === "bool")   return { t:"bool", v:t.value };
+    if (t.type === "errlit") return { t:"err",  v:t.value };
+    if (t.type === "name")   return { t:"badname", v:t.value };
+    if (t.type === "ref"){
+      const a = parseAddr(t.text);
+      if (peek() && peek().type === "op" && peek().text === ":" && toks[p+1] && toks[p+1].type === "ref"){
+        next();
+        return { t:"range", a, b:parseAddr(next().text) };
+      }
+      return { t:"ref", a };
+    }
+    if (t.type === "func"){
+      next();                                        // the "("
+      const args = [];
+      if (peek() && peek().type === "op" && peek().text === ")") next();
+      else for (;;){
+        args.push(parseExpr(1));
+        const k = next();
+        if (!k) throw new SyntaxError("missing )");
+        if (k.text === ")") break;
+        if (k.text !== ",") throw new SyntaxError("expected , or )");
+      }
+      return { t:"call", name:t.value, args };
+    }
+    if (t.type === "op" && t.text === "("){
+      const x = parseExpr(1);
+      const k = next();
+      if (!k || k.text !== ")") throw new SyntaxError("missing )");
+      return x;
+    }
+    throw new SyntaxError("unexpected " + t.text);
+  }
+
+  const ast = parseExpr(1);
+  if (p < toks.length) throw new SyntaxError("trailing input near " + toks[p].text);
+  return ast;
+}
+
+// --- 5) ranges ----------------------------------------------------------
+function rangeAddrs(a, b){
+  const r1 = Math.min(a.r, b.r), r2 = Math.max(a.r, b.r);
+  const c1 = Math.min(a.c, b.c), c2 = Math.max(a.c, b.c);
+  const out = [];
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) out.push(addrOf(r, c));
+  return out;
+}
+function expandRange(a, b){
+  const p = parseAddr(a), q = parseAddr(b);
+  return (p && q) ? rangeAddrs(p, q) : [];
+}
+
+// --- 6) functions -------------------------------------------------------
+function numsIn(list){ return list.filter(v => typeof v === "number"); }
+const FUNCS = {
+  SUM(list){ return numsIn(list).reduce((a, b) => a + b, 0); },
+  AVERAGE(list){ const n = numsIn(list); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : err(ERR.DIV); },
+  MIN(list){ const n = numsIn(list); return n.length ? Math.min.apply(null, n) : 0; },
+  MAX(list){ const n = numsIn(list); return n.length ? Math.max.apply(null, n) : 0; },
+  COUNT(list){ return numsIn(list).length; },
+  COUNTA(list){ return list.filter(v => v !== BLANK && v !== "").length; },
+  ABS(list){ const x = numOf(list[0]); return isErr(x) ? x : Math.abs(x); },
+  ROUND(list){
+    const x = numOf(list[0]); if (isErr(x)) return x;
+    const d = list.length > 1 ? numOf(list[1]) : 0; if (isErr(d)) return d;
+    const f = Math.pow(10, Math.trunc(d)), sign = x < 0 ? -1 : 1;
+    return sign * Math.round(Number((Math.abs(x) * f).toPrecision(15))) / f;
+  },
+  CONCAT(list){ return list.map(strOf).join(""); }
+};
+FUNCS.CONCATENATE = FUNCS.CONCAT;
+
+function flattenArgs(vals, ctx){
+  const out = [];
+  vals.forEach(v => { if (isRange(v)) v.range.forEach(a => out.push(ctx.read(a))); else out.push(v); });
+  return out;
+}
+function scalar(v){ return isRange(v) ? err(ERR.VAL) : v; }
+
+function callFn(n, ctx){
+  if (n.name === "IF"){                                  // lazy: only one branch runs
+    if (n.args.length < 2) return err(ERR.VAL);
+    const c = scalar(evalNode(n.args[0], ctx));
+    if (isErr(c)) return c;
+    if (truthy(c)) return scalar(evalNode(n.args[1], ctx));
+    return n.args.length > 2 ? scalar(evalNode(n.args[2], ctx)) : false;
+  }
+  const fn = FUNCS[n.name];
+  if (!fn) return err(ERR.NAME);
+  const raw = n.args.map(a => evalNode(a, ctx));
+  for (let i = 0; i < raw.length; i++) if (isErr(raw[i])) return raw[i];
+  const list = flattenArgs(raw, ctx);
+  for (let i = 0; i < list.length; i++) if (isErr(list[i])) return list[i];
+  return fn(list);
+}
+
+// --- 7) evaluator -------------------------------------------------------
+function evalNode(n, ctx){
+  switch (n.t){
+    case "num": case "str": case "bool": return n.v;
+    case "err":     return err(n.v);
+    case "badname": return err(ERR.NAME);
+    case "ref":     return (n.a.r < 0 || n.a.c < 0) ? err(ERR.REF) : ctx.read(addrOf(n.a.r, n.a.c));
+    case "range":   return { range: rangeAddrs(n.a, n.b) };
+    case "un": {
+      const v = evalNode(n.x, ctx); if (isErr(v)) return v;
+      const x = numOf(scalar(v)); if (isErr(x)) return x;
+      return n.op === "-" ? -x : x;
+    }
+    case "pct": {
+      const v = evalNode(n.x, ctx); if (isErr(v)) return v;
+      const x = numOf(scalar(v)); if (isErr(x)) return x;
+      return x / 100;
+    }
+    case "bin": {
+      const a = evalNode(n.l, ctx); if (isErr(a)) return a;
+      const b = evalNode(n.r, ctx); if (isErr(b)) return b;
+      if (isRange(a) || isRange(b)) return err(ERR.VAL);
+      if (n.op === "&") return strOf(a) + strOf(b);
+      if (BINP[n.op] === 1){
+        const c = cmp(a, b);
+        switch (n.op){
+          case "=":  return c === 0;
+          case "<>": return c !== 0;
+          case "<":  return c < 0;
+          case ">":  return c > 0;
+          case "<=": return c <= 0;
+          case ">=": return c >= 0;
+        }
+      }
+      const x = numOf(a); if (isErr(x)) return x;
+      const y = numOf(b); if (isErr(y)) return y;
+      switch (n.op){
+        case "+": return x + y;
+        case "-": return x - y;
+        case "*": return x * y;
+        case "/": return y === 0 ? err(ERR.DIV) : x / y;
+        case "^": { const r = Math.pow(x, y); return isFinite(r) ? r : err(ERR.NUM); }
+      }
+      return err(ERR.VAL);
+    }
+    case "call": return callFn(n, ctx);
+  }
+  return err(ERR.VAL);
+}
+
+// --- 8) the sheet: a sparse Map + a dependency graph ---------------------
+const SHEET = { cells:new Map(), dependents:new Map(), lastOrder:[], lastCircular:[] };
+function cellAt(a){ return SHEET.cells.get(a) || null; }
+function rawAt(a){ const c = cellAt(a); return c ? c.raw : ""; }
+function valueAt(a){ const c = cellAt(a); return c ? c.val : BLANK; }
+const CTX = { read: valueAt };
+function clearSheet(){ SHEET.cells.clear(); SHEET.dependents.clear(); SHEET.lastOrder = []; SHEET.lastCircular = []; }
+
+function literalOf(raw){
+  const s = raw.trim();
+  if (s === "") return BLANK;
+  const up = s.toUpperCase();
+  if (up === "TRUE") return true;
+  if (up === "FALSE") return false;
+  if (/^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return parseFloat(s);
+  if (/^-?(\d+\.?\d*|\.\d+)%$/.test(s)) return parseFloat(s) / 100;
+  return raw;
+}
+
+function refsOf(ast){
+  const out = [];
+  (function walk(n){
+    if (!n || typeof n !== "object") return;
+    if (n.t === "ref"){ out.push(addrOf(n.a.r, n.a.c)); return; }
+    if (n.t === "range"){ rangeAddrs(n.a, n.b).forEach(a => out.push(a)); return; }
+    if (n.t === "bin"){ walk(n.l); walk(n.r); return; }
+    if (n.t === "un" || n.t === "pct"){ walk(n.x); return; }
+    if (n.t === "call"){ n.args.forEach(walk); return; }
+  })(ast);
+  return Array.from(new Set(out));
+}
+
+function unhook(addr){
+  const old = cellAt(addr);
+  if (!old) return;
+  old.refs.forEach(d => { const s = SHEET.dependents.get(d); if (s) s.delete(addr); });
+}
+
+function setCell(addr, raw){
+  raw = (raw === undefined || raw === null) ? "" : String(raw);
+  unhook(addr);
+  if (raw === "") SHEET.cells.delete(addr);
+  else {
+    const cell = { raw, ast:null, refs:[], val:BLANK, parseError:null };
+    if (raw.charAt(0) === "="){
+      try { cell.ast = parseFormula(raw.slice(1)); cell.refs = refsOf(cell.ast); }
+      catch (e){ cell.ast = null; cell.parseError = ERR.NAME; }
+    } else cell.val = literalOf(raw);
+    SHEET.cells.set(addr, cell);
+    cell.refs.forEach(d => {
+      if (!SHEET.dependents.has(d)) SHEET.dependents.set(d, new Set());
+      SHEET.dependents.get(d).add(addr);
+    });
+  }
+  return recalcFrom(addr);
+}
+
+function affectedFrom(start){
+  const seen = new Set([start]), stack = [start];
+  while (stack.length){
+    const a = stack.pop();
+    const ds = SHEET.dependents.get(a);
+    if (!ds) continue;
+    ds.forEach(d => { if (!seen.has(d)){ seen.add(d); stack.push(d); } });
+  }
+  return seen;
+}
+
+function recalcSet(set){
+  const order = [], indeg = new Map();
+  set.forEach(a => indeg.set(a, 0));
+  set.forEach(a => {
+    const c = cellAt(a);
+    if (!c) return;
+    c.refs.forEach(d => { if (set.has(d)) indeg.set(a, indeg.get(a) + 1); });
+  });
+  const q = [];
+  set.forEach(a => { if (indeg.get(a) === 0) q.push(a); });
+  q.sort();
+  while (q.length){
+    const a = q.shift();
+    order.push(a);
+    const ds = SHEET.dependents.get(a);
+    if (!ds) continue;
+    const ready = [];
+    ds.forEach(d => {
+      if (!set.has(d)) return;
+      indeg.set(d, indeg.get(d) - 1);
+      if (indeg.get(d) === 0) ready.push(d);
+    });
+    ready.sort().forEach(x => q.push(x));
+  }
+  order.forEach(a => {
+    const c = cellAt(a);
+    if (!c) return;
+    if (c.parseError) c.val = err(c.parseError);
+    else if (c.ast)   c.val = evalNode(c.ast, CTX);
+  });
+  const done = new Set(order), circular = [];
+  set.forEach(a => {
+    if (done.has(a)) return;
+    const c = cellAt(a);
+    if (c) c.val = err(ERR.CIRC);
+    circular.push(a);
+  });
+  SHEET.lastOrder = order.slice();
+  SHEET.lastCircular = circular.slice();
+  return { order, circular };
+}
+function recalcFrom(start){ return recalcSet(affectedFrom(start)); }
+function recalcAll(){ return recalcSet(new Set(SHEET.cells.keys())); }
+function loadSheet(pairs){ pairs.forEach(p => setCell(p[0], p[1])); return recalcAll(); }
+
+// --- 9) relative reference translation (fill handle + paste) ------------
+function shiftRef(text, dr, dc){
+  const m = ADDR_RE.exec(text);
+  if (!m) return text;
+  const absC = m[1] === "$", absR = m[3] === "$";
+  let c = colIndex(m[2]), r = +m[4] - 1;
+  if (!absC) c += dc;
+  if (!absR) r += dr;
+  if (r < 0 || c < 0) return ERR.REF;
+  return (absC ? "$" : "") + colName(c) + (absR ? "$" : "") + (r + 1);
+}
+function translateFormula(raw, dr, dc){
+  if (typeof raw !== "string" || raw.charAt(0) !== "=") return raw;
+  const body = raw.slice(1), toks = tokenize(body);
+  let out = body;
+  for (let i = toks.length - 1; i >= 0; i--){
+    const t = toks[i];
+    if (t.type !== "ref") continue;
+    out = out.slice(0, t.pos) + shiftRef(t.text, dr, dc) + out.slice(t.pos + t.text.length);
+  }
+  return "=" + out;
+}
+
+// --- 10) selection rectangles + the status bar -------------------------
+function normRect(anchor, focus){
+  return { r1:Math.min(anchor.r, focus.r), r2:Math.max(anchor.r, focus.r),
+           c1:Math.min(anchor.c, focus.c), c2:Math.max(anchor.c, focus.c) };
+}
+function rectAddrs(rect){
+  const out = [];
+  for (let r = rect.r1; r <= rect.r2; r++) for (let c = rect.c1; c <= rect.c2; c++) out.push(addrOf(r, c));
+  return out;
+}
+function selStats(addrs){
+  let sum = 0, nums = 0, filled = 0;
+  addrs.forEach(a => {
+    const v = valueAt(a);
+    if (typeof v === "number"){ sum += v; nums++; }
+    if (v !== BLANK && v !== "") filled++;
+  });
+  return { sum, count: nums, filled, average: nums ? sum / nums : null };
+}
+function usedRange(){
+  let r1 = Infinity, r2 = -Infinity, c1 = Infinity, c2 = -Infinity;
+  SHEET.cells.forEach((cell, a) => {
+    const p = parseAddr(a);
+    if (!p) return;
+    r1 = Math.min(r1, p.r); r2 = Math.max(r2, p.r);
+    c1 = Math.min(c1, p.c); c2 = Math.max(c2, p.c);
+  });
+  if (r2 < 0) return { r1:0, r2:0, c1:0, c2:0 };
+  return { r1, r2, c1, c2 };
+}
+
+// --- 11) display formatting --------------------------------------------
+function fmtNumber(v, fmt){
+  if (v === BLANK) return "";
+  if (isErr(v)) return v.e;
+  if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+  if (typeof v !== "number") return String(v);
+  if (!isFinite(v)) return ERR.NUM;
+  switch (fmt){
+    case "2dp":      return v.toFixed(2);
+    case "currency": return (v < 0 ? "-" : "") + "$" + Math.abs(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    case "percent":  return (Math.round(v * 1000) / 10).toFixed(1) + "%";
+    case "int":      return Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    default:         return String(Math.round(v * 1e10) / 1e10);
+  }
+}
+function evalFormula(src){ return evalNode(parseFormula(src), CTX); }
+// ===== ENGINE:END =====
+
+// ===== THE UI ==========================================================
+const ROWS = 24, COLS = 10;
+const COLW = [132, 84, 84, 84, 92, 84, 92, 92, 74, 76];
+const app     = document.getElementById("sheet");
+const wrap    = document.getElementById("ss-wrap");
+const inner   = document.getElementById("ss-inner");
+const colsEl  = document.getElementById("ss-cols");
+const theadEl = document.getElementById("ss-thead");
+const tbodyEl = document.getElementById("ss-tbody");
+const nameEl  = document.getElementById("ss-name");
+const finEl   = document.getElementById("ss-fin");
+const editor  = document.getElementById("ss-editor");
+const selbox  = document.getElementById("ss-selbox");
+const fillh   = document.getElementById("ss-fillh");
+const ghost   = document.getElementById("ss-ghost");
+const march   = document.getElementById("ss-march");
+const statusEl= document.getElementById("ss-status");
+const inspEl  = document.getElementById("ss-inspect");
+const tbEl    = document.getElementById("ss-tb");
+const roEl    = document.getElementById("ro-list");
+
+const formats = new Map();          // addr -> "auto" | "2dp" | "currency" | "percent" | "int"
+const state = {
+  anchor:{ r:0, c:0 }, focus:{ r:0, c:0 },
+  editing:false, preEdit:"", clip:null, inspecting:false, showDeps:true
+};
+const undoStack = [], redoStack = [];
+
+function activeAddr(){ return addrOf(state.anchor.r, state.anchor.c); }
+function selRect(){ return normRect(state.anchor, state.focus); }
+function fmtOf(a){ return formats.get(a) || "auto"; }
+
+// --- 1) icons (all inline SVG) -----------------------------------------
+function ic(path, w){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (w || 1.9) +
+         '" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+}
+const I = {
+  undo:    ic('<path d="M4 9h11a5 5 0 0 1 0 10h-6"/><path d="M8 5L4 9l4 4"/>'),
+  redo:    ic('<path d="M20 9H9a5 5 0 0 0 0 10h6"/><path d="M16 5l4 4-4 4"/>'),
+  money:   ic('<path d="M12 4v16"/><path d="M16 8a3.2 3.2 0 0 0-3.2-2.2h-1.4a2.7 2.7 0 0 0 0 5.4h1.2a2.8 2.8 0 0 1 0 5.6h-1.4A3.2 3.2 0 0 1 8 16"/>'),
+  pct:     ic('<circle cx="7.5" cy="7.5" r="2.6"/><circle cx="16.5" cy="16.5" r="2.6"/><path d="M18.5 5.5l-13 13"/>'),
+  dec:     ic('<path d="M4 17.5h.01"/><path d="M8.5 6.5h3.2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"/><path d="M17.5 17.5h.01"/><path d="M20 6.5v11"/>'),
+  digits:  ic('<path d="M4 8.5h2.5V17"/><path d="M10 8.5h3.5v3.5H10V17h3.5"/><path d="M17.5 8.5H21v8.5h-3.5"/><path d="M17.5 12.7H21"/>', 1.7),
+  eye:     ic('<path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>'),
+  trash:   ic('<path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 12.5h9l1-12.5"/>'),
+  copy:    ic('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5.5A1.5 1.5 0 0 0 13.5 4H6a2 2 0 0 0-2 2v7.5A1.5 1.5 0 0 0 5.5 15"/>'),
+  paste:   ic('<path d="M9 4.5h6M8 6.5H6a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.8" width="6" height="3.6" rx="1"/>'),
+  fx:      ic('<path d="M6 19V9a3.5 3.5 0 0 1 3.5-3.5H11"/><path d="M4.5 12H11"/><path d="M13.5 10.5l6 8"/><path d="M19.5 10.5l-6 8"/>')
+};
+
+// --- 2) toolbar ---------------------------------------------------------
+const TB = [
+  { id:"undo",  t:"Undo (Ctrl+Z)",  ico:I.undo },
+  { id:"redo",  t:"Redo (Ctrl+Y)",  ico:I.redo },
+  { sep:true },
+  { id:"copy",  t:"Copy (Ctrl+C)",  ico:I.copy },
+  { id:"paste", t:"Paste (Ctrl+V)", ico:I.paste },
+  { id:"clear", t:"Clear (Delete)", ico:I.trash },
+  { sep:true },
+  { id:"f-int",      t:"Plain number",   ico:I.digits },
+  { id:"f-2dp",      t:"Two decimals",   ico:I.dec },
+  { id:"f-currency", t:"Currency",       ico:I.money },
+  { id:"f-percent",  t:"Percent",        ico:I.pct },
+  { sep:true },
+  { id:"inspect", t:"Show the dependency graph", ico:I.eye, label:"Inspect" }
+];
+TB.forEach(b => {
+  if (b.sep){ const s = document.createElement("div"); s.className = "ss-sep"; tbEl.appendChild(s); return; }
+  const bn = document.createElement("button");
+  bn.className = "ss-b"; bn.id = "tb-" + b.id; bn.title = b.t;
+  bn.setAttribute("aria-label", b.t);
+  bn.innerHTML = b.ico + (b.label ? "<span>" + b.label + "</span>" : "");
+  tbEl.appendChild(bn);
+});
+
+// --- 3) build the grid once (never re-created; only repainted) ----------
+(function buildGrid(){
+  let cg = '<col style="width:44px" />';
+  for (let c = 0; c < COLS; c++) cg += '<col style="width:' + COLW[c] + 'px" />';
+  colsEl.innerHTML = cg;
+
+  let th = '<tr><th class="ss-corner"></th>';
+  for (let c = 0; c < COLS; c++) th += '<th class="ss-hd" data-c="' + c + '">' + colName(c) + '<div class="ss-grip" data-grip="' + c + '"></div></th>';
+  theadEl.innerHTML = th + "</tr>";
+
+  let tb = "";
+  for (let r = 0; r < ROWS; r++){
+    tb += '<tr><th data-r="' + r + '">' + (r + 1) + "</th>";
+    for (let c = 0; c < COLS; c++) tb += '<td data-r="' + r + '" data-c="' + c + '"></td>';
+    tb += "</tr>";
+  }
+  tbodyEl.innerHTML = tb;
+})();
+function tdAt(r, c){ const row = tbodyEl.rows[r]; return row ? row.cells[c + 1] : null; }
+
+// --- 4) seed a small but real model ------------------------------------
+const SEED = [
+  ["A1","Category"],["B1","Jan"],["C1","Feb"],["D1","Mar"],["E1","Q1 total"],
+  ["F1","Avg / mo"],["G1","Budget"],["H1","Variance"],["I1","% used"],["J1","Status"],
+
+  ["A2","Salaries"],      ["B2","42000"],["C2","43500"],["D2","43500"],["G2","135000"],
+  ["A3","Cloud hosting"], ["B3","3120"], ["C3","3480"], ["D3","4010"], ["G3","10000"],
+  ["A4","Software"],      ["B4","1450"], ["C4","1450"], ["D4","1620"], ["G4","5000"],
+  ["A5","Marketing"],     ["B5","8200"], ["C5","6400"], ["D5","9100"], ["G5","22000"],
+  ["A6","Travel"],        ["B6","2200"], ["C6","0"],    ["D6","5400"], ["G6","9000"],
+  ["A7","Office"],        ["B7","1800"], ["C7","1800"], ["D7","1800"], ["G7","5400"],
+  ["A8","Misc"],          ["B8","640"],  ["C8","910"],  ["D8","380"],  ["G8","3000"],
+
+  ["A10","Total"],["B10","=SUM(B2:B8)"],["C10","=SUM(C2:C8)"],["D10","=SUM(D2:D8)"],
+  ["E10","=SUM(E2:E8)"],["F10","=ROUND(AVERAGE(B10:D10),0)"],["G10","=SUM(G2:G8)"],
+  ["H10","=G10-E10"],["I10","=E10/G10"],["J10","=IF(E10>G10,\"Over\",\"OK\")"],
+
+  ["A12","Headcount"],     ["B12","14"],
+  ["A13","Cost per head"], ["B13","=ROUND(E10/$B$12,2)"],
+  ["A14","Peak month"],    ["B14","=MAX(B10:D10)"],
+  ["A15","Leanest month"], ["B15","=MIN(B10:D10)"],
+  ["A16","Lines tracked"], ["B16","=COUNT(B2:B8)"],
+  ["A17","Headline"],      ["B17","=CONCAT(\"Q1 spend \",ROUND(E10/1000,1),\"k over \",COUNTA(A2:A8),\" lines\")"]
+];
+for (let r = 2; r <= 8; r++){
+  SEED.push(["E" + r, "=SUM(B" + r + ":D" + r + ")"]);
+  SEED.push(["F" + r, "=ROUND(AVERAGE(B" + r + ":D" + r + "),0)"]);
+  SEED.push(["H" + r, "=G" + r + "-E" + r]);
+  SEED.push(["I" + r, "=E" + r + "/G" + r]);
+  SEED.push(["J" + r, '=IF(E' + r + ">G" + r + ',"Over","OK")']);
+}
+loadSheet(SEED);
+
+(function seedFormats(){
+  const money = [];
+  for (let r = 2; r <= 8; r++) ["B","C","D","E","F","G","H"].forEach(c => money.push(c + r));
+  ["B","C","D","E","F","G","H"].forEach(c => money.push(c + "10"));
+  money.push("B13", "B14", "B15");
+  money.forEach(a => formats.set(a, "currency"));
+  for (let r = 2; r <= 8; r++) formats.set("I" + r, "percent");
+  formats.set("I10", "percent");
+})();
+
+// --- 5) paint the grid from state (never the other way round) ----------
+function render(){
+  const rect = selRect();
+  const act = activeAddr();
+  const deps = state.showDeps ? new Set((cellAt(act) || { refs:[] }).refs) : new Set();
+  for (let r = 0; r < ROWS; r++){
+    for (let c = 0; c < COLS; c++){
+      const a = addrOf(r, c), td = tdAt(r, c), cell = cellAt(a), v = valueAt(a);
+      const text = fmtNumber(v, fmtOf(a));
+      if (td.textContent !== text) td.textContent = text;
+      let cls = "";
+      if (typeof v === "number") cls += " num";
+      if (isErr(v)) cls += " err";
+      if (r === 0 && cell) cls += " head";
+      const inSel = r >= rect.r1 && r <= rect.r2 && c >= rect.c1 && c <= rect.c2;
+      if (inSel) cls += (a === act) ? " act" : " sel";
+      if (deps.has(a)) cls += " dep";
+      td.className = cls.trim();
+      td.title = cell && cell.raw.charAt(0) === "=" ? cell.raw : "";
+    }
+  }
+  for (let c = 0; c < COLS; c++)
+    theadEl.rows[0].cells[c + 1].className = "ss-hd" + (c >= rect.c1 && c <= rect.c2 ? " hsel" : "");
+  for (let r = 0; r < ROWS; r++)
+    tbodyEl.rows[r].cells[0].className = (r >= rect.r1 && r <= rect.r2 ? "hsel" : "");
+
+  nameEl.textContent = (rect.r1 === rect.r2 && rect.c1 === rect.c2)
+    ? act
+    : addrOf(rect.r1, rect.c1) + ":" + addrOf(rect.r2, rect.c2);
+  if (!state.editing && document.activeElement !== finEl) finEl.value = rawAt(act);
+  placeOverlays();
+  renderStatus();
+  renderInspector();
+  renderReadout();
+  document.getElementById("tb-undo").disabled = undoStack.length === 0;
+  document.getElementById("tb-redo").disabled = redoStack.length === 0;
+  ["int","2dp","currency","percent"].forEach(f =>
+    document.getElementById("tb-f-" + f).classList.toggle("on", fmtOf(act) === f));
+}
+
+function placeOverlays(){
+  const rect = selRect();
+  const a = tdAt(rect.r1, rect.c1), b = tdAt(rect.r2, rect.c2);
+  if (!a || !b) return;
+  const x = a.offsetLeft, y = a.offsetTop;
+  const w = b.offsetLeft + b.offsetWidth - x, h = b.offsetTop + b.offsetHeight - y;
+  selbox.style.cssText = "display:block;left:" + (x - 1) + "px;top:" + (y - 1) + "px;width:" + (w + 1) + "px;height:" + (h + 1) + "px;";
+  fillh.style.cssText = "display:block;left:" + (x + w - 4) + "px;top:" + (y + h - 4) + "px;";
+  if (state.clip){
+    const p = tdAt(state.clip.rect.r1, state.clip.rect.c1), q = tdAt(state.clip.rect.r2, state.clip.rect.c2);
+    if (p && q) march.style.cssText = "display:block;left:" + (p.offsetLeft - 1) + "px;top:" + (p.offsetTop - 1) + "px;width:" +
+      (q.offsetLeft + q.offsetWidth - p.offsetLeft + 1) + "px;height:" + (q.offsetTop + q.offsetHeight - p.offsetTop + 1) + "px;";
+  } else march.style.display = "none";
+  if (state.editing){
+    const t = tdAt(state.anchor.r, state.anchor.c);
+    editor.style.cssText = "display:block;left:" + (t.offsetLeft - 1) + "px;top:" + (t.offsetTop - 1) + "px;min-width:" +
+      (t.offsetWidth + 2) + "px;width:" + Math.max(t.offsetWidth + 2, 150) + "px;height:" + (t.offsetHeight + 2) + "px;";
+  } else editor.style.display = "none";
+}
+
+function renderStatus(){
+  const rect = selRect(), addrs = rectAddrs(rect), s = selStats(addrs);
+  const cells = addrs.length;
+  const bits = [
+    '<span>Selection <b>' + (cells === 1 ? activeAddr() : addrOf(rect.r1, rect.c1) + ":" + addrOf(rect.r2, rect.c2)) + '</b> &middot; ' + cells + ' cell' + (cells === 1 ? "" : "s") + '</span>',
+    '<span>Sum <b>' + fmtNumber(s.sum, "2dp") + '</b></span>',
+    '<span>Average <b>' + (s.average === null ? "&mdash;" : fmtNumber(s.average, "2dp")) + '</b></span>',
+    '<span>Count <b>' + s.count + '</b></span>',
+    '<span>Filled <b>' + s.filled + '</b></span>'
+  ];
+  statusEl.innerHTML = bits.join("");
+}
+
+function renderInspector(){
+  if (!state.inspecting) return;
+  const rows = [];
+  SHEET.cells.forEach((cell, a) => { if (cell.refs.length) rows.push([a, cell.refs]); });
+  rows.sort((x, y) => x[0].localeCompare(y[0]));
+  const graph = rows.slice(0, 40).map(x =>
+    '<span class="k">' + x[0] + '</span> <span class="m">&larr;</span> <span class="v">' +
+    (x[1].length > 8 ? x[1].slice(0, 8).join(" ") + " &hellip; +" + (x[1].length - 8) : x[1].join(" ")) + "</span>").join("<br>");
+  const order = SHEET.lastOrder.length ? SHEET.lastOrder.join(" <span class=\"m\">&rarr;</span> ") : "&mdash;";
+  const circ = SHEET.lastCircular.length ? '<br><h4 style="margin-top:8px;">Circular</h4><span style="color:#fca5a5">' + SHEET.lastCircular.join(" ") + "</span>" : "";
+  inspEl.innerHTML =
+    '<h4>Dependency graph &mdash; cell &larr; precedents (' + rows.length + ' formula cells)</h4>' + graph +
+    '<h4 style="margin-top:10px;">Last recalculation &mdash; topological order (' + SHEET.lastOrder.length + ' cells touched)</h4>' +
+    '<span class="v">' + order + "</span>" + circ;
+}
+
+function renderReadout(){
+  const a = activeAddr(), cell = cellAt(a), v = valueAt(a);
+  const dependents = Array.from(SHEET.dependents.get(a) || []);
+  const rows = [
+    ["Active cell", '<span class="pill mono">' + a + "</span>"],
+    ["raw (typed)", '<span class="pill mono ' + (cell && cell.raw.charAt(0) === "=" ? "a" : "") + '">' + (cell ? esc(cell.raw) : "&mdash;") + "</span>"],
+    ["val (computed)", '<span class="pill mono ' + (isErr(v) ? "r" : "g") + '">' + (v === BLANK ? "blank" : esc(fmtNumber(v, "auto"))) + "</span>"],
+    ["type", '<span class="pill">' + (v === BLANK ? "blank" : isErr(v) ? "error" : typeof v) + "</span>"],
+    ["reads (precedents)", cell && cell.refs.length ? '<span class="pill mono">' + cell.refs.slice(0, 6).join(" ") + (cell.refs.length > 6 ? " +" + (cell.refs.length - 6) : "") + "</span>" : '<span class="pill">none</span>'],
+    ["read by (dependents)", dependents.length ? '<span class="pill mono a">' + dependents.slice(0, 6).join(" ") + (dependents.length > 6 ? " +" + (dependents.length - 6) : "") + "</span>" : '<span class="pill">none</span>'],
+    ["last recalc", '<span class="pill mono ' + (SHEET.lastCircular.length ? "r" : "g") + '">' + SHEET.lastOrder.length + " cell" + (SHEET.lastOrder.length === 1 ? "" : "s") + "</span>"],
+    ["sheet size", '<span class="pill mono">' + SHEET.cells.size + " of " + (ROWS * COLS) + " filled</span>"]
+  ];
+  roEl.innerHTML = rows.map(r => '<div class="flex items-center justify-between gap-2"><span class="text-slate-500">' + r[0] + "</span>" + r[1] + "</div>").join("");
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
+
+// --- 6) history --------------------------------------------------------
+function snapshot(addrs){
+  return addrs.map(a => ({ a, raw:rawAt(a), fmt:formats.get(a) || null }));
+}
+function applySnap(snap){
+  snap.forEach(s => {
+    setCell(s.a, s.raw);
+    if (s.fmt) formats.set(s.a, s.fmt); else formats.delete(s.a);
+  });
+  recalcAll();
+}
+function withUndo(addrs, mutate){
+  const before = snapshot(addrs);
+  mutate();
+  undoStack.push({ before, after: snapshot(addrs) });
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack.length = 0;
+  render();
+}
+function undo(){ const e = undoStack.pop(); if (!e) return; applySnap(e.before); redoStack.push(e); render(); }
+function redo(){ const e = redoStack.pop(); if (!e) return; applySnap(e.after); undoStack.push(e); render(); }
+
+// --- 7) the editing state machine --------------------------------------
+function startEdit(seed){
+  state.editing = true;
+  state.preEdit = rawAt(activeAddr());
+  state.focus = { r:state.anchor.r, c:state.anchor.c };
+  placeOverlays();
+  editor.value = seed;
+  editor.style.display = "block";
+  editor.focus();
+  editor.setSelectionRange(seed.length, seed.length);   // caret at the end
+  render();
+}
+function stopEdit(){ state.editing = false; editor.style.display = "none"; app.focus(); }
+function commitEdit(dr, dc){
+  const a = activeAddr(), v = editor.value;
+  stopEdit();
+  withUndo([a], () => setCell(a, v));
+  if (dr || dc) move(dr, dc, false);
+  render();
+}
+function cancelEdit(){ editor.value = state.preEdit; stopEdit(); render(); }
+
+function move(dr, dc, extend){
+  const t = extend ? state.focus : state.anchor;
+  t.r = Math.max(0, Math.min(ROWS - 1, t.r + dr));
+  t.c = Math.max(0, Math.min(COLS - 1, t.c + dc));
+  if (!extend) state.focus = { r:state.anchor.r, c:state.anchor.c };
+  scrollIntoView(t.r, t.c);
+  render();
+}
+function scrollIntoView(r, c){
+  const td = tdAt(r, c);
+  if (!td) return;
+  const left = td.offsetLeft - 44, right = td.offsetLeft + td.offsetWidth;
+  if (left < wrap.scrollLeft) wrap.scrollLeft = left;
+  else if (right > wrap.scrollLeft + wrap.clientWidth) wrap.scrollLeft = right - wrap.clientWidth;
+  const top = td.offsetTop - 25, bottom = td.offsetTop + td.offsetHeight;
+  if (top < wrap.scrollTop) wrap.scrollTop = top;
+  else if (bottom > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = bottom - wrap.clientHeight;
+}
+
+// --- 8) mouse: select, drag-select, double-click, fill handle ----------
+let dragging = false, filling = null, resizing = null;
+
+tbodyEl.addEventListener("pointerdown", e => {
+  const td = e.target.closest("td");
+  if (!td) return;
+  if (state.editing) commitEdit(0, 0);
+  const r = +td.dataset.r, c = +td.dataset.c;
+  if (e.shiftKey) state.focus = { r, c };
+  else { state.anchor = { r, c }; state.focus = { r, c }; }
+  dragging = true;
+  app.focus();
+  render();
+});
+tbodyEl.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const td = e.target.closest("td");
+  if (!td) return;
+  const r = +td.dataset.r, c = +td.dataset.c;
+  if (r !== state.focus.r || c !== state.focus.c){ state.focus = { r, c }; render(); }
+});
+tbodyEl.addEventListener("dblclick", e => {
+  const td = e.target.closest("td");
+  if (!td) return;
+  state.anchor = { r:+td.dataset.r, c:+td.dataset.c };
+  state.focus = { r:state.anchor.r, c:state.anchor.c };
+  startEdit(rawAt(activeAddr()));
+});
+document.addEventListener("pointerup", () => { dragging = false; });
+
+fillh.addEventListener("pointerdown", e => {
+  e.preventDefault(); e.stopPropagation();
+  filling = { src:selRect(), dst:selRect() };
+  fillh.setPointerCapture(e.pointerId);
+});
+fillh.addEventListener("pointermove", e => {
+  if (!filling) return;
+  const box = inner.getBoundingClientRect();
+  const x = e.clientX - box.left, y = e.clientY - box.top;
+  let r = filling.src.r2, c = filling.src.c2;
+  for (let i = 0; i < ROWS; i++){ const td = tdAt(i, 0); if (td && y >= td.offsetTop) r = i; }
+  for (let j = 0; j < COLS; j++){ const td = tdAt(0, j); if (td && x >= td.offsetLeft) c = j; }
+  const dR = Math.max(0, r - filling.src.r2), dC = Math.max(0, c - filling.src.c2);
+  const dst = (dR >= dC)
+    ? { r1:filling.src.r1, r2:filling.src.r2 + dR, c1:filling.src.c1, c2:filling.src.c2 }
+    : { r1:filling.src.r1, r2:filling.src.r2, c1:filling.src.c1, c2:filling.src.c2 + dC };
+  filling.dst = dst;
+  const a = tdAt(dst.r1, dst.c1), b = tdAt(dst.r2, dst.c2);
+  if (a && b) ghost.style.cssText = "display:block;left:" + (a.offsetLeft - 1) + "px;top:" + (a.offsetTop - 1) + "px;width:" +
+    (b.offsetLeft + b.offsetWidth - a.offsetLeft + 1) + "px;height:" + (b.offsetTop + b.offsetHeight - a.offsetTop + 1) + "px;";
+});
+fillh.addEventListener("pointerup", () => {
+  if (!filling) return;
+  const { src, dst } = filling;
+  filling = null;
+  ghost.style.display = "none";
+  if (dst.r2 === src.r2 && dst.c2 === src.c2) return;
+  withUndo(rectAddrs(dst), () => fillFrom(src, dst));
+  state.anchor = { r:dst.r1, c:dst.c1 };
+  state.focus  = { r:dst.r2, c:dst.c2 };
+  render();
+});
+
+function fillFrom(src, dst){
+  const h = src.r2 - src.r1 + 1, w = src.c2 - src.c1 + 1;
+  for (let r = dst.r1; r <= dst.r2; r++){
+    for (let c = dst.c1; c <= dst.c2; c++){
+      if (r >= src.r1 && r <= src.r2 && c >= src.c1 && c <= src.c2) continue;
+      const sr = src.r1 + ((r - src.r1) % h + h) % h;
+      const sc = src.c1 + ((c - src.c1) % w + w) % w;
+      const from = addrOf(sr, sc), to = addrOf(r, c);
+      setCell(to, translateFormula(rawAt(from), r - sr, c - sc));
+      const f = formats.get(from);
+      if (f) formats.set(to, f); else formats.delete(to);
+    }
+  }
+  recalcAll();
+}
+
+// --- 9) column resize ---------------------------------------------------
+theadEl.addEventListener("pointerdown", e => {
+  const g = e.target.closest(".ss-grip");
+  if (!g) return;
+  e.preventDefault();
+  resizing = { c:+g.dataset.grip, x0:e.clientX, w0:COLW[+g.dataset.grip] };
+  g.setPointerCapture(e.pointerId);
+});
+theadEl.addEventListener("pointermove", e => {
+  if (!resizing) return;
+  COLW[resizing.c] = Math.max(44, Math.round(resizing.w0 + (e.clientX - resizing.x0)));
+  colsEl.children[resizing.c + 1].style.width = COLW[resizing.c] + "px";
+  placeOverlays();
+});
+theadEl.addEventListener("pointerup", () => { resizing = null; });
+theadEl.addEventListener("click", e => {
+  const th = e.target.closest(".ss-hd");
+  if (!th || e.target.closest(".ss-grip")) return;
+  const c = +th.dataset.c;
+  state.anchor = { r:0, c }; state.focus = { r:ROWS - 1, c };
+  app.focus(); render();
+});
+tbodyEl.addEventListener("click", e => {
+  const th = e.target.closest("th");
+  if (!th) return;
+  const r = +th.dataset.r;
+  state.anchor = { r, c:0 }; state.focus = { r, c:COLS - 1 };
+  app.focus(); render();
+});
+
+// --- 10) clipboard with relative translation ---------------------------
+function doCopy(){
+  const rect = selRect();
+  state.clip = { rect, raws: rectAddrs(rect).map(a => rawAt(a)), fmts: rectAddrs(rect).map(a => formats.get(a) || null) };
+  render();
+}
+function doPaste(){
+  if (!state.clip) return;
+  const src = state.clip.rect;
+  const h = src.r2 - src.r1 + 1, w = src.c2 - src.c1 + 1;
+  const dr = state.anchor.r - src.r1, dc = state.anchor.c - src.c1;
+  const targets = [];
+  for (let i = 0; i < h; i++) for (let j = 0; j < w; j++){
+    const r = state.anchor.r + i, c = state.anchor.c + j;
+    if (r < ROWS && c < COLS) targets.push(addrOf(r, c));
+  }
+  withUndo(targets, () => {
+    let k = 0;
+    for (let i = 0; i < h; i++) for (let j = 0; j < w; j++, k++){
+      const r = state.anchor.r + i, c = state.anchor.c + j;
+      if (r >= ROWS || c >= COLS) continue;
+      const to = addrOf(r, c);
+      setCell(to, translateFormula(state.clip.raws[k], dr, dc));
+      if (state.clip.fmts[k]) formats.set(to, state.clip.fmts[k]); else formats.delete(to);
+    }
+    recalcAll();
+  });
+  state.focus = { r:Math.min(ROWS - 1, state.anchor.r + h - 1), c:Math.min(COLS - 1, state.anchor.c + w - 1) };
+  render();
+}
+function doClear(){
+  const addrs = rectAddrs(selRect());
+  withUndo(addrs, () => { addrs.forEach(a => setCell(a, "")); recalcAll(); });
+}
+function applyFormat(f){
+  const addrs = rectAddrs(selRect());
+  withUndo(addrs, () => {
+    const same = addrs.every(a => fmtOf(a) === f);
+    addrs.forEach(a => { if (same) formats.delete(a); else formats.set(a, f); });
+  });
+}
+
+// --- 11) keyboard -------------------------------------------------------
+editor.addEventListener("keydown", e => {
+  e.stopPropagation();
+  if (e.key === "Enter"){ e.preventDefault(); commitEdit(e.shiftKey ? -1 : 1, 0); }
+  else if (e.key === "Tab"){ e.preventDefault(); commitEdit(0, e.shiftKey ? -1 : 1); }
+  else if (e.key === "Escape"){ e.preventDefault(); cancelEdit(); }
+});
+finEl.addEventListener("keydown", e => {
+  e.stopPropagation();
+  if (e.key === "Enter"){
+    e.preventDefault();
+    const a = activeAddr(), v = finEl.value;
+    withUndo([a], () => setCell(a, v));
+    move(1, 0, false);
+    app.focus();
+  } else if (e.key === "Escape"){ finEl.value = rawAt(activeAddr()); app.focus(); }
+});
+finEl.addEventListener("blur", () => { finEl.value = rawAt(activeAddr()); });
+
+app.addEventListener("keydown", e => {
+  if (state.editing) return;
+  const k = e.key, meta = e.ctrlKey || e.metaKey;
+  if (meta){
+    const low = k.toLowerCase();
+    if (low === "a"){ e.preventDefault(); const u = usedRange(); state.anchor = { r:u.r1, c:u.c1 }; state.focus = { r:u.r2, c:u.c2 }; render(); return; }
+    if (low === "c"){ e.preventDefault(); doCopy(); return; }
+    if (low === "v"){ e.preventDefault(); doPaste(); return; }
+    if (low === "x"){ e.preventDefault(); doCopy(); doClear(); return; }
+    if (low === "z"){ e.preventDefault(); undo(); return; }
+    if (low === "y"){ e.preventDefault(); redo(); return; }
+    return;
+  }
+  switch (k){
+    case "ArrowUp":    e.preventDefault(); move(-1, 0, e.shiftKey); return;
+    case "ArrowDown":  e.preventDefault(); move(1, 0, e.shiftKey);  return;
+    case "ArrowLeft":  e.preventDefault(); move(0, -1, e.shiftKey); return;
+    case "ArrowRight": e.preventDefault(); move(0, 1, e.shiftKey);  return;
+    case "Enter":      e.preventDefault(); move(e.shiftKey ? -1 : 1, 0, false); return;
+    case "Tab":        e.preventDefault(); move(0, e.shiftKey ? -1 : 1, false); return;
+    case "F2":         e.preventDefault(); startEdit(rawAt(activeAddr())); return;
+    case "Escape":     e.preventDefault(); state.clip = null; render(); return;
+    case "Home":       e.preventDefault(); state.anchor = { r:state.anchor.r, c:0 }; state.focus = { r:state.anchor.r, c:0 }; render(); return;
+    case "Delete": case "Backspace": e.preventDefault(); doClear(); return;
+  }
+  if (k.length === 1 && !e.altKey){ e.preventDefault(); startEdit(k); }
+});
+
+// --- 12) toolbar wiring -------------------------------------------------
+document.getElementById("tb-undo").onclick    = undo;
+document.getElementById("tb-redo").onclick    = redo;
+document.getElementById("tb-copy").onclick    = () => { doCopy(); app.focus(); };
+document.getElementById("tb-paste").onclick   = () => { doPaste(); app.focus(); };
+document.getElementById("tb-clear").onclick   = () => { doClear(); app.focus(); };
+["int","2dp","currency","percent"].forEach(f =>
+  document.getElementById("tb-f-" + f).onclick = () => { applyFormat(f); app.focus(); });
+document.getElementById("tb-inspect").onclick = function(){
+  state.inspecting = !state.inspecting;
+  app.classList.toggle("inspecting", state.inspecting);
+  this.classList.toggle("on", state.inspecting);
+  render();
+};
+wrap.addEventListener("scroll", () => { if (state.editing) placeOverlays(); });
+
+recalcAll();
+render();
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. A sheet is a sparse map, not a grid of DOM nodes",
+   why:"The tempting model is a 2-D array the size of the visible grid, or worse, treating the table cells themselves as the data. Both fall apart immediately: a real sheet is mostly empty, users add rows, and the DOM is a rendering detail that gets thrown away and rebuilt. Store instead a Map keyed by the A1 address, holding only the cells somebody actually touched, and treat a missing key as blank. Ten by twenty-four is 240 slots but this sheet fills about 90 of them, and the same structure would survive a million-row sheet without allocating anything extra. The screen becomes a window onto the map rather than the place the data lives.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">cells = Map {<br>&nbsp;&nbsp;"A1" &rarr; { raw:"Category", val:"Category" },<br>&nbsp;&nbsp;"B2" &rarr; { raw:"42000", val:42000 },<br>&nbsp;&nbsp;"E2" &rarr; { raw:"=SUM(B2:D2)", val:129000 }<br>}<br><br>missing key = blank, and blank is a value</div>',
+   code:"const BLANK = null;\nconst SHEET = {\n  cells:      new Map(),   // \"B2\" -> { raw, ast, refs, val }\n  dependents: new Map()    // \"B2\" -> Set(\"E2\",\"B10\")\n};\nconst cellAt  = a => SHEET.cells.get(a) || null;\nconst rawAt   = a => { const c = cellAt(a); return c ? c.raw : \"\"; };\nconst valueAt = a => { const c = cellAt(a); return c ? c.val : BLANK; };" },
+
+ { title:"2. Address math: why Z is followed by AA",
+   why:"Column letters look like base 26, but there is no digit for zero, so the usual conversion is off by one in both directions. Going index to letters you repeatedly take (n-1) % 26 and divide (n-1) by 26; coming back you accumulate n*26 + (charCode - 64) and subtract one at the end. Sanity-check the boundaries rather than the middle: 25 is Z, 26 is AA, 27 is AB, 701 is ZZ and 702 is AAA. This tiny pair of functions is used by the parser, the renderer, the range expander and the fill handle, so a bug here shows up as five unrelated-looking bugs later.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">0 &rarr; A&nbsp;&nbsp;&nbsp;25 &rarr; Z<br>26 &rarr; AA&nbsp;&nbsp;27 &rarr; AB<br>701 &rarr; ZZ&nbsp;&nbsp;702 &rarr; AAA<br><br>"AB10" &rarr; { r:9, c:27 }<br>bijective base 26 &mdash; no zero digit</div>',
+   code:"function colName(c){\n  let s = \"\", n = c + 1;\n  while (n > 0){\n    const r = (n - 1) % 26;\n    s = String.fromCharCode(65 + r) + s;\n    n = Math.floor((n - 1) / 26);\n  }\n  return s;\n}\nfunction colIndex(s){\n  let n = 0;\n  for (let i = 0; i < s.length; i++) n = n * 26 + (s.toUpperCase().charCodeAt(i) - 64);\n  return n - 1;\n}" },
+
+ { title:"3. Two fields per cell: raw and computed",
+   why:"This is the single decision that makes a spreadsheet feel like a spreadsheet. The cell keeps what you typed (raw) and what the engine produced (val) side by side, forever. The grid paints val, the formula bar paints raw, and that is why clicking E10 shows 182,760 in the cell and =SUM(E2:E8) in the bar. Collapse them into one field and you must choose between a sheet that shows formulas everywhere or a sheet that has forgotten how its numbers were made and can never recalculate. Keeping both also means an edit is cheap to undo: the raw text is the only thing you need to restore.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">cell E10<br>&nbsp;&nbsp;raw = "=SUM(E2:E8)"&nbsp;&nbsp;&larr; formula bar<br>&nbsp;&nbsp;val = 182760&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&larr; the grid<br><br>one edit writes raw, the engine writes val</div>',
+   code:"function setCell(addr, raw){\n  const cell = { raw, ast:null, refs:[], val:BLANK };\n  if (raw.charAt(0) === \"=\"){\n    cell.ast  = parseFormula(raw.slice(1));   // structure\n    cell.refs = refsOf(cell.ast);            // dependencies\n  } else {\n    cell.val = literalOf(raw);               // 42000 / true / \"Salaries\"\n  }\n  SHEET.cells.set(addr, cell);\n  return recalcFrom(addr);                   // val is filled in here\n}" },
+
+ { title:"4. Tokenizing: turning text into meaningful pieces",
+   why:"Before anything can understand =ROUND(E10/$B$12,2) it has to stop being a string. The scanner walks the characters once and emits typed tokens: numbers, quoted strings (with the doubled-quote escape), identifiers, operators and punctuation. Identifiers are the interesting case because SUM, A1 and LOG10 all look the same to a regex. Resolve it exactly the way real spreadsheets do: peek past any spaces at the next character, and if it is an opening bracket the identifier is a function name, otherwise test it against the address pattern. Record each token's position too, because the fill handle later needs to rewrite references in the original text without disturbing anything around them.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">"=ROUND(E10/$B$12,2)"<br>&nbsp;&nbsp;&darr;<br>func ROUND &middot; ( &middot; ref E10 &middot; / &middot; ref $B$12<br>&middot; , &middot; num 2 &middot; )<br><br>SUM( &rarr; function&nbsp;&nbsp;&nbsp;A1 &rarr; reference<br>LOG10( &rarr; function, not cell LOG10</div>',
+   code:"const ADDR_RE = /^(\\$?)([A-Za-z]{1,3})(\\$?)([1-9][0-9]{0,6})$/;\n\nif (/[A-Za-z_$]/.test(ch)){\n  while (i < s.length && /[A-Za-z0-9_$.]/.test(s[i])) i++;\n  const text = s.slice(start, i), up = text.toUpperCase();\n  let j = i; while (s[j] === \" \") j++;          // peek past spaces\n  if (up === \"TRUE\" || up === \"FALSE\") push(\"bool\");\n  else if (s[j] === \"(\")               push(\"func\");\n  else if (ADDR_RE.test(text))         push(\"ref\");\n  else                                 push(\"name\");   // -> #NAME?\n}" },
+
+ { title:"5. Precedence and parsing &mdash; a Pratt parser in fifteen lines",
+   why:"A flat token list still does not know that 1+2*3 is seven rather than nine. Give every binary operator a binding power, then write one loop: parse a left operand, and while the next operator binds at least as tightly as the caller demanded, consume it and recurse. Recursing with bp+1 makes operators left-associative, which is what you want here, including the exponent: spreadsheets evaluate 2^3^2 as 64, not the mathematician's 512. Parentheses need no special rule at all, they simply restart the expression parser. Unary minus is parsed above the exponent, so -2^2 is 4 exactly as in Excel. Fifteen lines replaces a stack of hand-written precedence levels and is far easier to extend.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">=&nbsp;&lt;&gt;&nbsp;&lt;&nbsp;&gt;&nbsp;&lt;=&nbsp;&gt;= &rarr; 1<br>&amp; (concat)&nbsp;&nbsp;&nbsp;&nbsp;&rarr; 2<br>+&nbsp;&minus;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; 3<br>*&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; 4<br>^&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; 5<br><br>1+2*3 = 7&nbsp;&nbsp;&nbsp;(1+2)*3 = 9<br>2^3^2 = 64&nbsp;&nbsp;&minus;2^2 = 4</div>',
+   code:"const BINP = { \"=\":1,\"<>\":1,\"<\":1,\">\":1,\"<=\":1,\">=\":1, \"&\":2, \"+\":3,\"-\":3, \"*\":4,\"/\":4, \"^\":5 };\n\nfunction parseExpr(minp){\n  let left = parseUnary();\n  for (;;){\n    const t = peek();\n    if (!t || t.type !== \"op\") break;\n    const bp = BINP[t.text];\n    if (bp === undefined || bp < minp) break;\n    next();\n    const right = parseExpr(bp + 1);      // +1 => left-associative\n    left = { t:\"bin\", op:t.text, l:left, r:right };\n  }\n  return left;\n}" },
+
+ { title:"6. A range is a rectangle, expanded only when asked",
+   why:"A1:C3 is two corners, not nine cells, and it should stay that way in the tree. Keep it as a pair and let only the argument-flattening step turn it into addresses, and you get three things for free. Reversed ranges normalise, because expansion takes the min and max of each coordinate, so C3:A1 and A1:C3 are the same nine cells in the same order. Ranges used where a single value was expected stay honestly wrong, so =A1:C3+1 is #VALUE! instead of a silent guess. And the dependency walk gets the exact list of cells the formula reads without evaluating anything.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">A1:C3 &rarr; { a:{r:0,c:0}, b:{r:2,c:2} }<br>&nbsp;&nbsp;&darr; expand only inside SUM/AVERAGE/...<br>A1 B1 C1 A2 B2 C2 A3 B3 C3&nbsp;&nbsp;(9)<br><br>C3:A1 normalises to the same nine<br>=A1:C3 + 1 &rarr; #VALUE!</div>',
+   code:"function rangeAddrs(a, b){\n  const r1 = Math.min(a.r, b.r), r2 = Math.max(a.r, b.r);\n  const c1 = Math.min(a.c, b.c), c2 = Math.max(a.c, b.c);\n  const out = [];\n  for (let r = r1; r <= r2; r++)\n    for (let c = c1; c <= c2; c++) out.push(addrOf(r, c));\n  return out;\n}\nfunction flattenArgs(vals, ctx){          // only here does a range become cells\n  const out = [];\n  vals.forEach(v => isRange(v) ? v.range.forEach(a => out.push(ctx.read(a))) : out.push(v));\n  return out;\n}" },
+
+ { title:"7. The dependency graph is a by-product of parsing",
+   why:"You do not need to analyse formulas a second time to know what depends on what: the parser already found every reference. Walk the tree once, collect the refs (expanding ranges), and you have the cell's precedents. Store the reverse direction as well - for each precedent, the set of cells that read it - because recalculation asks the reverse question: I changed B3, who cares? Rebuild both directions on every edit and, crucially, unhook the old edges first. Forget that and a formula you deleted keeps triggering work forever, which is the classic slow-spreadsheet bug.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">E3 = SUM(B3:D3)&nbsp;&nbsp;&rarr; reads B3 C3 D3<br><br>dependents:<br>&nbsp;&nbsp;B3 &rarr; { E3, B10 }<br>&nbsp;&nbsp;E3 &rarr; { E10 }<br>&nbsp;&nbsp;E10 &rarr; { H10, I10, J10, B13, B17 }<br><br>who reads me? &mdash; the reverse map</div>',
+   code:"function refsOf(ast){\n  const out = [];\n  (function walk(n){\n    if (!n || typeof n !== \"object\") return;\n    if (n.t === \"ref\")   return void out.push(addrOf(n.a.r, n.a.c));\n    if (n.t === \"range\") return void rangeAddrs(n.a, n.b).forEach(a => out.push(a));\n    if (n.t === \"bin\")   { walk(n.l); walk(n.r); return; }\n    if (n.t === \"un\" || n.t === \"pct\") return walk(n.x);\n    if (n.t === \"call\")  n.args.forEach(walk);\n  })(ast);\n  return Array.from(new Set(out));\n}" },
+
+ { title:"8. Topological recalculation beats recalculating everything",
+   why:"The naive fix after an edit is to recompute every formula on the sheet, and it is wrong twice over: it is O(all cells) for a one-cell change, and it can still produce stale numbers, because a formula evaluated before its input gets the previous value. Do it properly: collect the edited cell plus its transitive dependents, count in-degrees within just that set, and drain the zero-in-degree queue. Every affected cell is evaluated exactly once, always after everything it reads, and untouched cells are never visited. On this sheet, editing B3 recalculates about a dozen cells instead of ninety - and on a real model the ratio is thousands to one.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">edit B3<br>&nbsp;&nbsp;&darr; transitive dependents<br>B10 E3 &rarr; E10 F10 &rarr; H10 I10 J10 B13 B17<br><br>in-degree 0 first, then drain<br>each cell computed exactly once<br>untouched cells never visited</div>',
+   code:"function recalcSet(set){\n  const order = [], indeg = new Map();\n  set.forEach(a => indeg.set(a, 0));\n  set.forEach(a => (cellAt(a) ? cellAt(a).refs : []).forEach(d => {\n    if (set.has(d)) indeg.set(a, indeg.get(a) + 1);\n  }));\n  const q = [...set].filter(a => indeg.get(a) === 0).sort();\n  while (q.length){\n    const a = q.shift(); order.push(a);\n    (SHEET.dependents.get(a) || []).forEach(d => {\n      if (!set.has(d)) return;\n      indeg.set(d, indeg.get(d) - 1);\n      if (indeg.get(d) === 0) q.push(d);\n    });\n  }\n  order.forEach(a => { const c = cellAt(a); if (c && c.ast) c.val = evalNode(c.ast, CTX); });\n  return order;\n}" },
+
+ { title:"9. Cycle detection is what the sort left behind",
+   why:"You do not need a separate cycle checker. A topological sort can only order a directed acyclic graph, so if the queue empties while cells remain in the set, those cells are precisely the ones that can never be ordered - which is the definition of a cycle. Mark them #CIRC! and move on. This catches the obvious self-reference (A1 containing =A1) and the three-cell loop (A1 reads B1 reads C1 reads A1) with identical code, and it catches them before evaluation rather than by blowing the stack. Cells that merely sit downstream of a cycle are caught too, because their in-degree never reaches zero either.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">A1 = A1 + 1&nbsp;&nbsp;&rarr; #CIRC!<br><br>A1 &rarr; B1 &rarr; C1 &rarr; A1<br>in-degree never reaches 0<br>&rarr; all three are #CIRC!<br><br>no extra checker, no stack overflow</div>',
+   code:"// after the Kahn drain, whatever is left could not be ordered\nconst done = new Set(order), circular = [];\nset.forEach(a => {\n  if (done.has(a)) return;\n  const c = cellAt(a);\n  if (c) c.val = err(\"#CIRC!\");\n  circular.push(a);\n});\nSHEET.lastOrder = order.slice();\nSHEET.lastCircular = circular.slice();" },
+
+ { title:"10. Errors are values, so propagation is automatic",
+   why:"Do not throw. Model an error as an ordinary value - a small tagged object like { e:\"#DIV/0!\" } - and check for it at the top of every operator and every function argument, returning it unchanged. Propagation then needs no machinery: one bad cell quietly poisons everything downstream of it, exactly as a real spreadsheet does, and the graph you already built decides how far the damage spreads. Each error also carries meaning worth preserving: #DIV/0! is a zero denominator, #NAME? an unknown function or a misspelt reference, #REF! a reference that fell off the sheet, #VALUE! text where a number was needed, #CIRC! a loop.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">B1 = 1/0&nbsp;&nbsp;&rarr; #DIV/0!<br>C1 = B1 + 5 &rarr; #DIV/0!&nbsp;&nbsp;(inherited)<br>D1 = SUM(B1:C1) &rarr; #DIV/0!<br><br>#DIV/0!&nbsp;&nbsp;#NAME?&nbsp;&nbsp;#REF!<br>#VALUE!&nbsp;&nbsp;#CIRC!&nbsp;&nbsp;#NUM!</div>',
+   code:"const err   = code => ({ e: code });\nconst isErr = v => !!v && typeof v === \"object\" && typeof v.e === \"string\";\n\ncase \"bin\": {\n  const a = evalNode(n.l, ctx); if (isErr(a)) return a;   // propagate\n  const b = evalNode(n.r, ctx); if (isErr(b)) return b;\n  const x = numOf(a); if (isErr(x)) return x;             // \"abc\" -> #VALUE!\n  const y = numOf(b); if (isErr(y)) return y;\n  if (n.op === \"/\") return y === 0 ? err(\"#DIV/0!\") : x / y;\n}" },
+
+ { title:"11. Relative vs absolute &mdash; what fill actually rewrites",
+   why:"The fill handle is not copying a value, and it is not copying a formula either: it is copying a formula shifted by the row and column delta. =A1*2 dragged one row down becomes =A2*2, because A1 means 'one row above me' rather than 'the cell A1'. A dollar sign pins that half of the address, so =$A$1 survives any drag and =A$1 shifts sideways but not down - which is exactly how you write one formula against a fixed rate cell and fill it across a whole column. Do the rewrite by re-tokenizing and splicing ref tokens back from the end of the string, so positions stay valid and every space, string literal and function name is preserved byte-for-byte. Falling off the top or left edge is #REF!, not a negative row.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">fill down 1:<br>&nbsp;&nbsp;=A1*2&nbsp;&nbsp;&nbsp;&rarr; =A2*2<br>&nbsp;&nbsp;=A$1*2&nbsp;&nbsp;&rarr; =A$1*2<br>&nbsp;&nbsp;=$A$1&nbsp;&nbsp;&nbsp;&rarr; =$A$1<br>fill right 1:<br>&nbsp;&nbsp;=SUM(B2:D2) &rarr; =SUM(C2:E2)<br><br>splice from the end &mdash; positions stay valid</div>',
+   code:"function shiftRef(text, dr, dc){\n  const m = ADDR_RE.exec(text);\n  const absC = m[1] === \"$\", absR = m[3] === \"$\";\n  let c = colIndex(m[2]), r = +m[4] - 1;\n  if (!absC) c += dc;\n  if (!absR) r += dr;\n  if (r < 0 || c < 0) return \"#REF!\";\n  return (absC ? \"$\" : \"\") + colName(c) + (absR ? \"$\" : \"\") + (r + 1);\n}" },
+
+ { title:"12. Selection is a rectangle; editing is a state machine",
+   why:"Never store a selection as a list of cells - it goes stale the moment anything moves and it makes shift-arrow a special case in four directions. Store two points, the anchor where the selection began and the focus the arrows move, and derive the rectangle with min and max; growing, shrinking and reversing all fall out of that one line, and the status bar sum is just a walk over the derived addresses. Editing is a small explicit machine: idle, then typing (a printable key replaces the cell), or editing in place (F2 or double-click, caret at the end), ending in commit or cancel. Escape must restore the pre-edit raw text, which is easy here because nothing is written until commit. And the editor must be ONE input element that is repositioned and shown - re-create it during a render and the caret dies on every keystroke.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">anchor {r:1,c:1} &middot; focus {r:7,c:3}<br>&rarr; rect r1..r2 &times; c1..c2 &mdash; either order works<br><br>idle &mdash;type&rarr; editing &mdash;Enter&rarr; commit + move down<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&mdash;F2&rarr;&nbsp;&nbsp; editing &mdash;Esc&nbsp;&nbsp;&rarr; restore raw<br><br>one &lt;input&gt;, moved &mdash; never re-created</div>',
+   code:"const normRect = (a, f) => ({\n  r1: Math.min(a.r, f.r), r2: Math.max(a.r, f.r),\n  c1: Math.min(a.c, f.c), c2: Math.max(a.c, f.c)\n});\n\nfunction startEdit(seed){\n  state.editing = true;\n  state.preEdit = rawAt(activeAddr());   // Escape restores this\n  editor.value  = seed;                  // ONE element, never re-created\n  placeOverlays(); editor.focus();\n  editor.setSelectionRange(seed.length, seed.length);   // caret at the end\n}" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
