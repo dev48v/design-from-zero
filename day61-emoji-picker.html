@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 61 &mdash; Emoji picker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; overflow-x: hidden; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; font-family:"SF Mono",Menlo,Consolas,monospace; }
+  .concept-box { max-width:100%; overflow-x:auto; }
+
+  /* ============================================================
+     THE EMOJI PICKER — one dataset array, a tiered pure ranker,
+     a windowed grid whose row count comes from a measured column
+     count, and real Unicode: VS16, ZWJ and skin-tone modifiers.
+     ============================================================ */
+  .ep-stage {
+    --line:#e5e7eb; --ink:#111827; --dim:#6b7280; --acc:#4f46e5; --acc-s:#eef2ff; --bg:#ffffff;
+    position:relative; display:flex; flex-direction:column; justify-content:flex-end; gap:10px;
+    min-height:492px; width:100%; max-width:100%;
+  }
+  .ep-emoji { font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","EmojiOne Color",sans-serif;
+              font-variant-emoji:emoji; line-height:1; }
+
+  /* --- the popover --- */
+  .ep-pop {
+    position:relative; align-self:flex-start; width:min(348px, 100%); background:var(--bg);
+    border:1px solid #d1d5db; border-radius:14px; overflow:hidden; color:var(--ink);
+    box-shadow:0 22px 50px rgba(15,23,42,.20), 0 2px 6px rgba(15,23,42,.10);
+    display:none; user-select:none;
+  }
+  .ep-stage.open .ep-pop { display:block; }
+
+  /* --- search --- */
+  .ep-search { display:flex; align-items:center; gap:8px; padding:9px 10px; border-bottom:1px solid var(--line); background:#f9fafb; }
+  .ep-search svg { width:15px; height:15px; flex:none; color:var(--dim); }
+  .ep-search input { flex:1; min-width:0; border:0; outline:none; background:transparent; font-size:13.5px;
+                     color:var(--ink); font-family:inherit; }
+  .ep-search input::placeholder { color:#9ca3af; }
+  .ep-x { border:0; background:#e5e7eb; color:#4b5563; width:18px; height:18px; border-radius:50%; flex:none;
+          font-size:12px; line-height:1; cursor:pointer; display:none; font-family:inherit; }
+  .ep-search.has .ep-x { display:block; }
+
+  /* --- category rail --- */
+  .ep-rail { display:flex; gap:2px; padding:5px 6px; border-bottom:1px solid var(--line); background:#fff;
+             overflow-x:auto; scrollbar-width:none; }
+  .ep-rail::-webkit-scrollbar { display:none; }
+  .ep-chip { flex:none; border:0; background:transparent; cursor:pointer; width:30px; height:28px; border-radius:7px;
+             font-size:15px; display:inline-flex; align-items:center; justify-content:center; padding:0; position:relative; }
+  .ep-chip:hover { background:#f3f4f6; }
+  .ep-chip.on { background:var(--acc-s); }
+  .ep-chip.on::after { content:""; position:absolute; left:6px; right:6px; bottom:-5px; height:2px; background:var(--acc); border-radius:2px; }
+
+  /* --- windowed body --- */
+  .ep-body { position:relative; }
+  .ep-scroll { height:288px; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; outline:none; }
+  .ep-scroll:focus-visible { box-shadow:inset 0 0 0 2px rgba(79,70,229,.45); }
+  .ep-canvas { position:relative; width:100%; }
+  .ep-row { position:absolute; left:0; right:0; display:flex; }
+  .ep-hd { position:absolute; left:0; right:0; display:flex; align-items:center; padding:0 10px;
+           font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--dim);
+           background:#fff; }
+  .ep-sticky { position:absolute; top:0; left:0; right:0; z-index:5; pointer-events:none;
+               display:flex; align-items:center; padding:0 10px; font-size:10.5px; font-weight:800;
+               letter-spacing:.08em; text-transform:uppercase; color:var(--dim);
+               background:linear-gradient(#fff 72%, rgba(255,255,255,.86)); }
+  .ep-cell { border:0; background:transparent; padding:0; cursor:pointer; border-radius:8px; flex:none;
+             display:inline-flex; align-items:center; justify-content:center; font-size:23px; position:relative;
+             font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; line-height:1; }
+  .ep-cell:hover { background:#f3f4f6; }
+  .ep-cell.cur { background:var(--acc-s); box-shadow:inset 0 0 0 2px var(--acc); }
+  .ep-cell:focus { outline:none; }
+  .ep-cell.tone::after { content:""; position:absolute; right:3px; bottom:3px; width:0; height:0;
+                         border-left:4px solid transparent; border-bottom:4px solid #9ca3af; }
+  .ep-empty { display:none; padding:34px 18px; text-align:center; font-size:12.5px; color:var(--dim); }
+  .ep-body.empty .ep-empty { display:block; }
+  .ep-body.empty .ep-scroll, .ep-body.empty .ep-sticky { display:none; }
+
+  /* --- tone flyout --- */
+  .ep-flyout { position:absolute; z-index:9; display:none; gap:2px; padding:4px; background:#fff;
+               border:1px solid #d1d5db; border-radius:10px; box-shadow:0 10px 24px rgba(15,23,42,.22); }
+  .ep-flyout.on { display:flex; }
+  .ep-flyout button { border:0; background:transparent; cursor:pointer; width:32px; height:32px; border-radius:7px;
+                      font-size:21px; padding:0; line-height:1;
+                      font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
+  .ep-flyout button:hover { background:#f3f4f6; }
+  .ep-flyout button.on { background:var(--acc-s); box-shadow:inset 0 0 0 2px var(--acc); }
+
+  /* --- footer --- */
+  .ep-foot { display:flex; align-items:center; gap:9px; padding:7px 9px; border-top:1px solid var(--line); background:#f9fafb; }
+  .ep-prev { font-size:22px; width:28px; text-align:center; flex:none; line-height:1;
+             font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
+  .ep-pname { flex:1; min-width:0; font-size:11.5px; color:var(--dim); line-height:1.3; }
+  .ep-pname b { display:block; color:var(--ink); font-size:12.5px; font-weight:700;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ep-tone { flex:none; border:1px solid #d1d5db; background:#fff; border-radius:8px; height:28px; padding:0 7px;
+             cursor:pointer; font-size:15px; line-height:1; font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
+
+  /* --- composer --- */
+  .ep-composer { display:flex; align-items:flex-end; gap:8px; width:100%; background:#fff; border:1px solid #d1d5db;
+                 border-radius:14px; padding:8px; box-shadow:0 1px 2px rgba(15,23,42,.06); }
+  .ep-input { flex:1; min-width:0; min-height:42px; max-height:120px; overflow-y:auto; outline:none; padding:9px 10px;
+              font-size:15px; line-height:1.45; border-radius:9px; background:#f9fafb; color:var(--ink);
+              word-break:break-word; }
+  .ep-input:empty:before { content:attr(data-ph); color:#9ca3af; }
+  .ep-input:focus { background:#fff; box-shadow:inset 0 0 0 2px rgba(79,70,229,.35); }
+  .ep-trigger, .ep-send { flex:none; border:0; cursor:pointer; border-radius:9px; height:40px; font-family:inherit; }
+  .ep-trigger { width:40px; background:#f3f4f6; font-size:19px; line-height:1; }
+  .ep-trigger:hover { background:#e5e7eb; }
+  .ep-stage.open .ep-trigger { background:var(--acc-s); box-shadow:inset 0 0 0 2px var(--acc); }
+  .ep-send { padding:0 14px; background:var(--acc); color:#fff; font-weight:700; font-size:13px; }
+
+  /* --- inspector --- */
+  .ep-inspect { margin-top:12px; background:#0f172a; color:#e2e8f0; font-size:11px; border-radius:12px;
+                font-family:"SF Mono",Menlo,Consolas,monospace; padding:11px 13px; line-height:1.7; overflow:auto; }
+  .ep-inspect h4 { color:#f8fafc; font-weight:700; margin:0 0 5px; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; }
+  .ep-inspect .k { color:#7dd3fc; } .ep-inspect .v { color:#fcd34d; } .ep-inspect .m { color:#94a3b8; } .ep-inspect .z { color:#f9a8d4; }
+  .ep-inspect table { border-collapse:collapse; width:100%; }
+  .ep-inspect td { padding:1px 8px 1px 0; white-space:nowrap; vertical-align:top; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none !important; } }
+  @media (max-width: 640px) {
+    .ep-stage { min-height:470px; }
+    .ep-scroll { height:262px; }
+  }
+  /* on a phone the intro paragraph must not swallow the whole screen under the sticky header */
+  @media (max-width: 767px) {
+    header h1 { max-height:9rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+    <div class="min-w-0">
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 61</div>
+      <h1 class="text-xl font-bold">Emoji picker &mdash; a Slack/Notion-style picker where <strong>one dataset array drives every pixel</strong>. Nothing is hardcoded per render: the categories, the rail, the row count, the search results and the preview all fall out of <code>{char, name, keywords, group}</code>. Search is a <strong>pure tiered ranker</strong>, not a fuzzy score &mdash; the query is normalised once, then every entry gets the <em>best</em> tier it can reach (exact name &rarr; name word-start &rarr; keyword word-start &rarr; substring anywhere) and results sort by tier, then name length, then dataset order, so <code>hea</code> puts <strong>heart</strong> above <strong>heart on fire</strong> and never above a plain substring hit. The grid is genuinely <strong>windowed</strong>: a <code>ResizeObserver</code> measures the width, the column count comes from that measurement, the row count is derived from it, and only the rows the viewport can actually see exist in the DOM &mdash; found with a <strong>binary search over a cumulative offset array</strong> that mixes short header rows with taller emoji rows. The category rail <strong>scroll-syncs both ways</strong>, and the sticky header is computed from the real <code>scrollTop</code> and gets pushed up by the next one. And the Unicode is real, not described: <kbd>long-press</kbd> any hand or person for the five <strong>Fitzpatrick modifiers</strong> (U+1F3FB&ndash;U+1F3FF) inserted <em>after the base code point</em> with the redundant <strong>VS16</strong> dropped &mdash; while the live inspector prints the true <code>[...str]</code> code points and the <code>Intl.Segmenter</code> grapheme count, so a family <strong>ZWJ</strong> sequence reads as <strong>1 grapheme and 7 code points</strong>. Picks are ranked by real <strong>frecency</strong> (a decayed frequency recomputed on every pick), the keyboard drives a <strong>2-D cursor</strong> over the virtual grid with <code>role="grid"</code> and roving tabindex, and the chosen emoji is inserted at the <strong>caret</strong> of a <code>contenteditable</code> through the Selection/Range API &mdash; not appended to the end. No libraries, no images &mdash; every icon is inline SVG.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 sm:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">One <span class="text-indigo-600">array</span>, a <span class="text-purple-600">tiered ranker</span> and a <span class="text-emerald-600">windowed grid</span> &mdash; a picker that really searches.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto"><strong>Type in the search box</strong> &mdash; try <code>hea</code>, <code>fire</code>, <code>lol</code> or <code>rocket</code> &mdash; and watch the match count and the tier breakdown change on every keystroke. <strong>Long-press (or hover) a hand</strong> like <span class="ep-emoji">&#128075;</span> or <span class="ep-emoji">&#128077;</span> for the five skin tones, then read the inspector: the modifier is <em>inserted after the base code point</em>, not appended. <strong>Click the family</strong> <span class="ep-emoji">&#128104;&zwj;&#128105;&zwj;&#128103;&zwj;&#128102;</span> and the inspector shows <strong>7 code points, 1 grapheme</strong>. <strong>Use the keyboard</strong>: <kbd>/</kbd> focuses search, <kbd>&larr;&uarr;&rarr;&darr;</kbd> move a 2-D cursor that wraps across rows, <kbd>Enter</kbd> picks, <kbd>Esc</kbd> closes and returns focus to the trigger. Put the caret in the <em>middle</em> of the message and pick &mdash; the emoji lands at the caret, not at the end. Pick a few and the <strong>Frequently used</strong> row reorders itself by frecency.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-3 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-8 items-start justify-center">
+          <!-- the widget -->
+          <div class="flex-1 w-full min-w-0">
+            <div class="ep-stage open" id="ep-stage">
+
+              <div class="ep-pop" id="ep-pop" role="dialog" aria-label="Emoji picker">
+                <div class="ep-search" id="ep-searchbar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5" stroke-linecap="round"/></svg>
+                  <input id="ep-q" type="text" spellcheck="false" autocomplete="off" placeholder="Search emoji" aria-label="Search emoji" aria-controls="ep-scroll" />
+                  <button class="ep-x" id="ep-clear" aria-label="Clear search">&times;</button>
+                </div>
+
+                <div class="ep-rail" id="ep-rail" role="tablist" aria-label="Emoji categories"></div>
+
+                <div class="ep-body" id="ep-body">
+                  <div class="ep-sticky" id="ep-sticky"></div>
+                  <div class="ep-scroll" id="ep-scroll" role="grid" aria-label="Emoji" tabindex="0">
+                    <div class="ep-canvas" id="ep-canvas"></div>
+                  </div>
+                  <div class="ep-empty" id="ep-empty"></div>
+                </div>
+
+                <div class="ep-foot">
+                  <div class="ep-prev" id="ep-prev">&#128512;</div>
+                  <div class="ep-pname" id="ep-pname"></div>
+                  <button class="ep-tone" id="ep-tone" aria-haspopup="true" aria-label="Default skin tone">&#9995;</button>
+                </div>
+
+                <div class="ep-flyout" id="ep-flyout" role="menu" aria-label="Skin tone"></div>
+              </div>
+
+              <div class="ep-composer">
+                <div class="ep-input" id="ep-msg" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message" data-ph="Write a message, put the caret anywhere, then pick&hellip;">Ship it </div>
+                <button class="ep-trigger" id="ep-trigger" aria-haspopup="dialog" aria-expanded="true" aria-label="Open emoji picker">&#128578;</button>
+                <button class="ep-send" id="ep-send">Send</button>
+              </div>
+            </div>
+
+            <div class="ep-inspect" id="ep-inspect"></div>
+            <p class="text-center text-xs text-slate-400 mt-3">Real component &mdash; search it, long-press for tones, drive it from the keyboard, read the real code points. Not one pixel is a screenshot.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-72 flex-shrink-0 w-full max-w-xs">
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live state &mdash; rank, window, frecency</div>
+              <div id="ro-list" class="space-y-2 text-sm"></div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Rows in the DOM is the number the window math produced for this exact <code>scrollTop</code>; rows total is what a naive render would have created. The gap between those two numbers is the whole reason the picker stays smooth with thousands of entries.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">An emoji picker looks like a decoration and is actually a compressed course in three things every product eventually needs: <strong>ranking a big list from typed text</strong>, <strong>drawing only what fits</strong>, and <strong>treating text as graphemes rather than characters</strong>. Get those three right once and autocomplete, command palettes and mention menus are the same component wearing different clothes. <em>Tomorrow: Linear command bar &mdash; fuzzy filter and keyboard hints.</em></p>
+    </div>
+  </div>
+</section>
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2 min-w-0">
+      <h3 class="font-bold text-lg mb-3">How an emoji picker works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2 flex-wrap">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4 min-w-0">
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-4 sm:p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">An emoji picker is three problems stacked on one array. First <strong>data</strong>: a flat list of <code>{char, name, keywords, group}</code> normalised once at load, so nothing downstream ever lowercases anything again. Then <strong>ranking</strong>: a pure function that gives an entry the best <em>tier</em> it can reach and a sort with deterministic tie-breaks, which is far more predictable than a fuzzy score nobody can explain. Then <strong>drawing</strong>: a measured column count, a derived row count, a cumulative offset array and a binary search, so only the visible rows exist. Underneath all of it sits real Unicode &mdash; <strong>VS16</strong>, <strong>ZWJ</strong> and the five <strong>skin-tone modifiers</strong> &mdash; which is why an emoji is a grapheme, not a character. Vanilla HTML, CSS and JS &mdash; no framework, no dependencies, no emoji library.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">1</div><h3 class="font-bold text-lg">The dataset is the component</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Every category tab, every rail icon, every row and every search result has to come from one array or you will end up maintaining the same list in four places. Write the source in the most compact shape a human can edit &mdash; character, name, a space-separated keyword string &mdash; then <strong>expand it once</strong> into objects that carry the normalised fields and the original index. That index is not decoration: it is the final tie-break that makes the ranking deterministic.</p>
+        <div class="relative"><pre>const RAW = [
+  { name:"Smileys &amp; Emotion", icon:"\u{1F600}", rows:[
+    ["\u{1F600}", "grinning face", "smile happy joy grin"],
+    ["\u{1F602}", "face with tears of joy", "lol laugh cry funny"],
+  ]},
+  /* ...eight more groups... */
+];
+
+let seq = 0;
+const GROUPS = RAW.map((g, gi) =&gt; ({
+  name: g.name, icon: g.icon, gi,
+  items: g.rows.map(([char, name, kw]) =&gt; ({
+    char, name, group: g.name, gi,
+    keywords: kw ? kw.split(" ") : [],
+    nname:    normalize(name),        // normalised ONCE, at load
+    nkw:      normalize(kw || ""),
+    i:        seq++                   // stable dataset order
+  }))
+}));
+const EMOJI = GROUPS.flatMap(g =&gt; g.items);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">2</div><h3 class="font-bold text-lg">Normalise both sides, exactly once</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Users type <code>:JOY:</code>, <code>heart_eyes</code> and <code>1st</code>; the dataset says <code>face with tears of joy</code> and <code>1st place medal</code>. Rather than sprinkling <code>toLowerCase()</code> through the matcher, define one normaliser and run it over the names and keywords at load and over the query on each keystroke. Keep hyphens and digits &mdash; <code>heart-eyes</code>, <code>jack-o-lantern</code> and <code>1st</code> are real tokens &mdash; and turn colons and underscores into spaces so shortcode habits keep working. Collapse runs of whitespace at the end so <code>"  red   heart "</code> and <code>"red heart"</code> are the same query.</p>
+        <div class="relative"><pre>function normalize(s){
+  return String(s)
+    .toLowerCase()
+    .replace(/[_:]+/g, " ")         // :heart_eyes: -&gt; heart eyes
+    .replace(/[^a-z0-9 +-]+/g, " ") // keep digits, hyphen and plus
+    .replace(/\s+/g, " ")
+    .trim();
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">3</div><h3 class="font-bold text-lg">Tiers, not fuzzy scores</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A single numeric score forces you to invent weights, and then nobody &mdash; including you &mdash; can explain why one emoji beat another. Give each entry the <strong>best tier it can reach</strong> instead: an exact name is 0, a word inside the name starting with the query is 1, a keyword starting with the query is 2, and a substring anywhere is 3. The word-start test is one line if you prepend a space to both sides, and because the tiers are ordered you get a hard invariant you can actually assert in a test: no tier-2 hit ever appears above a tier-1 hit.</p>
+        <div class="relative"><pre>const T_EXACT = 0, T_NAME = 1, T_KEY = 2, T_SUB = 3, T_NONE = 99;
+
+function tierOf(e, q){
+  if (!q) return T_NONE;
+  if (e.nname === q)                       return T_EXACT;
+  if ((" " + e.nname).includes(" " + q))   return T_NAME;  // word-start
+  if ((" " + e.nkw).includes(" " + q))     return T_KEY;
+  if (e.nname.includes(q) || e.nkw.includes(q)) return T_SUB;
+  return T_NONE;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">4</div><h3 class="font-bold text-lg">Deterministic tie-breaks make search feel stable</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Inside a tier there will be dozens of equals, and if you leave the order to chance the list reshuffles as you type and the first result &mdash; the one <kbd>Enter</kbd> picks &mdash; becomes a lottery. Break ties by <strong>name length</strong> first, because the shortest name containing your query is almost always the thing you meant (<code>hea</code> &rarr; <code>red heart</code> before <code>heart on fire</code>), then by the original dataset index so the result is fully determined. Keep the whole thing a pure function of <code>(query, dataset)</code> with no reads of component state, and it becomes trivially unit-testable against a brute-force scorer.</p>
+        <div class="relative"><pre>function searchEmoji(query, data){
+  const q = normalize(query);
+  if (!q) return [];
+  const hits = [];
+  for (const e of data){
+    const t = tierOf(e, q);
+    if (t !== T_NONE) hits.push({ e, t });
+  }
+  hits.sort((a, b) =&gt;
+       a.t - b.t                            // tier wins
+    || a.e.nname.length - b.e.nname.length  // then shortest name
+    || a.e.i - b.e.i);                      // then dataset order
+  return hits.map(h =&gt; h.e);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">5</div><h3 class="font-bold text-lg">An emoji is a grapheme, not a character</h3></div>
+        <p class="text-sm text-slate-600 mb-3"><code>"\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}".length</code> is <strong>11</strong>, <code>[...str].length</code> is <strong>7</strong>, and what the user sees is <strong>1</strong>. Those are three different questions: UTF-16 units, code points, and user-perceived characters. Never slice emoji with string indexes; iterate with the spread operator to get code points and use <code>Intl.Segmenter</code> when you need the count a human would give. Build the inspector early &mdash; once you can see the real code points, VS16, ZWJ and the tone modifiers stop being folklore.</p>
+        <div class="relative"><pre>const SEG = new Intl.Segmenter(undefined, { granularity:"grapheme" });
+
+function inspect(str){
+  const cps = [...str].map(c =&gt; c.codePointAt(0));   // NOT str.split("")
+  return {
+    codePoints: cps,
+    hex:        cps.map(c =&gt; "U+" + c.toString(16).toUpperCase().padStart(4, "0")),
+    units:      str.length,                          // UTF-16 units
+    graphemes:  [...SEG.segment(str)].length,        // what a human counts
+    hasZWJ:     cps.includes(0x200D),
+    hasVS16:    cps.includes(0xFE0F)
+  };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">6</div><h3 class="font-bold text-lg">Skin tones: insert after the base, drop the VS16</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A skin tone is not a suffix. The five Fitzpatrick modifiers <code>U+1F3FB</code>&ndash;<code>U+1F3FF</code> must follow the code point they modify, which is the first one with the <code>Emoji_Modifier_Base</code> property &mdash; and you do not need a hand-written table for that, because JS regular expressions expose the property directly. Two rules complete it: a modifier already implies emoji presentation, so a <code>U+FE0F</code> sitting right after the base becomes redundant and is removed; and only sequences with <strong>exactly one</strong> modifier base can be toned this way, which is why a family of four gets no flyout. Verify with the segmenter &mdash; if the result is still one grapheme, you inserted it in the right place.</p>
+        <div class="relative"><pre>const TONES = [0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF];
+const MODBASE = /\p{Emoji_Modifier_Base}/u;          // the Unicode table, free
+
+const baseIdxs = cps =&gt; cps.map((c, i) =&gt; [c, i])
+  .filter(([c]) =&gt; MODBASE.test(String.fromCodePoint(c))).map(([, i]) =&gt; i);
+
+function toneCapable(str){
+  const cps = [...stripTone(str)].map(c =&gt; c.codePointAt(0));
+  return baseIdxs(cps).length === 1;                 // single-person only
+}
+
+function applyTone(str, tone){                       // tone: 0 = default
+  const cps = [...stripTone(str)].map(c =&gt; c.codePointAt(0));
+  const at  = baseIdxs(cps)[0];
+  if (!tone || at === undefined) return String.fromCodePoint(...cps);
+  let rest = cps.slice(at + 1);
+  if (rest[0] === 0xFE0F) rest = rest.slice(1);      // VS16 now redundant
+  return String.fromCodePoint(...cps.slice(0, at + 1), TONES[tone - 1], ...rest);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">7</div><h3 class="font-bold text-lg">Measure the width, derive the rows</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not hardcode nine columns and do not ask a media query &mdash; the picker can be 340px wide inside a 1440px page, so the only honest source is the element itself. A <code>ResizeObserver</code> reports the content box, the column count is a division, and the row count of every group is a <code>ceil</code> of that. Then flatten the whole picker into one list of rows where a header row is short and an emoji row is tall, and build the <strong>cumulative offset array</strong> while you are there. Everything after this &mdash; the window, the sticky header, the rail sync, the keyboard &mdash; reads that one structure.</p>
+        <div class="relative"><pre>function buildLayout(groups, cols, hdrH, rowH){
+  const rows = [], offsets = [], heights = [];
+  let y = 0;
+  const push = (row, h) =&gt; { rows.push(row); offsets.push(y); heights.push(h); y += h; };
+  groups.forEach((g, gi) =&gt; {
+    if (!g.items.length) return;
+    push({ type:"header", gi, label:g.name }, hdrH);
+    const n = Math.ceil(g.items.length / cols);
+    for (let r = 0; r &lt; n; r++)
+      push({ type:"cells", gi, from:r * cols, to:Math.min(g.items.length, (r + 1) * cols) }, rowH);
+  });
+  return { rows, offsets, heights, total:y };
+}
+
+new ResizeObserver(([entry]) =&gt; {
+  const cols = Math.max(6, Math.floor(entry.contentRect.width / CELL));
+  if (cols !== state.cols){ state.cols = cols; relayout(); }
+}).observe(scroller);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">8</div><h3 class="font-bold text-lg">Binary-search the window, then draw only that</h3></div>
+        <p class="text-sm text-slate-600 mb-3">With mixed row heights you cannot divide <code>scrollTop</code> by a constant, but the offsets array is strictly increasing, so a binary search finds the first row whose bottom is still below the fold in log time and a short walk finds the last. Add a couple of overscan rows so a fast flick never shows a hole. The canvas keeps its full height so the scrollbar tells the truth, and every visible row is absolutely positioned at its own offset &mdash; which means the DOM holds a dozen rows whatever the dataset size.</p>
+        <div class="relative"><pre>function visibleRange(L, scrollTop, viewportH, overscan){
+  const n = L.rows.length, top = scrollTop, bot = scrollTop + viewportH;
+  if (!n) return { first:0, last:-1 };
+  let lo = 0, hi = n - 1, first = n;
+  while (lo &lt;= hi){                                   // first row with bottom &gt; top
+    const mid = (lo + hi) &gt;&gt; 1;
+    if (L.offsets[mid] + L.heights[mid] &gt; top){ first = mid; hi = mid - 1; }
+    else lo = mid + 1;
+  }
+  if (first === n || L.offsets[first] &gt;= bot) return { first:0, last:-1 };
+  let last = first;
+  while (last + 1 &lt; n &amp;&amp; L.offsets[last + 1] &lt; bot) last++;
+  return { first:Math.max(0, first - overscan), last:Math.min(n - 1, last + overscan) };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">9</div><h3 class="font-bold text-lg">Frecency &mdash; a frequency that forgets</h3></div>
+        <p class="text-sm text-slate-600 mb-3">A raw counter is wrong within a week: the emoji you used forty times last month permanently outranks the one you have used six times today. Multiply every old score by a half-life decay before adding one for the new pick and the list tracks what you are doing <em>now</em> while still remembering habits. Store four numbers per emoji &mdash; the decayed score, the timestamp it was decayed to, a plain count for display, and the last-used time for tie-breaks &mdash; and the incremental version is provably identical to summing a decayed weight over the whole event log, which is exactly the property to assert in a test.</p>
+        <div class="relative"><pre>const HALF_LIFE = 1000 * 60 * 60 * 6;                       // six hours
+const decay = (score, dt) =&gt; score * Math.pow(0.5, dt / HALF_LIFE);
+
+function frecPick(store, char, now){
+  const r = store[char] || { score:0, at:now, count:0, last:0 };
+  store[char] = { score:decay(r.score, now - r.at) + 1, at:now,
+                  count:r.count + 1, last:now };
+}
+const frecScore = (store, char, now) =&gt;
+  store[char] ? decay(store[char].score, now - store[char].at) : 0;
+
+const frecTop = (store, now, n) =&gt; Object.keys(store)
+  .map(ch =&gt; ({ ch, s:frecScore(store, ch, now), last:store[ch].last }))
+  .sort((a, b) =&gt; b.s - a.s || b.last - a.last || (a.ch &lt; b.ch ? -1 : 1))
+  .slice(0, n);</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">10</div><h3 class="font-bold text-lg">A 2-D cursor, roving tabindex, and the caret</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Keep the cursor as <code>{row, col}</code> over the <em>cells</em> rows only and every arrow is three lines: right wraps to the next row, left wraps back, up and down clamp the column to the shorter row. Because the cursor is state and not focus, the virtual grid can throw its DOM away on every scroll without losing the selection &mdash; you simply give the one rendered cell that matches the cursor <code>tabindex="0"</code> and leave the rest at <code>-1</code>. Finally, insert at the <strong>caret</strong>: grab the live range, delete whatever was selected, drop a text node in and collapse the range after it. Appending to the end is the bug users notice first.</p>
+        <div class="relative"><pre>function moveCursor(lens, cur, dir){        // lens = cells-per-row
+  let { r, c } = cur;
+  r = Math.min(r, lens.length - 1); c = Math.min(c, lens[r] - 1);
+  if (dir === "right"){ if (++c &gt;= lens[r]){ r = (r + 1) % lens.length; c = 0; } }
+  else if (dir === "left"){ if (--c &lt; 0){ r = (r - 1 + lens.length) % lens.length; c = lens[r] - 1; } }
+  else if (dir === "down" &amp;&amp; r &lt; lens.length - 1){ r++; c = Math.min(c, lens[r] - 1); }
+  else if (dir === "up"   &amp;&amp; r &gt; 0)            { r--; c = Math.min(c, lens[r] - 1); }
+  return { r, c };
+}
+
+function insertAtCaret(host, text){
+  const sel = window.getSelection();
+  let range = (sel.rangeCount &amp;&amp; host.contains(sel.anchorNode))
+    ? sel.getRangeAt(0)
+    : (r =&gt; (r.selectNodeContents(host), r.collapse(false), r))(document.createRange());
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);                    // lands where the caret was
+  range.setStartAfter(node); range.collapse(true);
+  sel.removeAllRanges(); sel.addRange(range);
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 61 of DesignFromZero done &mdash; Emoji picker.</h3><p class="text-sm text-indigo-700 mt-2">You built a picker where <strong>one array drives every pixel</strong>: categories, rail, rows, results and preview all derived, nothing hardcoded per render. Search became a <strong>pure tiered ranker</strong> &mdash; normalise once, take the best tier, break ties by name length then dataset order &mdash; which is explainable, stable under typing, and testable against a brute-force scorer. The grid became genuinely <strong>windowed</strong>: a measured column count, a derived row count, a cumulative offset array and a binary search, so the DOM holds a dozen rows no matter how big the dataset grows. And the Unicode became real rather than described &mdash; <strong>code points versus graphemes</strong>, <strong>VS16</strong> as the invisible presentation switch, <strong>ZWJ</strong> welding four people into one glyph, and the five <strong>Fitzpatrick modifiers</strong> inserted after the base with the redundant VS16 removed. <strong>&#128075; Put every decision in a pure function of the data &mdash; the tier, the window, the frecency, the cursor &mdash; and the component stops being a pile of event handlers and starts being something you can prove.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== ENGINE:BEGIN =====
+// Pure logic — no DOM below this line until ENGINE:END. The node test file
+// extracts exactly this block out of the HTML so the tests can never drift
+// away from the code the page actually runs.
+
+// --- 1) normalisation: run over names/keywords at load, over the query per keystroke
+function normalize(s){
+  return String(s)
+    .toLowerCase()
+    .replace(/[_:]+/g, " ")           // :heart_eyes: -> heart eyes
+    .replace(/[^a-z0-9 +-]+/g, " ")   // keep digits, hyphen and plus
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// --- 2) the dataset: [char, name, keywords] rows in nine groups ----------
+const RAW_GROUPS = [
+{ name:"Smileys & Emotion", icon:"😀", rows:[
+["😀","grinning face","smile happy joy grin"],
+["😃","grinning face with big eyes","smile happy joy"],
+["😄","grinning face with smiling eyes","smile happy laugh"],
+["😁","beaming face with smiling eyes","smile happy grin"],
+["😆","grinning squinting face","laugh happy haha"],
+["😅","grinning face with sweat","laugh relief phew"],
+["🤣","rolling on the floor laughing","rofl lol laugh funny"],
+["😂","face with tears of joy","lol laugh cry funny"],
+["🙂","slightly smiling face","smile"],
+["🙃","upside-down face","sarcasm silly irony"],
+["😉","winking face","wink flirt"],
+["😊","smiling face with smiling eyes","blush happy warm"],
+["😇","smiling face with halo","angel innocent"],
+["🥰","smiling face with hearts","love adore"],
+["😍","smiling face with heart-eyes","love crush"],
+["🤩","star-struck","starry amazed wow"],
+["😘","face blowing a kiss","kiss love"],
+["😗","kissing face","kiss"],
+["😋","face savoring food","yum tasty delicious"],
+["😛","face with tongue","tongue silly"],
+["🤪","zany face","crazy silly goofy"],
+["🤨","face with raised eyebrow","skeptic suspicious doubt"],
+["🧐","face with monocle","inspect examine"],
+["🤓","nerd face","geek glasses smart"],
+["😎","smiling face with sunglasses","cool sunglasses"],
+["🥳","partying face","party celebrate birthday"],
+["😏","smirking face","smirk smug"],
+["😒","unamused face","meh annoyed"],
+["😞","disappointed face","sad down"],
+["😔","pensive face","sad thoughtful"],
+["😟","worried face","concerned"],
+["😕","confused face","unsure"],
+["🙁","slightly frowning face","sad frown"],
+["😣","persevering face","struggle"],
+["😖","confounded face","frustrated"],
+["😫","tired face","exhausted"],
+["😩","weary face","tired"],
+["🥺","pleading face","puppy beg please"],
+["😢","crying face","sad tear"],
+["😭","loudly crying face","sob bawl sad"],
+["😤","face with steam from nose","triumph angry"],
+["😠","angry face","mad"],
+["😡","enraged face","angry rage mad"],
+["🤯","exploding head","mind blown shocked"],
+["😳","flushed face","embarrassed blush"],
+["🥵","hot face","heat sweat overheated"],
+["🥶","cold face","freezing frozen"],
+["😱","face screaming in fear","scream shock"],
+["😨","fearful face","scared"],
+["😰","anxious face with sweat","nervous"],
+["🤔","thinking face","think hmm ponder"],
+["🤫","shushing face","quiet shh secret"],
+["🤥","lying face","pinocchio liar"],
+["😶","face without mouth","speechless blank"],
+["😐","neutral face","deadpan meh"],
+["😑","expressionless face","blank"],
+["🙄","face with rolling eyes","eyeroll annoyed"],
+["😬","grimacing face","awkward cringe"],
+["🤐","zipper-mouth face","secret quiet"],
+["🤢","nauseated face","sick gross"],
+["🤮","face vomiting","sick puke"],
+["🤧","sneezing face","sick sneeze"],
+["😷","face with medical mask","sick mask"],
+["🤒","face with thermometer","sick fever"],
+["🤕","face with head-bandage","hurt injured"],
+["🥱","yawning face","tired bored sleepy"],
+["😴","sleeping face","sleep zzz"],
+["😪","sleepy face","tired"],
+["🤤","drooling face","drool"],
+["💀","skull","dead death"],
+["👻","ghost","halloween spooky boo"],
+["👽","alien","ufo extraterrestrial"],
+["🤖","robot","bot android ai"],
+["💩","pile of poo","poop crap"],
+["🤡","clown face","clown circus"],
+["👹","ogre","monster oni"]
+]},
+{ name:"People & Body", icon:"👋", rows:[
+["👋","waving hand","wave hello bye greeting"],
+["🤚","raised back of hand","hand stop"],
+["✋","raised hand","hand stop high five"],
+["🖐️","hand with fingers splayed","hand five"],
+["🖖","vulcan salute","spock star trek"],
+["👌","OK hand","ok perfect"],
+["🤌","pinched fingers","italian gesture"],
+["🤏","pinching hand","small tiny"],
+["✌️","victory hand","peace two"],
+["🤞","crossed fingers","luck hope"],
+["🤟","love-you gesture","ily love"],
+["🤘","sign of the horns","rock metal"],
+["🤙","call me hand","shaka"],
+["👈","backhand index pointing left","point left"],
+["👉","backhand index pointing right","point right"],
+["👆","backhand index pointing up","point up"],
+["👇","backhand index pointing down","point down"],
+["☝️","index pointing up","point one"],
+["👍","thumbs up","like yes approve good"],
+["👎","thumbs down","dislike no bad"],
+["✊","raised fist","fist power solidarity"],
+["👊","oncoming fist","punch bump"],
+["🤛","left-facing fist","fist bump"],
+["🤜","right-facing fist","fist bump"],
+["👏","clapping hands","clap applause bravo"],
+["🙌","raising hands","celebrate praise hooray"],
+["👐","open hands","hug open"],
+["🤲","palms up together","pray beg dua"],
+["🤝","handshake","deal agreement"],
+["🙏","folded hands","pray thanks please namaste"],
+["💪","flexed biceps","muscle strong gym"],
+["🦵","leg","limb"],
+["👀","eyes","look see watching"],
+["👁️","eye","look"],
+["👂","ear","hear listen"],
+["👃","nose","smell"],
+["🧠","brain","mind smart"],
+["🦷","tooth","dentist"],
+["👶","baby","infant child"],
+["🧒","child","kid"],
+["👦","boy","child male"],
+["👧","girl","child female"],
+["🧑","person","adult"],
+["👨","man","male adult"],
+["👩","woman","female adult"],
+["🧓","older person","elderly"],
+["👴","old man","grandpa elderly"],
+["👵","old woman","grandma elderly"],
+["🧑‍💻","technologist","coder developer laptop"],
+["👩‍⚕️","woman health worker","doctor nurse"],
+["👨‍🚀","man astronaut","space nasa"],
+["💃","woman dancing","dance"],
+["🕺","man dancing","dance"],
+["🚶","person walking","walk"],
+["🏃","person running","run"],
+["🧘","person in lotus position","yoga meditate"],
+["👨‍👩‍👧‍👦","family: man, woman, girl, boy","family zwj parents"],
+["👨‍👩‍👦","family: man, woman, boy","family zwj"]
+]},
+{ name:"Animals & Nature", icon:"🐻", rows:[
+["🐶","dog face","puppy pet"],
+["🐱","cat face","kitten pet"],
+["🐭","mouse face","rodent"],
+["🐹","hamster","pet"],
+["🐰","rabbit face","bunny"],
+["🦊","fox","sly"],
+["🐻","bear","grizzly"],
+["🐼","panda","bamboo"],
+["🐨","koala","australia"],
+["🐯","tiger face","big cat"],
+["🦁","lion","big cat king"],
+["🐮","cow face","moo"],
+["🐷","pig face","oink"],
+["🐸","frog","ribbit"],
+["🐵","monkey face","ape"],
+["🙈","see-no-evil monkey","hide shy"],
+["🙉","hear-no-evil monkey","deaf"],
+["🙊","speak-no-evil monkey","quiet"],
+["🐔","chicken","hen"],
+["🐧","penguin","antarctic"],
+["🐦","bird","tweet"],
+["🦆","duck","quack"],
+["🦅","eagle","bird"],
+["🦉","owl","hoot wise"],
+["🦇","bat","vampire"],
+["🐺","wolf","howl"],
+["🐗","boar","pig"],
+["🐴","horse face","pony"],
+["🦄","unicorn","magic fantasy"],
+["🐝","honeybee","bee buzz"],
+["🐛","bug","caterpillar insect"],
+["🦋","butterfly","insect"],
+["🐌","snail","slow"],
+["🐞","lady beetle","ladybug"],
+["🐜","ant","insect"],
+["🕷️","spider","arachnid"],
+["🐢","turtle","tortoise slow"],
+["🐍","snake","serpent"],
+["🦖","T-Rex","dinosaur"],
+["🐙","octopus","tentacles"],
+["🦑","squid","calamari"],
+["🦀","crab","shellfish"],
+["🐬","dolphin","sea"],
+["🐳","spouting whale","whale sea"],
+["🐟","fish","sea"],
+["🌵","cactus","desert plant"],
+["🌲","evergreen tree","tree pine"],
+["🌳","deciduous tree","tree"],
+["🌴","palm tree","tropical"],
+["🌱","seedling","plant sprout growth"],
+["🌿","herb","leaf plant"],
+["🍀","four leaf clover","luck lucky"],
+["🍁","maple leaf","canada autumn"],
+["🌸","cherry blossom","sakura flower"],
+["🌺","hibiscus","flower"],
+["🌻","sunflower","flower"],
+["🌹","rose","flower love"],
+["🌷","tulip","flower"],
+["💐","bouquet","flowers gift"],
+["🌍","globe showing Europe-Africa","earth world planet"],
+["🌞","sun with face","sun"],
+["🌝","full moon face","moon"],
+["⭐","star","favourite"],
+["🌟","glowing star","sparkle star"],
+["✨","sparkles","shiny magic clean"],
+["⚡","high voltage","lightning bolt power"],
+["🔥","fire","lit flame hot"],
+["🌈","rainbow","pride colours"],
+["☀️","sun","sunny clear"],
+["☁️","cloud","cloudy"],
+["🌧️","cloud with rain","rain wet"],
+["❄️","snowflake","snow cold winter"],
+["🌊","water wave","ocean sea surf"]
+]},
+{ name:"Food & Drink", icon:"🍕", rows:[
+["🍎","red apple","apple fruit"],
+["🍏","green apple","apple fruit"],
+["🍐","pear","fruit"],
+["🍊","tangerine","orange fruit"],
+["🍋","lemon","citrus fruit"],
+["🍌","banana","fruit"],
+["🍉","watermelon","fruit"],
+["🍇","grapes","fruit wine"],
+["🍓","strawberry","fruit berry"],
+["🫐","blueberries","fruit berry"],
+["🍒","cherries","fruit"],
+["🍑","peach","fruit"],
+["🥭","mango","fruit tropical"],
+["🍍","pineapple","fruit tropical"],
+["🥥","coconut","tropical"],
+["🥝","kiwi fruit","fruit"],
+["🍅","tomato","vegetable"],
+["🥑","avocado","toast"],
+["🍆","eggplant","aubergine"],
+["🥕","carrot","vegetable"],
+["🌽","ear of corn","corn maize"],
+["🌶️","hot pepper","chilli spicy"],
+["🥦","broccoli","vegetable"],
+["🧄","garlic","clove"],
+["🧅","onion","vegetable"],
+["🍞","bread","loaf"],
+["🥐","croissant","pastry french"],
+["🥖","baguette bread","french bread"],
+["🧀","cheese wedge","cheese"],
+["🥚","egg","breakfast"],
+["🍳","cooking","fried egg breakfast pan"],
+["🥞","pancakes","breakfast"],
+["🧇","waffle","breakfast"],
+["🥓","bacon","breakfast"],
+["🍔","hamburger","burger"],
+["🍟","french fries","fries chips"],
+["🍕","pizza","slice"],
+["🌭","hot dog","sausage"],
+["🥪","sandwich","lunch"],
+["🌮","taco","mexican"],
+["🌯","burrito","mexican wrap"],
+["🥗","green salad","salad healthy"],
+["🍿","popcorn","cinema movie"],
+["🧂","salt","seasoning"],
+["🍝","spaghetti","pasta italian"],
+["🍜","steaming bowl","ramen noodles soup"],
+["🍣","sushi","japanese"],
+["🍤","fried shrimp","tempura"],
+["🍚","cooked rice","rice"],
+["🍛","curry rice","curry indian"],
+["🍲","pot of food","stew soup"],
+["🍦","soft ice cream","icecream dessert"],
+["🍩","doughnut","donut"],
+["🍪","cookie","biscuit"],
+["🎂","birthday cake","cake birthday"],
+["🍰","shortcake","cake dessert"],
+["🧁","cupcake","dessert"],
+["🍫","chocolate bar","chocolate"],
+["🍬","candy","sweet"],
+["🍯","honey pot","honey"],
+["☕","hot beverage","coffee tea"],
+["🍵","teacup without handle","tea green"],
+["🧋","bubble tea","boba"],
+["🥤","cup with straw","soda drink"],
+["🍺","beer mug","beer pint"],
+["🍻","clinking beer mugs","cheers beer"],
+["🍷","wine glass","wine"],
+["🥂","clinking glasses","cheers toast celebrate"],
+["🍸","cocktail glass","martini cocktail"],
+["🥛","glass of milk","milk"]
+]},
+{ name:"Activities", icon:"⚽", rows:[
+["⚽","soccer ball","football sport"],
+["🏀","basketball","sport nba"],
+["🏈","american football","sport nfl"],
+["⚾","baseball","sport"],
+["🎾","tennis","sport"],
+["🏐","volleyball","sport"],
+["🏉","rugby football","sport"],
+["🎱","pool 8 ball","billiards snooker"],
+["🏓","ping pong","table tennis sport"],
+["🏸","badminton","sport"],
+["🥅","goal net","sport"],
+["🏒","ice hockey","sport"],
+["🏏","cricket game","cricket sport"],
+["⛳","flag in hole","golf sport"],
+["🏹","bow and arrow","archery"],
+["🎣","fishing pole","fish"],
+["🥊","boxing glove","boxing sport"],
+["🥋","martial arts uniform","karate judo"],
+["⛸️","ice skate","skating"],
+["🛹","skateboard","skate"],
+["🎿","skis","ski snow"],
+["🏂","snowboarder","snow sport"],
+["🏆","trophy","win award champion"],
+["🥇","1st place medal","gold first win"],
+["🥈","2nd place medal","silver second"],
+["🥉","3rd place medal","bronze third"],
+["🏅","sports medal","medal award"],
+["🎯","bullseye","target dart goal"],
+["🎮","video game","gaming controller"],
+["🕹️","joystick","arcade retro"],
+["🎲","game die","dice random luck"],
+["🧩","puzzle piece","jigsaw"],
+["🎨","artist palette","art paint design"],
+["🎭","performing arts","theatre drama"],
+["🎤","microphone","sing karaoke podcast"],
+["🎧","headphone","music listen"],
+["🎸","guitar","music rock"],
+["🎹","musical keyboard","piano music"],
+["🥁","drum","drums music"],
+["🎺","trumpet","music brass"],
+["🎻","violin","music strings"],
+["🎬","clapper board","film movie action"],
+["🎉","party popper","celebrate party congrats tada"],
+["🎊","confetti ball","celebrate party"],
+["🎈","balloon","party"],
+["🎁","wrapped gift","present gift"],
+["🎃","jack-o-lantern","halloween pumpkin"],
+["🎄","christmas tree","xmas"]
+]},
+{ name:"Travel & Places", icon:"🚀", rows:[
+["🚗","automobile","car drive"],
+["🚕","taxi","cab"],
+["🚙","sport utility vehicle","suv car"],
+["🚌","bus","transport"],
+["🚑","ambulance","emergency"],
+["🚒","fire engine","emergency"],
+["🚓","police car","emergency"],
+["🏎️","racing car","f1 race fast"],
+["🛵","motor scooter","scooter"],
+["🏍️","motorcycle","bike"],
+["🚲","bicycle","bike cycle"],
+["🛴","kick scooter","scooter"],
+["🚂","locomotive","train steam"],
+["🚄","high-speed train","bullet train"],
+["🚁","helicopter","chopper"],
+["✈️","airplane","plane flight travel"],
+["🚀","rocket","launch space ship deploy"],
+["🛸","flying saucer","ufo alien"],
+["🛶","canoe","kayak"],
+["⛵","sailboat","boat sail"],
+["🚢","ship","cruise boat"],
+["⚓","anchor","boat"],
+["🗺️","world map","map travel"],
+["🗽","statue of liberty","new york usa"],
+["🗼","tokyo tower","japan"],
+["🏰","castle","fortress"],
+["🏝️","desert island","island beach"],
+["🏔️","snow-capped mountain","mountain peak"],
+["🌋","volcano","eruption"],
+["🏕️","camping","camp tent"],
+["⛺","tent","camping"],
+["🏠","house","home"],
+["🏡","house with garden","home"],
+["🏢","office building","office work"],
+["🏥","hospital","health"],
+["🏦","bank","money"],
+["🏫","school","education"],
+["🏭","factory","industry"],
+["⛪","church","chapel"],
+["🕌","mosque","masjid"],
+["🛕","hindu temple","mandir temple"],
+["🕍","synagogue","temple"],
+["🌃","night with stars","night city"],
+["🌅","sunrise","dawn morning"],
+["🌉","bridge at night","bridge"],
+["🎡","ferris wheel","fair"],
+["🎢","roller coaster","fair ride"]
+]},
+{ name:"Objects", icon:"💡", rows:[
+["⌚","watch","time wrist"],
+["📱","mobile phone","phone smartphone"],
+["💻","laptop","computer macbook"],
+["🖥️","desktop computer","pc monitor"],
+["⌨️","keyboard","typing keys"],
+["🖱️","computer mouse","mouse"],
+["🖨️","printer","print"],
+["💾","floppy disk","save disk"],
+["💿","optical disk","cd dvd"],
+["📷","camera","photo picture"],
+["📹","video camera","video record"],
+["📺","television","tv"],
+["📻","radio","broadcast"],
+["🔋","battery","power charge"],
+["🔌","electric plug","plug power"],
+["💡","light bulb","idea bulb"],
+["🔦","flashlight","torch"],
+["🕯️","candle","light wax"],
+["📔","notebook with decorative cover","notebook"],
+["📚","books","library reading study"],
+["📖","open book","read"],
+["📝","memo","note write pencil"],
+["✏️","pencil","write draw"],
+["🖊️","pen","write"],
+["📐","triangular ruler","ruler geometry"],
+["📏","straight ruler","ruler measure"],
+["📌","pushpin","pin"],
+["📎","paperclip","attach clip"],
+["✂️","scissors","cut"],
+["🔑","key","unlock access"],
+["🔒","locked","lock secure private"],
+["🔓","unlocked","unlock open public"],
+["🔨","hammer","tool build"],
+["🔧","wrench","tool fix spanner"],
+["🪛","screwdriver","tool"],
+["⚙️","gear","settings cog config"],
+["🧰","toolbox","tools"],
+["🧲","magnet","attract"],
+["🔬","microscope","science lab"],
+["🔭","telescope","space astronomy"],
+["💊","pill","medicine drug"],
+["💉","syringe","injection vaccine"],
+["🧪","test tube","chemistry lab experiment"],
+["🚿","shower","bath"],
+["🧹","broom","sweep clean"],
+["🗑️","wastebasket","trash bin delete"],
+["💰","money bag","money cash"],
+["💳","credit card","card payment"],
+["💎","gem stone","diamond gem"],
+["⏰","alarm clock","alarm wake time"],
+["⏳","hourglass not done","hourglass wait time"],
+["📅","calendar","date schedule"],
+["📊","bar chart","chart graph stats"],
+["📈","chart increasing","growth up chart"],
+["📉","chart decreasing","loss down chart"],
+["📋","clipboard","copy paste list"],
+["📁","file folder","folder directory"],
+["📄","page facing up","document file"],
+["✉️","envelope","mail email letter"],
+["📦","package","box parcel shipping"],
+["🔍","magnifying glass tilted left","search find zoom"],
+["🔔","bell","notification alert ring"]
+]},
+{ name:"Symbols", icon:"❤️", rows:[
+["❤️","red heart","love heart red"],
+["🧡","orange heart","love heart"],
+["💛","yellow heart","love heart"],
+["💚","green heart","love heart"],
+["💙","blue heart","love heart"],
+["💜","purple heart","love heart"],
+["🖤","black heart","love heart dark"],
+["🤍","white heart","love heart"],
+["💔","broken heart","heartbreak sad"],
+["❤️‍🔥","heart on fire","burning love passion"],
+["💯","hundred points","100 perfect score"],
+["💥","collision","boom explosion"],
+["💫","dizzy","stars"],
+["💬","speech balloon","comment chat message"],
+["💭","thought balloon","think"],
+["🗯️","right anger bubble","angry shout"],
+["✅","check mark button","done yes tick pass"],
+["☑️","check box with check","checked done"],
+["❌","cross mark","no wrong cancel fail"],
+["❗","exclamation mark","warning important"],
+["❓","question mark","question help"],
+["⚠️","warning","caution alert"],
+["⛔","no entry","forbidden stop"],
+["🚫","prohibited","no ban"],
+["♻️","recycling symbol","recycle green"],
+["🔴","red circle","dot red"],
+["🟢","green circle","dot green ok"],
+["🔵","blue circle","dot blue"],
+["🟡","yellow circle","dot yellow"],
+["🟠","orange circle","dot orange"],
+["🟣","purple circle","dot purple"],
+["⚫","black circle","dot black"],
+["⚪","white circle","dot white"],
+["⬆️","up arrow","arrow up"],
+["⬇️","down arrow","arrow down"],
+["⬅️","left arrow","arrow left back"],
+["➡️","right arrow","arrow right next"],
+["🔄","counterclockwise arrows button","refresh reload sync retry"],
+["🔀","shuffle tracks button","shuffle random"],
+["▶️","play button","play start"],
+["⏸️","pause button","pause"],
+["⏹️","stop button","stop"],
+["⏭️","next track button","next skip"],
+["🔇","muted speaker","mute silent"],
+["🔊","speaker high volume","volume loud sound"],
+["♾️","infinity","infinite forever"],
+["🆗","OK button","ok"],
+["🆕","NEW button","new"],
+["🔝","TOP arrow","top up"],
+["©️","copyright","legal"],
+["®️","registered","legal trademark"],
+["™️","trade mark","legal tm"],
+["#️⃣","keycap: #","hash keycap pound"],
+["1️⃣","keycap: 1","one keycap number"]
+]},
+{ name:"Flags", icon:"🏁", rows:[
+["🏳️","white flag","surrender"],
+["🏴","black flag","pirate"],
+["🏁","chequered flag","race finish"],
+["🚩","triangular flag","flag red marker"],
+["🏳️‍🌈","rainbow flag","pride lgbt"],
+["🇮🇳","flag: India","india in bharat"],
+["🇺🇸","flag: United States","usa america us"],
+["🇬🇧","flag: United Kingdom","uk britain gb"],
+["🇯🇵","flag: Japan","japan jp"],
+["🇩🇪","flag: Germany","germany de"],
+["🇫🇷","flag: France","france fr"],
+["🇧🇷","flag: Brazil","brazil br"],
+["🇨🇦","flag: Canada","canada ca"],
+["🇦🇺","flag: Australia","australia au"]
+]}
+];
+
+// --- 3) expand once: normalised fields + a stable dataset index ----------
+let __seq = 0;
+const GROUPS = RAW_GROUPS.map((g, gi) => ({
+  name: g.name, icon: g.icon, gi,
+  items: g.rows.map(([char, name, kw]) => ({
+    char, name, gi, group: g.name,
+    keywords: kw ? kw.split(" ") : [],
+    nname: normalize(name),
+    nkw:   normalize(kw || ""),
+    i:     __seq++
+  }))
+}));
+const EMOJI = GROUPS.reduce((a, g) => a.concat(g.items), []);
+const BY_CHAR = new Map(EMOJI.map(e => [e.char, e]));
+
+// --- 4) the tiered ranker (pure) ----------------------------------------
+const T_EXACT = 0, T_NAME = 1, T_KEY = 2, T_SUB = 3, T_NONE = 99;
+const TIER_LABEL = ["exact name", "name word-start", "keyword word-start", "substring"];
+
+function tierOf(e, q){
+  if (!q) return T_NONE;
+  if (e.nname === q) return T_EXACT;
+  if ((" " + e.nname).includes(" " + q)) return T_NAME;
+  if ((" " + e.nkw).includes(" " + q)) return T_KEY;
+  if (e.nname.includes(q) || e.nkw.includes(q)) return T_SUB;
+  return T_NONE;
+}
+
+function searchEmoji(query, data){
+  const q = normalize(query);
+  if (!q) return [];
+  const set = data || EMOJI, hits = [];
+  for (let k = 0; k < set.length; k++){
+    const t = tierOf(set[k], q);
+    if (t !== T_NONE) hits.push({ e: set[k], t });
+  }
+  hits.sort((a, b) => a.t - b.t
+                   || a.e.nname.length - b.e.nname.length
+                   || a.e.i - b.e.i);
+  return hits.map(h => h.e);
+}
+function tierHistogram(query, data){
+  const q = normalize(query), out = [0, 0, 0, 0];
+  if (!q) return out;
+  (data || EMOJI).forEach(e => { const t = tierOf(e, q); if (t !== T_NONE) out[t]++; });
+  return out;
+}
+
+// --- 5) real Unicode: code points, graphemes, VS16, ZWJ, skin tones -----
+const TONES = [0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF];
+const TONE_NAMES = ["Default", "Light", "Medium-light", "Medium", "Medium-dark", "Dark"];
+const MODBASE = /\p{Emoji_Modifier_Base}/u;
+const SEG = (typeof Intl !== "undefined" && Intl.Segmenter)
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+
+const cpsOf = str => [...str].map(c => c.codePointAt(0));
+const isTone = cp => cp >= 0x1F3FB && cp <= 0x1F3FF;
+const stripTone = str => String.fromCodePoint(...cpsOf(str).filter(c => !isTone(c)));
+
+function modBaseIndexes(cps){
+  const out = [];
+  for (let i = 0; i < cps.length; i++)
+    if (MODBASE.test(String.fromCodePoint(cps[i]))) out.push(i);
+  return out;
+}
+function toneCapable(str){
+  return modBaseIndexes(cpsOf(stripTone(str))).length === 1;
+}
+function applyTone(str, tone){
+  const cps = cpsOf(stripTone(str));
+  const at = modBaseIndexes(cps)[0];
+  if (!tone || at === undefined) return String.fromCodePoint(...cps);
+  let rest = cps.slice(at + 1);
+  if (rest[0] === 0xFE0F) rest = rest.slice(1);   // VS16 implied by the modifier
+  return String.fromCodePoint(...cps.slice(0, at + 1), TONES[tone - 1], ...rest);
+}
+function toneOf(str){
+  const t = cpsOf(str).find(isTone);
+  return t ? TONES.indexOf(t) + 1 : 0;
+}
+
+const CP_NOTE = {
+  0x200D: "ZWJ · zero width joiner",
+  0xFE0F: "VS16 · emoji presentation",
+  0xFE0E: "VS15 · text presentation",
+  0x20E3: "combining enclosing keycap"
+};
+function cpNote(cp){
+  if (CP_NOTE[cp]) return CP_NOTE[cp];
+  if (isTone(cp)) return "skin tone " + (TONES.indexOf(cp) + 2) + " · Fitzpatrick";
+  if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return "regional indicator " + String.fromCharCode(65 + cp - 0x1F1E6);
+  if (cp < 0x80) return "ASCII " + JSON.stringify(String.fromCodePoint(cp));
+  return "base character";
+}
+function inspect(str){
+  const cps = cpsOf(str);
+  return {
+    str,
+    codePoints: cps,
+    hex: cps.map(c => "U+" + c.toString(16).toUpperCase().padStart(4, "0")),
+    notes: cps.map(cpNote),
+    units: str.length,
+    graphemes: SEG ? [...SEG.segment(str)].length : 1,
+    hasZWJ: cps.indexOf(0x200D) >= 0,
+    hasVS16: cps.indexOf(0xFE0F) >= 0,
+    tone: toneOf(str)
+  };
+}
+
+// --- 6) layout + windowing (pure) ---------------------------------------
+function buildLayout(groups, cols, hdrH, rowH){
+  const rows = [], offsets = [], heights = [];
+  let y = 0;
+  const push = (row, h) => { rows.push(row); offsets.push(y); heights.push(h); y += h; };
+  for (let gi = 0; gi < groups.length; gi++){
+    const g = groups[gi];
+    if (!g.items.length) continue;
+    push({ type: "header", gi, label: g.name }, hdrH);
+    const n = Math.ceil(g.items.length / cols);
+    for (let r = 0; r < n; r++)
+      push({ type: "cells", gi, from: r * cols, to: Math.min(g.items.length, (r + 1) * cols) }, rowH);
+  }
+  return { rows, offsets, heights, total: y };
+}
+function visibleRange(L, scrollTop, viewportH, overscan){
+  overscan = overscan || 0;
+  const n = L.rows.length, top = scrollTop, bot = scrollTop + viewportH;
+  if (!n) return { first: 0, last: -1 };
+  let lo = 0, hi = n - 1, first = n;
+  while (lo <= hi){
+    const mid = (lo + hi) >> 1;
+    if (L.offsets[mid] + L.heights[mid] > top){ first = mid; hi = mid - 1; }
+    else lo = mid + 1;
+  }
+  if (first === n || L.offsets[first] >= bot) return { first: 0, last: -1 };
+  let last = first;
+  while (last + 1 < n && L.offsets[last + 1] < bot) last++;
+  return { first: Math.max(0, first - overscan), last: Math.min(n - 1, last + overscan) };
+}
+function stickyRowAt(L, scrollTop){
+  let idx = -1;
+  for (let i = 0; i < L.rows.length; i++){
+    if (L.rows[i].type !== "header") continue;
+    if (L.offsets[i] <= scrollTop) idx = i; else break;
+  }
+  return idx < 0 ? (L.rows.length ? 0 : -1) : idx;
+}
+
+// --- 7) frecency: frequency that forgets --------------------------------
+const HALF_LIFE = 1000 * 60 * 60 * 6;
+const decayScore = (score, dt) => score * Math.pow(0.5, dt / HALF_LIFE);
+function frecPick(store, char, now){
+  const r = store[char] || { score: 0, at: now, count: 0, last: 0 };
+  store[char] = { score: decayScore(r.score, now - r.at) + 1, at: now, count: r.count + 1, last: now };
+  return store[char];
+}
+function frecScore(store, char, now){
+  const r = store[char];
+  return r ? decayScore(r.score, now - r.at) : 0;
+}
+function frecTop(store, now, n){
+  return Object.keys(store)
+    .map(ch => ({ ch, s: frecScore(store, ch, now), last: store[ch].last, count: store[ch].count }))
+    .sort((a, b) => b.s - a.s || b.last - a.last || (a.ch < b.ch ? -1 : 1))
+    .slice(0, n);
+}
+
+// --- 8) the 2-D keyboard cursor over the virtual grid --------------------
+function moveCursor(lens, cur, dir){
+  if (!lens.length) return { r: 0, c: 0 };
+  let r = Math.min(Math.max(0, cur.r), lens.length - 1);
+  let c = Math.min(Math.max(0, cur.c), lens[r] - 1);
+  if (dir === "right"){ if (++c >= lens[r]){ r = (r + 1) % lens.length; c = 0; } }
+  else if (dir === "left"){ if (--c < 0){ r = (r - 1 + lens.length) % lens.length; c = lens[r] - 1; } }
+  else if (dir === "down"){ if (r < lens.length - 1){ r++; c = Math.min(c, lens[r] - 1); } }
+  else if (dir === "up"){ if (r > 0){ r--; c = Math.min(c, lens[r] - 1); } }
+  else if (dir === "home"){ c = 0; }
+  else if (dir === "end"){ c = lens[r] - 1; }
+  return { r, c };
+}
+// ===== ENGINE:END =====
+
+// ===== UI ==============================================================
+const CELL = 36, HDR_H = 26, ROW_H = 38, OVERSCAN = 2;
+const stage   = document.getElementById("ep-stage");
+const pop     = document.getElementById("ep-pop");
+const qEl     = document.getElementById("ep-q");
+const bar     = document.getElementById("ep-searchbar");
+const clearB  = document.getElementById("ep-clear");
+const railEl  = document.getElementById("ep-rail");
+const bodyEl  = document.getElementById("ep-body");
+const scroll  = document.getElementById("ep-scroll");
+const canvas  = document.getElementById("ep-canvas");
+const stickyEl= document.getElementById("ep-sticky");
+const emptyEl = document.getElementById("ep-empty");
+const prevEl  = document.getElementById("ep-prev");
+const pnameEl = document.getElementById("ep-pname");
+const toneB   = document.getElementById("ep-tone");
+const flyout  = document.getElementById("ep-flyout");
+const msg     = document.getElementById("ep-msg");
+const trigger = document.getElementById("ep-trigger");
+const sendB   = document.getElementById("ep-send");
+const inspectEl = document.getElementById("ep-inspect");
+const roList  = document.getElementById("ro-list");
+
+const S = {
+  open: true, q: "", tone: 0, cols: 9,
+  groups: [], layout: null, lens: [], rowOrdinal: [], flat: [],
+  cursor: { r: 0, c: 0 }, store: {}, picked: null, savedRange: null,
+  flyAnchor: null, suppressClick: false, pressTimer: null, hoverTimer: null
+};
+
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const shown = e => toneCapable(e.char) ? applyTone(e.char, S.tone) : e.char;
+
+// --- groups for the current query --------------------------------------
+function computeGroups(){
+  if (S.q.trim()){
+    const res = searchEmoji(S.q, EMOJI);
+    return [{ name: "Results · " + res.length, icon: "\u{1F50D}", items: res, search: true }];
+  }
+  const out = [];
+  const top = frecTop(S.store, Date.now(), 18).map(t => BY_CHAR.get(t.ch)).filter(Boolean);
+  if (top.length) out.push({ name: "Frequently used", icon: "⏱️", items: top });
+  GROUPS.forEach(g => out.push({ name: g.name, icon: g.icon, items: g.items }));
+  return out;
+}
+
+function relayout(){
+  S.groups = computeGroups();
+  S.layout = buildLayout(S.groups, S.cols, HDR_H, ROW_H);
+  S.lens = []; S.rowOrdinal = [];
+  S.layout.rows.forEach(r => {
+    if (r.type === "cells"){ S.rowOrdinal.push(S.lens.length); S.lens.push(r.to - r.from); }
+    else S.rowOrdinal.push(-1);
+  });
+  if (S.cursor.r >= S.lens.length) S.cursor = { r: 0, c: 0 };
+  const none = S.lens.length === 0;
+  bodyEl.classList.toggle("empty", none);
+  if (none) emptyEl.innerHTML = "No emoji match <b>" + esc(normalize(S.q)) + "</b><br><span style='opacity:.7'>the ranker returned zero rows &mdash; try <code>fire</code>, <code>hea</code> or <code>lol</code></span>";
+  scroll.setAttribute("aria-rowcount", String(S.layout.rows.length));
+  buildRail();
+  paint();
+}
+
+function buildRail(){
+  railEl.innerHTML = S.groups.map((g, i) =>
+    `<button class="ep-chip" role="tab" data-gi="${i}" title="${esc(g.name)}" aria-label="${esc(g.name)}">${g.icon}</button>`).join("");
+}
+
+// --- the windowed paint -------------------------------------------------
+function paint(){
+  const L = S.layout, st = scroll.scrollTop, vh = scroll.clientHeight || 288;
+  const R = visibleRange(L, st, vh, OVERSCAN);
+  canvas.style.height = L.total + "px";
+  const w = (100 / S.cols).toFixed(4) + "%";
+  let html = "", drawn = 0;
+  for (let i = R.first; i <= R.last; i++){
+    const row = L.rows[i], off = L.offsets[i], h = L.heights[i];
+    drawn++;
+    if (row.type === "header"){
+      html += `<div class="ep-hd" role="row" style="top:${off}px;height:${h}px"><span role="gridcell">${esc(S.groups[row.gi].name)}</span></div>`;
+      continue;
+    }
+    const items = S.groups[row.gi].items, ord = S.rowOrdinal[i];
+    let cells = "";
+    for (let k = row.from; k < row.to; k++){
+      const e = items[k], col = k - row.from;
+      const cur = ord === S.cursor.r && col === S.cursor.c;
+      const tc = toneCapable(e.char);
+      cells += `<button class="ep-cell${cur ? " cur" : ""}${tc ? " tone" : ""}" role="gridcell"`
+            + ` style="width:${w};height:${h}px" data-row="${ord}" data-col="${col}"`
+            + ` tabindex="${cur ? 0 : -1}" aria-label="${esc(e.name)}" title="${esc(e.name)}">${shown(e)}</button>`;
+    }
+    html += `<div class="ep-row" role="row" style="top:${off}px;height:${h}px">${cells}</div>`;
+  }
+  canvas.innerHTML = html;
+
+  // sticky header, pushed up by the next one
+  const si = stickyRowAt(L, st);
+  if (si >= 0 && L.rows[si]){
+    stickyEl.style.height = HDR_H + "px";
+    stickyEl.innerHTML = `<span>${esc(S.groups[L.rows[si].gi].name)}</span>`;
+    let push = 0;
+    for (let j = si + 1; j < L.rows.length; j++){
+      if (L.rows[j].type !== "header") continue;
+      const d = L.offsets[j] - st;
+      if (d < HDR_H) push = d - HDR_H;
+      break;
+    }
+    stickyEl.style.transform = "translateY(" + push + "px)";
+    railEl.querySelectorAll(".ep-chip").forEach(c => c.classList.toggle("on", +c.dataset.gi === L.rows[si].gi));
+  }
+  S.drawn = drawn;
+  readout();
+}
+
+// --- picking ------------------------------------------------------------
+function itemAtCursor(){
+  const L = S.layout;
+  for (let i = 0; i < L.rows.length; i++){
+    if (S.rowOrdinal[i] !== S.cursor.r) continue;
+    const row = L.rows[i], items = S.groups[row.gi].items;
+    return items[row.from + S.cursor.c] || null;
+  }
+  return null;
+}
+function saveRange(){
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount && msg.contains(sel.anchorNode)) S.savedRange = sel.getRangeAt(0).cloneRange();
+}
+function insertAtCaret(text){
+  let range = S.savedRange;
+  if (!range || !msg.contains(range.startContainer)){
+    range = document.createRange(); range.selectNodeContents(msg); range.collapse(false);
+  }
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node); range.collapse(true);
+  S.savedRange = range.cloneRange();
+  const sel = window.getSelection();
+  if (sel){ sel.removeAllRanges(); sel.addRange(range); }
+}
+function pick(e, charOverride){
+  const ch = charOverride || shown(e);
+  frecPick(S.store, e.char, Date.now());
+  S.picked = { e, ch };
+  insertAtCaret(ch);
+  showInspect(ch, e);
+  if (!S.q.trim()) relayout(); else { paint(); }
+}
+function showInspect(ch, e){
+  const inf = inspect(ch);
+  prevEl.textContent = ch;
+  pnameEl.innerHTML = "<b>" + esc(e.name) + "</b>" + esc(e.group || "") + (inf.tone ? " · tone " + inf.tone : "");
+  const rows = inf.codePoints.map((cp, i) =>
+    `<tr><td class="k">${inf.hex[i]}</td><td class="v">${cp}</td><td class="${/ZWJ|VS1/.test(inf.notes[i]) ? "z" : "m"}">${esc(inf.notes[i])}</td></tr>`).join("");
+  inspectEl.innerHTML =
+    `<h4>Code-point inspector &mdash; [...str] on the picked emoji</h4>`
+    + `<div><span class="m">picked</span> <span style="font-size:17px">${ch}</span> `
+    + `<span class="m">&nbsp;name</span> <span class="v">${esc(e.name)}</span></div>`
+    + `<div><span class="m">str.length (UTF-16 units)</span> <span class="v">${inf.units}</span>`
+    + ` &nbsp;<span class="m">[...str].length (code points)</span> <span class="v">${inf.codePoints.length}</span>`
+    + ` &nbsp;<span class="m">Intl.Segmenter graphemes</span> <span class="v">${inf.graphemes}</span></div>`
+    + `<table>${rows}</table>`
+    + `<div class="m">${inf.hasZWJ ? "ZWJ sequence — separate emoji welded into one glyph. " : ""}`
+    + `${inf.hasVS16 ? "VS16 present — forces the emoji (not text) presentation. " : ""}`
+    + `${toneCapable(e.char) ? "tone-capable — exactly one Emoji_Modifier_Base code point." : "not tone-capable."}</div>`;
+}
+
+// --- read-out -----------------------------------------------------------
+function readout(){
+  const nq = normalize(S.q);
+  const hist = tierHistogram(S.q, EMOJI);
+  const count = S.groups.reduce((a, g) => a + (g.search ? g.items.length : 0), 0);
+  const top = frecTop(S.store, Date.now(), 5);
+  const cur = itemAtCursor();
+  const row = (k, v) => `<div class="flex justify-between gap-2"><span class="text-slate-500">${k}</span><span class="font-semibold text-right">${v}</span></div>`;
+  roList.innerHTML =
+      row("dataset", `<span class="pill mono">${EMOJI.length}</span>`)
+    + row("query &rarr; normalised", nq ? `<span class="pill mono">${esc(nq)}</span>` : `<span class="pill mono">&mdash;</span>`)
+    + row("matches", nq ? `<span class="pill g mono">${count}</span>` : `<span class="pill mono">all</span>`)
+    + (nq ? `<div class="text-xs text-slate-500 pt-1">tiers &nbsp;`
+        + TIER_LABEL.map((l, i) => `<span class="pill ${hist[i] ? "a" : ""} mono" style="margin:1px">${i}:${hist[i]}</span>`).join("")
+        + `</div>` : "")
+    + row("columns (measured)", `<span class="pill mono">${S.cols}</span>`)
+    + row("rows in DOM / total", `<span class="pill g mono">${S.drawn || 0}</span> <span class="pill mono">${S.layout ? S.layout.rows.length : 0}</span>`)
+    + row("canvas height", `<span class="pill mono">${S.layout ? S.layout.total : 0}px</span>`)
+    + row("cursor (row, col)", `<span class="pill mono">${S.cursor.r}, ${S.cursor.c}</span>`)
+    + row("under cursor", cur ? `<span class="ep-emoji">${shown(cur)}</span> <span class="text-xs">${esc(cur.name)}</span>` : "&mdash;")
+    + row("skin tone", `<span class="pill mono">${TONE_NAMES[S.tone]}</span>`)
+    + `<div class="pt-1"><div class="text-slate-500 text-xs mb-1">frecency top 5 (score, picks)</div>`
+    + (top.length ? top.map(t => `<div class="flex justify-between gap-2 text-xs"><span class="ep-emoji" style="font-size:16px">${t.ch}</span><span class="pill mono">${t.s.toFixed(3)}</span><span class="pill mono">${t.count}</span></div>`).join("")
+                  : `<div class="text-xs text-slate-400">pick a few &mdash; the row appears and reorders</div>`)
+    + `</div>`;
+}
+
+// --- tone flyout --------------------------------------------------------
+function openFlyout(anchorEl, baseChar, onPick){
+  const box = pop.getBoundingClientRect(), a = anchorEl.getBoundingClientRect();
+  flyout.innerHTML = TONE_NAMES.map((n, t) =>
+    `<button role="menuitem" data-t="${t}" class="${t === S.tone ? "on" : ""}" title="${n}" aria-label="${n}">${applyTone(baseChar, t)}</button>`).join("");
+  flyout.classList.add("on");
+  const fw = flyout.offsetWidth, fh = flyout.offsetHeight;
+  let left = a.left - box.left + a.width / 2 - fw / 2;
+  left = Math.max(4, Math.min(box.width - fw - 4, left));
+  let top = a.top - box.top - fh - 4;
+  if (top < 2) top = a.bottom - box.top + 4;
+  flyout.style.left = left + "px"; flyout.style.top = top + "px";
+  S.flyAnchor = onPick;
+}
+function closeFlyout(){ flyout.classList.remove("on"); S.flyAnchor = null; }
+flyout.addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const t = +b.dataset.t;
+  if (S.flyAnchor) S.flyAnchor(t);
+  closeFlyout();
+});
+
+// --- events -------------------------------------------------------------
+qEl.addEventListener("input", () => {
+  S.q = qEl.value; bar.classList.toggle("has", !!S.q);
+  S.cursor = { r: 0, c: 0 }; scroll.scrollTop = 0; relayout();
+});
+clearB.onclick = () => { qEl.value = ""; S.q = ""; bar.classList.remove("has"); S.cursor = { r: 0, c: 0 }; scroll.scrollTop = 0; relayout(); qEl.focus(); };
+
+scroll.addEventListener("scroll", paint, { passive: true });
+
+railEl.addEventListener("click", ev => {
+  const c = ev.target.closest(".ep-chip"); if (!c) return;
+  const gi = +c.dataset.gi, L = S.layout;
+  for (let i = 0; i < L.rows.length; i++)
+    if (L.rows[i].type === "header" && L.rows[i].gi === gi){ scroll.scrollTop = L.offsets[i]; break; }
+  paint();
+});
+
+canvas.addEventListener("click", ev => {
+  const b = ev.target.closest(".ep-cell"); if (!b) return;
+  if (S.suppressClick){ S.suppressClick = false; return; }
+  S.cursor = { r: +b.dataset.row, c: +b.dataset.col };
+  const e = itemAtCursor(); if (e) pick(e);
+});
+canvas.addEventListener("pointerdown", ev => {
+  const b = ev.target.closest(".ep-cell"); if (!b) return;
+  S.cursor = { r: +b.dataset.row, c: +b.dataset.col };
+  const e = itemAtCursor();
+  if (!e || !toneCapable(e.char)) return;
+  clearTimeout(S.pressTimer);
+  S.pressTimer = setTimeout(() => {
+    S.suppressClick = true;
+    openFlyout(b, e.char, t => pick(e, applyTone(e.char, t)));
+  }, 420);
+});
+["pointerup", "pointerleave", "pointercancel"].forEach(t => canvas.addEventListener(t, () => clearTimeout(S.pressTimer)));
+canvas.addEventListener("mouseover", ev => {
+  const b = ev.target.closest(".ep-cell");
+  clearTimeout(S.hoverTimer);
+  if (!b) return;
+  const r = +b.dataset.row, c = +b.dataset.col;
+  S.hoverTimer = setTimeout(() => {
+    const save = S.cursor; S.cursor = { r, c };
+    const e = itemAtCursor(); S.cursor = save;
+    if (e && toneCapable(e.char)) openFlyout(b, e.char, t => pick(e, applyTone(e.char, t)));
+  }, 700);
+});
+pop.addEventListener("mouseleave", () => { clearTimeout(S.hoverTimer); closeFlyout(); });
+
+toneB.onclick = () => openFlyout(toneB, "✋", t => {
+  S.tone = t;
+  toneB.textContent = applyTone("✋", t);
+  toneB.setAttribute("aria-label", TONE_NAMES[t] + " skin tone");
+  paint();
+});
+
+function ensureCursorVisible(){
+  const L = S.layout;
+  for (let i = 0; i < L.rows.length; i++){
+    if (S.rowOrdinal[i] !== S.cursor.r) continue;
+    const top = L.offsets[i], bot = top + L.heights[i], vh = scroll.clientHeight;
+    if (top - HDR_H < scroll.scrollTop) scroll.scrollTop = Math.max(0, top - HDR_H);
+    else if (bot > scroll.scrollTop + vh) scroll.scrollTop = bot - vh;
+    return;
+  }
+}
+const DIRS = { ArrowRight: "right", ArrowLeft: "left", ArrowDown: "down", ArrowUp: "up", Home: "home", End: "end" };
+pop.addEventListener("keydown", ev => {
+  if (DIRS[ev.key]){
+    if (!S.lens.length) return;
+    ev.preventDefault(); closeFlyout();
+    S.cursor = moveCursor(S.lens, S.cursor, DIRS[ev.key]);
+    paint(); ensureCursorVisible(); paint();
+    const cell = canvas.querySelector(".ep-cell.cur"); if (cell) cell.focus({ preventScroll: true });
+    return;
+  }
+  if (ev.key === "Enter"){ const e = itemAtCursor(); if (e){ ev.preventDefault(); pick(e); } return; }
+  if (ev.key === "Escape"){ ev.preventDefault(); if (flyout.classList.contains("on")) closeFlyout(); else closePicker(); return; }
+  if (ev.target !== qEl){
+    if (ev.key === "/"){ ev.preventDefault(); qEl.focus(); qEl.select(); return; }
+    if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) qEl.focus();
+  }
+});
+
+function openPicker(){
+  S.open = true; stage.classList.add("open");
+  trigger.setAttribute("aria-expanded", "true");
+  relayout(); qEl.focus();
+}
+function closePicker(){
+  S.open = false; stage.classList.remove("open"); closeFlyout();
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.focus();
+}
+trigger.onclick = () => S.open ? closePicker() : openPicker();
+sendB.onclick = () => { msg.textContent = ""; S.savedRange = null; msg.focus(); };
+["keyup", "mouseup", "blur"].forEach(t => msg.addEventListener(t, saveRange));
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && S.open && !pop.contains(ev.target)) closePicker();
+});
+
+new ResizeObserver(entries => {
+  const w = entries[0].contentRect.width;
+  const cols = Math.max(6, Math.min(12, Math.floor(w / CELL)));
+  if (cols !== S.cols){ S.cols = cols; S.cursor = { r: 0, c: 0 }; relayout(); }
+  else paint();
+}).observe(scroll);
+
+// --- boot: seed a caret in the MIDDLE so insertion is visibly at the caret
+msg.textContent = "Ship it  and tell the team";
+(function seedCaret(){
+  const r = document.createRange();
+  r.setStart(msg.firstChild, 8); r.collapse(true);
+  S.savedRange = r;
+})();
+S.cols = Math.max(6, Math.min(12, Math.floor((scroll.clientWidth || 330) / CELL)));
+["\u{1F680}", "✅", "\u{1F525}", "\u{1F44D}", "\u{1F602}", "\u{1F680}", "❤️", "\u{1F680}", "\u{1F44D}"]
+  .forEach((c, i) => { const e = BY_CHAR.get(c); if (e) frecPick(S.store, e.char, Date.now() - (9 - i) * 1000 * 60 * 37); });
+relayout();
+showInspect("\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}", BY_CHAR.get("\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}"));
+
+// ===== UNDERSTAND step engine ==========================================
+const CONCEPT_STEPS = [
+ { title:"1. One array drives every pixel",
+   why:"The first instinct is to hand-write the category tabs, then hand-write the rows, then hand-write a separate search index — and now the same list exists in four places and drifts. Put everything in one array of {char, name, keywords, group} and derive the rest: the rail is a map over the groups, the rows are a ceil() of each group's length, the results are a filter, and the preview reads the entry you clicked. Adding an emoji becomes one line, and no render path can disagree with another. Store the original position as a field while you expand the data, because that index is what makes the ranking deterministic later. This is the same discipline as a spreadsheet's sparse map or an inbox's flat message array: the component is a function of its data, not a pile of markup.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">{ char:"\u{1F525}",<br>&nbsp;&nbsp;name:"fire",<br>&nbsp;&nbsp;keywords:["lit","flame","hot"],<br>&nbsp;&nbsp;group:"Animals &amp; Nature", i:212 }<br><br>rail &larr; groups&nbsp;&nbsp;rows &larr; ceil(len/cols)<br>results &larr; filter&nbsp;&nbsp;preview &larr; the entry</div>',
+   code:"let seq = 0;\nconst GROUPS = RAW.map((g, gi) => ({\n  name: g.name, icon: g.icon, gi,\n  items: g.rows.map(([char, name, kw]) => ({\n    char, name, gi, group: g.name,\n    keywords: kw ? kw.split(\" \") : [],\n    nname: normalize(name),        // normalised ONCE\n    nkw:   normalize(kw || \"\"),\n    i:     seq++                   // stable dataset order\n  }))\n}));\nconst EMOJI = GROUPS.flatMap(g => g.items);" },
+
+ { title:"2. Normalise both sides, exactly once",
+   why:"Search bugs are almost always case and punctuation bugs. Rather than defending against them at every comparison, define one normaliser and apply it in two places only: over every name and keyword when the dataset is expanded, and over the query on each keystroke. After that the matcher compares plain lowercase strings and has no idea that colons or capitals ever existed. Keep digits and hyphens, because 1st place medal and heart-eyes are genuine tokens, and turn underscores and colons into spaces so people who type :heart_eyes: out of habit still land somewhere sensible. Doing this at load also means the per-keystroke cost is one normalise plus a linear scan, not a normalise per entry per keystroke.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">":JOY:" &rarr; "joy"<br>"heart_eyes" &rarr; "heart eyes"<br>"&nbsp;&nbsp;Red&nbsp;&nbsp;&nbsp;Heart " &rarr; "red heart"<br>"1st" &rarr; "1st"&nbsp;&nbsp;"heart-eyes" &rarr; "heart-eyes"<br><br>load: names + keywords&nbsp;&nbsp;keystroke: query</div>',
+   code:"function normalize(s){\n  return String(s)\n    .toLowerCase()\n    .replace(/[_:]+/g, \" \")           // :heart_eyes: -> heart eyes\n    .replace(/[^a-z0-9 +-]+/g, \" \")   // keep digits, hyphen, plus\n    .replace(/\\s+/g, \" \")\n    .trim();\n}" },
+
+ { title:"3. Tiers beat fuzzy scores",
+   why:"A weighted numeric score feels clever until somebody asks why the third result beat the second and the honest answer is that 0.62 happened to exceed 0.58. Tiers make the answer sayable out loud: an exact name is better than a word inside the name, which is better than a keyword, which is better than a substring found anywhere. Each entry gets the best tier it can reach and everything else about it is irrelevant, so the ranker is a handful of string tests with no magic constants. The word-start test collapses to one line if you prepend a space to both the haystack and the needle, and because the tiers are ordered you get an invariant strong enough to assert exhaustively in a test: no lower tier ever outranks a higher one.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">query "fire"<br>0 exact name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; \u{1F525} fire<br>1 name word-start &rarr; \u{1F692} fire engine<br>2 keyword start&nbsp;&nbsp;&nbsp;&rarr; ❤️‍\u{1F525} heart on fire<br>3 substring&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; \u{1F9EF} fire extinguisher<br><br>best tier wins &middot; no weights to tune</div>',
+   code:"const T_EXACT = 0, T_NAME = 1, T_KEY = 2, T_SUB = 3, T_NONE = 99;\n\nfunction tierOf(e, q){\n  if (!q) return T_NONE;\n  if (e.nname === q)                     return T_EXACT;\n  if ((\" \" + e.nname).includes(\" \" + q)) return T_NAME;   // word-start\n  if ((\" \" + e.nkw).includes(\" \" + q))   return T_KEY;\n  if (e.nname.includes(q) || e.nkw.includes(q)) return T_SUB;\n  return T_NONE;\n}" },
+
+ { title:"4. Deterministic tie-breaks make search feel stable",
+   why:"Within a tier there are often dozens of equals, and if their order is left to whatever the engine's sort happens to do, the list visibly reshuffles as you type and the first result — the one Enter is about to pick — becomes a lottery. Break ties by name length first: the shortest name containing the query is nearly always the one meant, which is why hea puts red heart above heart on fire. Then break the remaining ties by the original dataset index so the ordering is total and reproducible. Keep the whole ranker a pure function of (query, dataset) that reads no component state, and it becomes something you can hand to a brute-force scorer in a test and compare element by element.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">sort by<br>&nbsp;&nbsp;1. tier&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(0 &lt; 1 &lt; 2 &lt; 3)<br>&nbsp;&nbsp;2. name.length&nbsp;&nbsp;(shortest first)<br>&nbsp;&nbsp;3. dataset index (stable)<br><br>"hea" &rarr; red heart &middot; heart on fire<br>total order &rArr; the list never jitters</div>',
+   code:"function searchEmoji(query, data){\n  const q = normalize(query);\n  if (!q) return [];\n  const hits = [];\n  for (const e of data){\n    const t = tierOf(e, q);\n    if (t !== T_NONE) hits.push({ e, t });\n  }\n  hits.sort((a, b) =>\n       a.t - b.t\n    || a.e.nname.length - b.e.nname.length\n    || a.e.i - b.e.i);\n  return hits.map(h => h.e);\n}" },
+
+ { title:"5. A rendered emoji is a grapheme, not a character",
+   why:"Three different numbers describe the same family emoji and mixing them up is the source of nearly every emoji bug you will ever ship. Its .length is 11 because JavaScript strings are UTF-16 code units and four of those emoji need surrogate pairs. Spreading it gives 7, the real code points. Intl.Segmenter gives 1, which is what a human means by a character and what a backspace should delete. Never slice or reverse emoji text with numeric string indexes — you will cut a surrogate pair in half and produce a replacement glyph. Iterate with the spread operator when you care about code points and reach for the segmenter when you care about what is on screen.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">"\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}"<br><br>.length&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; 11&nbsp;&nbsp;UTF-16 units<br>[...str].length &rarr; &nbsp;7&nbsp;&nbsp;code points<br>Segmenter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&rarr; &nbsp;1&nbsp;&nbsp;grapheme<br><br>str[0] &rarr; half a surrogate pair \u{FFFD}</div>',
+   code:"const SEG = new Intl.Segmenter(undefined, { granularity:\"grapheme\" });\n\nfunction inspect(str){\n  const cps = [...str].map(c => c.codePointAt(0));   // NOT str.split(\"\")\n  return {\n    codePoints: cps,\n    hex:       cps.map(c => \"U+\" + c.toString(16).toUpperCase().padStart(4, \"0\")),\n    units:     str.length,                  // UTF-16 units\n    graphemes: [...SEG.segment(str)].length // what a human counts\n  };\n}" },
+
+ { title:"6. VS16 — the invisible presentation switch",
+   why:"Some emoji started life as ordinary text symbols, so the same code point can be drawn two ways: ✔ as monochrome glyph or ✔️ as a colour emoji. U+FE0F, the variation selector-16, is the zero-width character that demands the emoji rendering, and U+FE0E demands the text one. This is why ❤️ is two code points while ❤ is one, why a heart pasted from some sources shows up black-and-white, and why naive equality checks between two visually identical strings fail. Print it in the inspector and it stops being spooky. It also matters for skin tones: once a tone modifier is present it already forces emoji presentation, so a VS16 immediately after the base becomes redundant and should be dropped.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">"❤" &nbsp;&rarr; U+2764&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(text)<br>"❤️" &rarr; U+2764 U+FE0F&nbsp;(emoji)<br><br>✌️ = U+270C U+FE0F<br>✌\u{1F3FD} = U+270C U+1F3FD&nbsp;&nbsp;&larr; VS16 dropped<br><br>zero width, invisible, load-bearing</div>',
+   code:"const cps = [...\"❤️\"].map(c => c.codePointAt(0));\n// [ 0x2764, 0xFE0F ]\n\nCP_NOTE = {\n  0x200D: \"ZWJ · zero width joiner\",\n  0xFE0F: \"VS16 · emoji presentation\",\n  0xFE0E: \"VS15 · text presentation\",\n  0x20E3: \"combining enclosing keycap\"\n};\n// \"#️⃣\" is three code points: 0x23, 0xFE0F, 0x20E3" },
+
+ { title:"7. ZWJ sequences — how four people become one glyph",
+   why:"U+200D, the zero-width joiner, tells the font that the emoji around it should be drawn as a single picture if it knows how. A family is literally man, joiner, woman, joiner, girl, joiner, boy — seven code points that render as one grapheme, and gracefully degrade to four separate people on a font that has never heard of that combination. The same trick builds professions (person + joiner + laptop) and flags (waving flag + joiner + rainbow). Two consequences matter in a picker: you cannot pick these apart with string indexes, and you cannot naively apply a skin tone to them, because a sequence with four people has four bases and no single obvious place for the modifier.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">\u{1F468} ZWJ \u{1F469} ZWJ \u{1F467} ZWJ \u{1F466}<br>= 7 code points &rarr; 1 grapheme \u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}<br><br>\u{1F9D1} ZWJ \u{1F4BB} &rarr; \u{1F9D1}‍\u{1F4BB} technologist<br>\u{1F3F3}️ ZWJ \u{1F308} &rarr; \u{1F3F3}️‍\u{1F308} rainbow flag<br><br>unknown combo &rarr; falls back to the parts</div>',
+   code:"const inf = inspect(\"\\u{1F468}\\u200D\\u{1F469}\\u200D\\u{1F467}\\u200D\\u{1F466}\");\n// inf.codePoints.length === 7\n// inf.graphemes        === 1\n// inf.hasZWJ           === true\n\n// a ZWJ sequence with more than one modifier base\n// cannot take a single skin tone:\nconst baseIdxs = cps => cps\n  .map((c, i) => [c, i])\n  .filter(([c]) => /\\p{Emoji_Modifier_Base}/u.test(String.fromCodePoint(c)))\n  .map(([, i]) => i);" },
+
+ { title:"8. Skin tones: insert after the base, never append",
+   why:"The five Fitzpatrick modifiers U+1F3FB to U+1F3FF are not suffixes, they are combining characters that must directly follow the code point they modify. For a bare hand that is position zero, but for a professions sequence like person-technologist the base is the person and the modifier belongs before the joiner, not at the end of the string. You do not need a hand-maintained table of which emoji accept a tone either: JavaScript regular expressions expose the Unicode property directly, so /\\p{Emoji_Modifier_Base}/u is the whole test. Two more rules finish the job — drop a VS16 that immediately follows the base, since the modifier already forces emoji presentation, and only offer the flyout when the sequence contains exactly one base. The proof that you got the position right is that the segmenter still reports one grapheme.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">\u{1F44B} + \u{1F3FD} &rarr; \u{1F44B}\u{1F3FD}&nbsp;&nbsp;&nbsp;&nbsp;(after the base)<br>\u{1F9D1}‍\u{1F4BB} + \u{1F3FD} &rarr; \u{1F9D1}\u{1F3FD}‍\u{1F4BB}&nbsp;(before the ZWJ)<br>✌️ + \u{1F3FD} &rarr; ✌\u{1F3FD}&nbsp;&nbsp;&nbsp;&nbsp;(VS16 removed)<br>\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466} &rarr; no tone (4 bases)<br><br>still 1 grapheme &rArr; correct position</div>',
+   code:"const TONES = [0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF];\n\nfunction applyTone(str, tone){          // tone: 0 = default\n  const cps = [...stripTone(str)].map(c => c.codePointAt(0));\n  const at  = baseIdxs(cps)[0];\n  if (!tone || at === undefined) return String.fromCodePoint(...cps);\n  let rest = cps.slice(at + 1);\n  if (rest[0] === 0xFE0F) rest = rest.slice(1);   // VS16 now redundant\n  return String.fromCodePoint(...cps.slice(0, at + 1), TONES[tone - 1], ...rest);\n}\nconst toneCapable = str =>\n  baseIdxs([...stripTone(str)].map(c => c.codePointAt(0))).length === 1;" },
+
+ { title:"9. Measure the width, derive the rows",
+   why:"Hardcoding nine columns breaks the moment the picker is dropped in a narrower sidebar, and a CSS media query is answering the wrong question because it measures the viewport rather than the element. A ResizeObserver on the scroll container reports the real content box, the column count is a division by the cell size, and every group's row count is a ceil of its length over that. Recompute the layout only when the column count actually changes, not on every pixel of resize, or you will rebuild the world while somebody drags a window. The output is one flat list of rows — short header rows and taller emoji rows interleaved — plus the cumulative offset of each, which is the structure everything downstream reads.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">width 330 &divide; cell 36 &rarr; 9 columns<br>74 smileys &rarr; ceil(74/9) = 9 rows<br><br>rows: [hdr, cells, cells, ..., hdr, cells]<br>offsets: [0, 26, 64, 102, ...]<br>heights: [26, 38, 38, 38, ...]</div>',
+   code:"function buildLayout(groups, cols, hdrH, rowH){\n  const rows = [], offsets = [], heights = [];\n  let y = 0;\n  const push = (row, h) => { rows.push(row); offsets.push(y); heights.push(h); y += h; };\n  groups.forEach((g, gi) => {\n    if (!g.items.length) return;\n    push({ type:\"header\", gi, label:g.name }, hdrH);\n    const n = Math.ceil(g.items.length / cols);\n    for (let r = 0; r < n; r++)\n      push({ type:\"cells\", gi, from:r*cols, to:Math.min(g.items.length, (r+1)*cols) }, rowH);\n  });\n  return { rows, offsets, heights, total:y };\n}" },
+
+ { title:"10. Windowing: binary search, then draw only that",
+   why:"Rendering every row and letting overflow hide the rest works fine at three hundred emoji and collapses at three thousand — thousands of buttons, thousands of listeners, and a layout pass on every scroll. Instead keep a canvas element with the full computed height so the scrollbar tells the truth, and absolutely position only the rows the viewport can currently see. Because header rows and emoji rows have different heights you cannot divide scrollTop by a constant, but the offsets array is strictly increasing, so a binary search finds the first row whose bottom is past the top edge and a short walk finds the last. Add a couple of overscan rows so a fast flick never reveals a hole, and the DOM holds about a dozen rows no matter how large the dataset becomes.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">scrollTop 640, viewport 288<br>&nbsp;&nbsp;&darr; binary search over offsets<br>first = 18&nbsp;&nbsp;last = 26<br><br>canvas height 2140px (scrollbar is honest)<br>rows in DOM 9 &nbsp;of&nbsp; 57 total</div>',
+   code:"function visibleRange(L, scrollTop, viewportH, overscan){\n  const n = L.rows.length, top = scrollTop, bot = scrollTop + viewportH;\n  if (!n) return { first:0, last:-1 };\n  let lo = 0, hi = n - 1, first = n;\n  while (lo <= hi){                       // first row with bottom > top\n    const mid = (lo + hi) >> 1;\n    if (L.offsets[mid] + L.heights[mid] > top){ first = mid; hi = mid - 1; }\n    else lo = mid + 1;\n  }\n  if (first === n || L.offsets[first] >= bot) return { first:0, last:-1 };\n  let last = first;\n  while (last + 1 < n && L.offsets[last + 1] < bot) last++;\n  return { first:Math.max(0, first - overscan), last:Math.min(n - 1, last + overscan) };\n}" },
+
+ { title:"11. Sticky headers and a rail that syncs both ways",
+   why:"With absolutely positioned rows, CSS position:sticky has nothing to stick to, so the sticky category header becomes a computation — and it is a pleasant one. The current group is the last header whose offset is at or above scrollTop, found by a walk over the same rows array. The push effect, where an outgoing header is nudged up by the incoming one, is one subtraction: if the next header is closer than a header's height, translate the sticky bar by that difference minus its height. The category rail reads the same number to highlight its chip, and clicking a chip simply sets scrollTop to that header's offset. One source of truth, two directions, no separate scroll-spy library and no listener fighting another listener.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">sticky = last header with offset &le; scrollTop<br><br>next header at offset - scrollTop = 11<br>11 &lt; 26 &rArr; translateY(11 - 26) = -15px<br><br>scroll &rarr; chip highlights<br>chip &rarr; scrollTop = offsets[header]</div>',
+   code:"function stickyRowAt(L, scrollTop){\n  let idx = -1;\n  for (let i = 0; i < L.rows.length; i++){\n    if (L.rows[i].type !== \"header\") continue;\n    if (L.offsets[i] <= scrollTop) idx = i; else break;\n  }\n  return idx < 0 ? 0 : idx;\n}\n\n// push the outgoing header up with the incoming one\nlet push = 0;\nfor (let j = si + 1; j < L.rows.length; j++){\n  if (L.rows[j].type !== \"header\") continue;\n  const d = L.offsets[j] - scrollTop;\n  if (d < HDR_H) push = d - HDR_H;\n  break;\n}\nsticky.style.transform = \"translateY(\" + push + \"px)\";" },
+
+ { title:"12. Frecency — a frequency that forgets",
+   why:"A plain counter makes the frequently-used row a museum: the emoji you sent forty times during one launch outranks the one you have used six times today, forever. Multiply the stored score by a half-life decay for the elapsed time before adding one for the new pick, and the list follows what you are doing now while still remembering long-standing habits. Four numbers per emoji are enough — the decayed score, the timestamp it was decayed to, a plain count for display, and the last-used time as a tie-break. The incremental version is mathematically identical to summing a decayed weight over the entire event log, which is the exact property to assert against a brute-force recompute, and it is also why you never have to keep the log.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">half-life 6h<br>score &larr; score &times; 0.5^(&Delta;t / 6h) + 1<br><br>40 picks last month &rarr; ~0.00<br>&nbsp;6 picks today&nbsp;&nbsp;&nbsp;&nbsp;&rarr; ~4.71<br><br>incremental &equiv; &Sigma; 0.5^((now-t)/6h)</div>',
+   code:"const HALF_LIFE = 1000 * 60 * 60 * 6;\nconst decay = (score, dt) => score * Math.pow(0.5, dt / HALF_LIFE);\n\nfunction frecPick(store, char, now){\n  const r = store[char] || { score:0, at:now, count:0, last:0 };\n  store[char] = { score:decay(r.score, now - r.at) + 1, at:now,\n                  count:r.count + 1, last:now };\n}\nconst frecScore = (store, char, now) =>\n  store[char] ? decay(store[char].score, now - store[char].at) : 0;" },
+
+ { title:"13. Keyboard, ARIA grid, and the caret",
+   why:"A picker that can only be clicked is half a component. Model the selection as a {row, col} cursor over the cells rows and every arrow key is three lines: right wraps into the next row, left wraps back into the previous one, up and down clamp the column so a short final row never strands you. Because the cursor is state rather than DOM focus, the virtual grid can throw its nodes away on every scroll without losing the selection — you give only the rendered cell matching the cursor tabindex=\"0\" and leave every other cell at -1, which is the roving tabindex pattern that keeps a grid to a single tab stop. Wrap it in role=grid/row/gridcell so assistive tech announces a grid, send Escape back to the trigger, and finish with the detail users notice first: insert into the contenteditable at the live caret through the Selection and Range API, never by appending to the end.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">&larr;&uarr;&rarr;&darr; 2-D cursor (wraps rows)<br>Enter pick&nbsp;&nbsp;Esc close &rarr; focus trigger<br>/ focus search&nbsp;&nbsp;any letter &rarr; filter<br><br>role=grid &rsaquo; row &rsaquo; gridcell<br>one tabindex=0, all others -1</div>',
+   code:"function moveCursor(lens, cur, dir){          // lens = cells per row\n  let { r, c } = cur;\n  r = Math.min(r, lens.length - 1); c = Math.min(c, lens[r] - 1);\n  if (dir === \"right\"){ if (++c >= lens[r]){ r = (r + 1) % lens.length; c = 0; } }\n  else if (dir === \"left\"){ if (--c < 0){ r = (r - 1 + lens.length) % lens.length; c = lens[r] - 1; } }\n  else if (dir === \"down\" && r < lens.length - 1){ r++; c = Math.min(c, lens[r] - 1); }\n  else if (dir === \"up\"   && r > 0)            { r--; c = Math.min(c, lens[r] - 1); }\n  return { r, c };\n}\n\nrange.deleteContents();\nconst node = document.createTextNode(char);\nrange.insertNode(node);                       // lands AT the caret\nrange.setStartAfter(node); range.collapse(true);" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
