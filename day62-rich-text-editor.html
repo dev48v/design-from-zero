@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 62 &mdash; Rich text editor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; overflow-x: hidden; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .fade-in { animation: fadeIn .4s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .copy-btn:hover { background:#1e293b; }
+  kbd { background:#f1f5f9; border:1px solid #cbd5e1; border-bottom-width:2px; border-radius:5px;
+        padding:1px 6px; font-size:11px; font-weight:700; color:#334155; font-family:inherit; }
+
+  /* ===== read-out + pills (shared dashboard look) ===== */
+  .info-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; background:#eef2ff; color:#4338ca; }
+  .pill.g { background:#d1fae5; color:#047857; } .pill.a { background:#fef3c7; color:#b45309; } .pill.r { background:#fee2e2; color:#b91c1c; }
+  .pill.mono { font-variant-numeric:tabular-nums; letter-spacing:.02em; font-family:"SF Mono",Menlo,Consolas,monospace; }
+  .concept-box { max-width:100%; overflow-x:auto; }
+
+  /* ============================================================
+     THE RICH TEXT EDITOR — the document is { text, marks }, the
+     contenteditable is only a projection of it. Every keystroke is
+     intercepted, applied to the model, re-rendered, and the caret
+     is put back by converting model offsets to DOM points.
+     ============================================================ */
+  .rte-stage {
+    --line:#e2e8f0; --ink:#0f172a; --dim:#64748b; --acc:#4f46e5; --acc-s:#eef2ff; --bg:#ffffff;
+    width:100%; max-width:100%; color:var(--ink);
+    background:var(--bg); border:1px solid #cbd5e1; border-radius:14px; overflow:hidden;
+    box-shadow:0 12px 30px rgba(15,23,42,.10), 0 1px 3px rgba(15,23,42,.08);
+  }
+
+  /* --- toolbar --- */
+  .rte-bar { display:flex; flex-wrap:wrap; align-items:center; gap:3px; padding:6px 7px;
+             border-bottom:1px solid var(--line); background:#f8fafc; }
+  .rte-btn { border:1px solid transparent; background:transparent; cursor:pointer; border-radius:7px;
+             min-width:30px; height:30px; padding:0 7px; font-size:13px; font-family:inherit; color:#334155;
+             display:inline-flex; align-items:center; justify-content:center; gap:5px; line-height:1; }
+  .rte-btn:hover { background:#e2e8f0; }
+  .rte-btn.on { background:var(--acc-s); border-color:#c7d2fe; color:var(--acc); font-weight:700; }
+  .rte-btn:disabled { opacity:.35; cursor:default; }
+  .rte-btn:disabled:hover { background:transparent; }
+  .rte-btn b { font-weight:800; } .rte-btn i { font-style:italic; font-family:Georgia,serif; }
+  .rte-btn s { text-decoration:line-through; }
+  .rte-btn .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12px; }
+  .rte-sep { width:1px; align-self:stretch; margin:2px 4px; background:#cbd5e1; flex:none; }
+  .rte-small { font-size:11px; font-weight:700; letter-spacing:.02em; }
+
+  /* --- link editor row --- */
+  .rte-linkbar { display:none; align-items:center; gap:6px; padding:6px 8px; background:#eef2ff;
+                 border-bottom:1px solid #c7d2fe; flex-wrap:wrap; }
+  .rte-linkbar.on { display:flex; }
+  .rte-linkbar input { flex:1; min-width:120px; border:1px solid #c7d2fe; border-radius:7px; height:28px;
+                       padding:0 8px; font-size:12px; font-family:"SF Mono",Menlo,Consolas,monospace;
+                       background:#fff; color:var(--ink); outline:none; }
+  .rte-linkbar input:focus { box-shadow:0 0 0 2px rgba(79,70,229,.30); }
+  .rte-linkbar label { font-size:11px; font-weight:800; color:#4338ca; text-transform:uppercase; letter-spacing:.06em; }
+
+  /* --- the editable surface --- */
+  .rte-ed { min-height:190px; max-height:340px; overflow-y:auto; overflow-x:hidden; outline:none;
+            padding:14px 15px; font-size:15px; line-height:1.65; white-space:pre-wrap; word-break:break-word;
+            caret-color:var(--acc); background:#fff; }
+  .rte-ed:focus { box-shadow:inset 0 0 0 2px rgba(79,70,229,.22); }
+  .rte-ed.empty::before { content:attr(data-ph); color:#94a3b8; }
+  .rte-ed strong { font-weight:800; }
+  .rte-ed em { font-style:italic; }
+  .rte-ed s { text-decoration:line-through; color:#64748b; }
+  .rte-ed code { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.88em; background:#f1f5f9;
+                 border:1px solid #e2e8f0; border-radius:5px; padding:1px 5px; color:#be123c; }
+  .rte-ed a { color:var(--acc); text-decoration:underline; text-underline-offset:2px; cursor:text; }
+
+  /* --- status bar --- */
+  .rte-status { display:flex; flex-wrap:wrap; gap:5px 12px; align-items:center; padding:7px 10px;
+                border-top:1px solid var(--line); background:#f8fafc; font-size:11px; color:var(--dim);
+                font-variant-numeric:tabular-nums; }
+  .rte-status b { color:var(--ink); font-weight:800; font-family:"SF Mono",Menlo,Consolas,monospace; }
+
+  /* --- inspector cards --- */
+  .rte-panel { background:#0f172a; color:#e2e8f0; font-size:11px; border-radius:12px;
+               font-family:"SF Mono",Menlo,Consolas,monospace; padding:10px 12px; line-height:1.65;
+               overflow-x:auto; max-width:100%; }
+  .rte-panel h4 { color:#f8fafc; font-weight:700; margin:0 0 6px; font-size:10px; letter-spacing:.09em;
+                  text-transform:uppercase; font-family:-apple-system,"Inter",sans-serif; }
+  .rte-panel .k { color:#7dd3fc; } .rte-panel .v { color:#fcd34d; } .rte-panel .m { color:#94a3b8; }
+  .rte-panel .z { color:#f9a8d4; } .rte-panel .g { color:#86efac; } .rte-panel .r { color:#fca5a5; }
+  .rte-panel table { border-collapse:collapse; width:100%; }
+  .rte-panel td, .rte-panel th { padding:1px 9px 1px 0; white-space:nowrap; vertical-align:top; text-align:left; }
+  .rte-panel th { color:#94a3b8; font-weight:600; border-bottom:1px solid #1e293b; padding-bottom:3px; }
+  .rte-panel .sel { background:#1e293b; }
+  .rte-scroller { overflow-x:auto; max-width:100%; }
+
+  .rte-tag { display:inline-block; padding:0 5px; border-radius:4px; font-size:9.5px; font-weight:800;
+             letter-spacing:.04em; text-transform:uppercase; margin-right:3px; }
+  .t-bold { background:#312e81; color:#c7d2fe; } .t-italic { background:#3b0764; color:#e9d5ff; }
+  .t-code { background:#4c0519; color:#fecdd3; } .t-strike { background:#422006; color:#fde68a; }
+  .t-link { background:#083344; color:#a5f3fc; }
+
+  .rte-demo { border:1px dashed #cbd5e1; border-radius:10px; padding:9px 11px; background:#fff; font-size:12px; }
+
+  :focus-visible { outline:2px solid #6366f1; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation:none !important; } }
+  @media (max-width: 1023px) {
+    header.sticky { position:static; }
+    body { overflow-x:hidden; }
+  }
+  @media (max-width: 767px) {
+    header h1 { max-height:9rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .rte-ed { min-height:150px; max-height:260px; font-size:14.5px; }
+    .rte-btn { min-width:28px; height:28px; padding:0 6px; font-size:12px; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <a href="../designfromzero.php" title="back" class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 hover:text-indigo-600" style="text-decoration:none;">&larr; back</a>
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+    <div class="min-w-0">
+      <div class="text-xs text-indigo-600 font-bold uppercase tracking-wider">DesignFromZero &middot; Day 62</div>
+      <h1 class="text-xl font-bold">Rich text editor &mdash; a WYSIWYG <code>contenteditable</code> whose source of truth is a <strong>document model</strong>, never the DOM. The whole document is <code>{ text, marks }</code>: one plain string plus a flat list of half-open intervals <code>{from, to, type}</code> for <strong>bold</strong>, <em>italic</em>, <code>code</code>, <s>strike</s> and link. Every keystroke is intercepted at <code>beforeinput</code>, applied to that model, re-rendered, and the caret is put back &mdash; so the browser never gets to invent markup. <strong><code>toggleMark</code> has real semantics</strong>: if <em>every</em> character in the range already carries the mark it is removed, otherwise it is added &mdash; the behaviour every editor has and almost nobody gets right first try. Marks are kept <strong>canonical</strong> by a normaliser that sorts, merges adjacent and overlapping same-type intervals and drops empty ones, and the page shows the raw list beside the normalised one. Positions are <strong>mapped, not rebuilt</strong>: one <code>mapPos</code> function moves every endpoint through an insert or a delete under a stated <strong>left-exclusive, right-inclusive</strong> boundary rule, so typing at the right edge of bold extends it, typing at the left edge does not, a delete across a mark <strong>clips</strong> it and a delete that swallows one <strong>erases</strong> it. Because intervals overlap you <em>cannot</em> wrap each one in its own tag, so a <strong>boundary sweep</strong> flattens them into non-overlapping <strong>style runs</strong> that are emitted as correctly nested inline elements in a fixed order. Selection is bridged both ways by walking text nodes and <code>&lt;br&gt;</code>s, which is exactly where naive editors lose the caret. Plus <strong>undo with coalescing</strong> (consecutive characters collapse into one entry, a mark change or a caret jump breaks the run), <strong>paste sanitisation</strong> through an allowlist that converts <code>b/strong/i/em/code/s/a</code> into marks and counts what it threw away, and <strong>markdown input rules</strong> that rewrite <code>**x**</code>, <code>_x_</code>, <code>~~x~~</code> and backticks into marks as you type. The pure core is fuzz-tested against a completely different representation &mdash; one <code>Set</code> per character &mdash; in a Node script. No libraries, no images.</h1>
+    </div>
+    <div class="flex gap-2" id="tabs">
+      <button data-tab="look"       class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">&#128065; LOOK</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#129504; UNDERSTAND</button>
+      <button data-tab="build"      class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 sm:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center">
+        <h2 class="text-2xl font-bold mb-1">The <span class="text-indigo-600">model</span> is the document. The <span class="text-purple-600">DOM</span> is just a picture of it.</h2>
+        <p class="text-slate-500 mb-6 max-w-3xl mx-auto"><strong>Type anywhere</strong> and watch the mark intervals move in the panel on the right &mdash; type at the <em>right</em> edge of a bold run and it grows, type at the <em>left</em> edge and it does not. <strong>Select a range and press <kbd>Ctrl</kbd>+<kbd>B</kbd></strong>: if every character already carries bold it is removed, otherwise it is added &mdash; select a half-bold range twice to see both branches. <strong>Delete across a mark</strong> and watch it get clipped; delete a whole mark and watch it vanish from the list. <strong>Type <code>**like this**</code></strong> or a backtick pair and the markdown rule rewrites it into a mark and eats the source characters. <strong>Hit the paste button</strong> to run a hostile Word-style HTML blob through the allowlist and read exactly how many nodes and attributes were rejected. Then <kbd>Ctrl</kbd>+<kbd>Z</kbd> &mdash; a whole typed word undoes as one step because consecutive insertions coalesce.</p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-3xl p-3 sm:p-6 mb-5">
+        <div class="flex flex-col lg:flex-row gap-6 items-start justify-center">
+
+          <!-- the widget -->
+          <div class="flex-1 w-full min-w-0">
+            <div class="rte-stage" id="rte-stage">
+              <div class="rte-bar" id="rte-bar" role="toolbar" aria-label="Formatting">
+                <button class="rte-btn" id="rte-b"      data-mark="bold"   title="Bold (Ctrl+B)"   aria-label="Bold"><b>B</b></button>
+                <button class="rte-btn" id="rte-i"      data-mark="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+                <button class="rte-btn" id="rte-code"   data-mark="code"   title="Inline code"     aria-label="Inline code"><span class="mono">&lt;/&gt;</span></button>
+                <button class="rte-btn" id="rte-strike" data-mark="strike" title="Strikethrough"   aria-label="Strikethrough"><s>S</s></button>
+                <button class="rte-btn" id="rte-link"                      title="Link (Ctrl+K)"   aria-label="Link">&#128279;</button>
+                <span class="rte-sep"></span>
+                <button class="rte-btn" id="rte-undo" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
+                <button class="rte-btn" id="rte-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
+                <span class="rte-sep"></span>
+                <button class="rte-btn rte-small" id="rte-selall" title="Select the whole document">Select all</button>
+                <button class="rte-btn rte-small" id="rte-paste-demo" title="Run a hostile HTML blob through the paste allowlist">Paste HTML</button>
+                <button class="rte-btn rte-small" id="rte-reset" title="Restore the seed document">Reset</button>
+                <span class="rte-sep"></span>
+                <button class="rte-btn rte-small on" id="rte-md" title="Markdown input rules" aria-pressed="true">md rules</button>
+                <button class="rte-btn rte-small on" id="rte-inspect" title="Show the mark array and the computed style runs" aria-pressed="true">Inspect</button>
+              </div>
+
+              <div class="rte-linkbar" id="rte-linkbar">
+                <label for="rte-href">href</label>
+                <input id="rte-href" type="text" spellcheck="false" autocomplete="off" placeholder="https://example.com" />
+                <button class="rte-btn rte-small on" id="rte-link-ok">Apply</button>
+                <button class="rte-btn rte-small" id="rte-link-rm">Remove</button>
+                <button class="rte-btn rte-small" id="rte-link-x" aria-label="Close">&times;</button>
+              </div>
+
+              <div class="rte-ed" id="rte-ed" contenteditable="true" spellcheck="false" role="textbox"
+                   aria-multiline="true" aria-label="Rich text editor"
+                   data-ph="Type here — every keystroke goes through the model first…"></div>
+
+              <div class="rte-status" id="rte-status"></div>
+            </div>
+
+            <div class="mt-3 space-y-3" id="rte-lower">
+              <div class="rte-panel" id="rte-map"></div>
+              <div class="rte-panel" id="rte-norm"></div>
+              <div class="rte-panel" id="rte-paste"></div>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-3">A real editor &mdash; type in it, select in it, paste into it, undo it. Every number on this page was computed by the code running beside it.</p>
+          </div>
+
+          <!-- the read-out -->
+          <div class="lg:w-[22rem] flex-shrink-0 w-full min-w-0">
+            <div class="info-card p-4 mb-3">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Live document model</div>
+              <div class="rte-panel" id="rte-model"></div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">This panel is not a description of the editor &mdash; it <em>is</em> the editor. The contenteditable above is redrawn from exactly these two fields after every single change.</p>
+            </div>
+            <div class="info-card p-4 mb-3">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Computed style runs</div>
+              <div class="rte-panel" id="rte-runs"></div>
+              <p class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">Marks overlap; tags cannot. The sweep turns overlapping intervals into a strip of non-overlapping runs that tile the text exactly, and those runs are what get nested into elements.</p>
+            </div>
+            <div class="info-card p-4">
+              <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Undo history</div>
+              <div class="rte-panel" id="rte-hist"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-8 text-center max-w-3xl mx-auto">Every editor you have ever used &mdash; Google Docs, Notion, Slack, your IDE &mdash; keeps a document model and treats the screen as a projection of it. The moment you let <code>document.execCommand</code> or a stray <code>&lt;span style&gt;</code> become the truth, undo stops being reversible, collaboration stops being expressible and copy-paste starts smuggling other people&rsquo;s CSS into your product. <em>Tomorrow: Notion-style toggle blocks &mdash; nested collapsible content.</em></p>
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6 grid lg:grid-cols-5 gap-6">
+    <aside class="lg:col-span-2 min-w-0">
+      <h3 class="font-bold text-lg mb-3">How a rich text editor works</h3>
+      <p class="text-sm text-slate-500 mb-4">Click any step.</p>
+      <div id="steps" class="space-y-2"></div>
+      <div class="mt-4 flex gap-2 flex-wrap">
+        <button id="prev-s" class="bg-slate-200 px-4 py-2 rounded-lg font-semibold text-sm">&larr; Prev</button>
+        <button id="next-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">Next &rarr;</button>
+        <button id="auto" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold text-sm">&#9654; Auto-play</button>
+      </div>
+    </aside>
+    <div class="lg:col-span-3 space-y-4 min-w-0">
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CONCEPT</div><div id="concept" class="min-h-[200px] flex items-center justify-center"><div class="text-slate-400 text-sm">Click a step &rarr;</div></div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">WHY</div><div id="why" class="text-slate-700">&mdash;</div></div>
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6"><div class="text-xs uppercase font-bold text-indigo-600 tracking-wider mb-2">CODE FOR THIS STEP</div><pre id="code"></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="max-w-5xl mx-auto p-4 sm:p-8">
+    <h2 class="text-3xl font-bold mb-2">&#128296; Build it yourself</h2>
+    <p class="text-slate-500 mb-8">A rich text editor is not a styled <code>contenteditable</code>. It is a <strong>document model</strong> with a renderer bolted to the front and an input interceptor bolted to the back. Get the order right and everything downstream &mdash; undo, collaboration, paste, markdown shortcuts, serialisation &mdash; becomes a small pure function over <code>{ text, marks }</code>. Get it wrong and you spend the rest of the project fighting the browser for control of markup you did not write. Everything below is vanilla HTML, CSS and JavaScript: no editor framework, no schema library, no <code>execCommand</code>.</p>
+    <ol class="space-y-6">
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">1</div><h3 class="font-bold text-lg">Define the document, and make it boring</h3></div>
+        <p class="text-sm text-slate-600 mb-3">The document is a plain string plus a flat list of <strong>half-open</strong> intervals. Half-open (<code>from</code> inclusive, <code>to</code> exclusive) is not a style choice: it makes length <code>to - from</code>, makes two ranges adjacent when <code>a.to === b.from</code>, and makes a zero-length range an obvious <code>from === to</code> rather than something you have to reason about. Every mark carries only a type; a link additionally carries an <code>href</code>. Nothing else &mdash; no node ids, no parent pointers, no DOM references. If a piece of state cannot survive being <code>JSON.stringify</code>&#39;d and read back, it does not belong in the model.</p>
+        <div class="relative"><pre>// the entire document
+const doc = {
+  text: "The document model is the truth.",
+  marks: [
+    { from: 4,  to: 18, type: "bold" },
+    { from: 12, to: 31, type: "italic" },
+    { from: 0,  to: 3,  type: "link", href: "https://example.com" }
+  ]
+};
+
+// half-open: length is to - from, adjacency is a.to === b.from,
+// and an empty range is exactly from === to.
+const MARK_ORDER = ["link", "bold", "italic", "strike", "code"];
+const markKey = m =&gt; m.type === "link" ? "link\u0000" + (m.href || "") : m.type;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3">The <code>markKey</code> detail earns its keep immediately: two bold intervals that touch are the same mark and must merge, but two links that touch with <em>different</em> hrefs are not and must not. Keying on type-plus-attributes lets one normaliser handle both without a special case.</p>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">2</div><h3 class="font-bold text-lg">Normalise, so there is one representation of every document</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Without a canonical form the same visual document has infinitely many mark lists, and every comparison you ever write &mdash; is this dirty, did this change, do these two clients agree &mdash; becomes unreliable. So define one: clamp to the text, drop empties, sort, and merge anything of the same key that overlaps or touches. Run it at the end of <em>every</em> operation. It is around twenty lines and it retires an entire family of bugs, including the classic where bolding a word twice leaves two identical intervals stacked on each other and the next toggle only removes one.</p>
+        <div class="relative"><pre>function normalizeMarks(marks, len){
+  const buckets = new Map();
+  for (const m of marks || []){
+    if (!m || !m.type) continue;
+    let f = Math.min(m.from, m.to), t = Math.max(m.from, m.to);   // from &gt; to is fine
+    f = Math.max(0, f); t = Math.max(0, t);
+    if (typeof len === "number"){ f = Math.min(f, len); t = Math.min(t, len); }
+    if (f &gt;= t) continue;                                          // drop empties
+    const k = markKey(m);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push([f, t]);
+  }
+  const out = [];
+  for (const [k, list] of buckets){
+    list.sort((a, b) =&gt; a[0] - b[0] || a[1] - b[1]);
+    let cf = list[0][0], ct = list[0][1];
+    for (let i = 1; i &lt; list.length; i++){
+      if (list[i][0] &lt;= ct) ct = Math.max(ct, list[i][1]);          // overlap OR touch
+      else { out.push(mkMark(k, cf, ct)); cf = list[i][0]; ct = list[i][1]; }
+    }
+    out.push(mkMark(k, cf, ct));
+  }
+  return out.sort((a, b) =&gt; a.from - b.from || a.to - b.to
+                          || orderOf(a.type) - orderOf(b.type));
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">3</div><h3 class="font-bold text-lg">Toggle means toggle: all-on removes, anything-off adds</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is the function that separates an editor from a demo. Select a range where half the characters are bold and press the bold button: the correct behaviour is to make the <em>whole</em> range bold, and only a second press should clear it. That falls straight out of one predicate &mdash; does every character in the range already carry this type &mdash; which you answer with a coverage sweep rather than by checking whether any single interval contains the range, because the coverage may be spread across several adjacent intervals. Adding first strips same-type marks inside the range, which is what makes a link exclusive: a range can only point at one URL.</p>
+        <div class="relative"><pre>function hasMarkThroughout(marks, from, to, type){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a &gt;= b) return false;                     // a caret covers nothing
+  const ivs = (marks || []).filter(m =&gt; m.type === type)
+    .map(m =&gt; [Math.min(m.from, m.to), Math.max(m.from, m.to)])
+    .filter(iv =&gt; iv[0] &lt; iv[1]).sort((x, y) =&gt; x[0] - y[0]);
+  let cursor = a;
+  for (const iv of ivs){
+    if (iv[0] &gt; cursor) return false;            // a hole before this interval
+    cursor = Math.max(cursor, iv[1]);
+    if (cursor &gt;= b) return true;
+  }
+  return cursor &gt;= b;
+}
+
+function toggleMark(marks, from, to, type, attrs){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a &gt;= b) return normalizeMarks(marks);      // nothing to do on a caret
+  return hasMarkThroughout(marks, a, b, type)
+    ? removeMark(marks, a, b, type)              // all on  -&gt; clear
+    : addMark(marks, a, b, type, attrs);         // any off -&gt; fill
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3"><code>removeMark</code> is the mirror image and is where half-open pays off again: for every overlapping interval of that type, keep <code>[m.from, a)</code> if non-empty and <code>[b, m.to)</code> if non-empty, and let the normaliser throw away whatever collapsed.</p>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">4</div><h3 class="font-bold text-lg">One position-mapping function, and a boundary rule you can say out loud</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Do not rebuild marks after an edit &mdash; <strong>map</strong> them. Every endpoint of every mark is just a position, and a change moves positions in a way you can write in four lines. Then choose and <em>state</em> the boundary rule, because the ambiguous case is real: text inserted exactly at <code>mark.to</code> can go inside or outside. This editor is <strong>left-exclusive, right-inclusive</strong> &mdash; insert at <code>from</code> lands outside, insert at <code>to</code> lands inside &mdash; which is why continuing to type at the end of a bold word stays bold, and typing immediately before it does not. The elegant consequence is that both endpoints use the identical comparison, so mapping is one function and not two.</p>
+        <div class="relative"><pre>// ch = { kind:"insert", at, len } | { kind:"delete", from, to }
+function mapPos(pos, ch){
+  if (ch.kind === "insert") return ch.at &lt;= pos ? pos + ch.len : pos;
+  const d = ch.to - ch.from;
+  return pos &lt;= ch.from ? pos
+       : pos &gt;= ch.to   ? pos - d
+       : ch.from;                       // inside the deleted span -&gt; collapse
+}
+
+const mapMarks = (marks, ch) =&gt; (marks || []).map(m =&gt; ({
+  ...m, from: mapPos(Math.min(m.from, m.to), ch), to: mapPos(Math.max(m.from, m.to), ch)
+}));
+
+function applyInsert(text, marks, at, str){
+  const p = Math.max(0, Math.min(text.length, at));
+  const ch = { kind: "insert", at: p, len: String(str).length };
+  const nt = text.slice(0, p) + str + text.slice(p);
+  return { text: nt, marks: normalizeMarks(mapMarks(marks, ch), nt.length), change: ch };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3">Delete falls out of the same <code>mapPos</code>: an endpoint before the deletion is untouched, one after it shifts left by the deleted length, and one inside collapses to the deletion point. A mark straddling the boundary is therefore <strong>clipped</strong>, and a mark entirely inside collapses to <code>from === to</code> and is dropped by the normaliser &mdash; <strong>erased</strong> with no special case anywhere.</p>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">5</div><h3 class="font-bold text-lg">Sweep overlapping intervals into non-overlapping style runs</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Here is the trap. Marks overlap freely &mdash; bold across words 1&ndash;3 and italic across words 2&ndash;4 is a perfectly ordinary document &mdash; but HTML elements must nest, so you cannot emit one tag per interval without producing <code>&lt;b&gt;a&lt;i&gt;b&lt;/b&gt;c&lt;/i&gt;</code>, which no parser will keep. The fix is a <strong>boundary sweep</strong>: collect every <code>from</code> and every <code>to</code> plus the two ends of the text, sort them, and walk the gaps. Inside a gap no mark can start or stop, so the active set is constant, and the output is a strip of runs that tiles <code>[0, text.length)</code> exactly &mdash; no gaps, no overlaps, which is precisely the invariant to assert in a test.</p>
+        <div class="relative"><pre>function styleRuns(text, marks){
+  const len = text.length;
+  if (!len) return [];
+  const ms = normalizeMarks(marks, len);
+  const pts = new Set([0, len]);
+  for (const m of ms){ pts.add(m.from); pts.add(m.to); }
+  const b = [...pts].sort((x, y) =&gt; x - y);
+  const runs = [];
+  for (let i = 0; i &lt; b.length - 1; i++){
+    const from = b[i], to = b[i + 1];
+    if (from &gt;= to) continue;
+    const active = ms.filter(m =&gt; m.from &lt;= from &amp;&amp; m.to &gt;= to)
+                     .sort((x, y) =&gt; orderOf(x.type) - orderOf(y.type));
+    runs.push({ from, to, text: text.slice(from, to),
+                types: active.map(m =&gt; m.type),
+                href: (active.find(m =&gt; m.type === "link") || {}).href || null });
+  }
+  return runs;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">6</div><h3 class="font-bold text-lg">Render runs to nested elements &mdash; in a fixed order</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Rendering is now trivial and, crucially, <strong>deterministic</strong>. Sort each run&#39;s active types by a single global order &mdash; link outermost, then bold, italic, strike, and code innermost &mdash; and wrap from the inside out. A fixed order means two adjacent runs with the same marks produce the same nesting, which is what lets the browser merge them and what stops the caret jumping when the DOM is rebuilt. Escape the text yourself, keep the surface at <code>white-space: pre-wrap</code> so real spaces survive without <code>&amp;nbsp;</code>, and emit a <code>&lt;br&gt;</code> for each newline plus one extra trailing sentinel when the text ends in a newline &mdash; otherwise the browser refuses to show that last empty line.</p>
+        <div class="relative"><pre>function wrapRun(str, run){
+  let inner = esc(str);
+  for (let i = run.types.length - 1; i &gt;= 0; i--){         // inside -&gt; out
+    const t = run.types[i];
+    if (t === "bold")        inner = "&lt;strong&gt;" + inner + "&lt;/strong&gt;";
+    else if (t === "italic") inner = "&lt;em&gt;"     + inner + "&lt;/em&gt;";
+    else if (t === "code")   inner = "&lt;code&gt;"   + inner + "&lt;/code&gt;";
+    else if (t === "strike") inner = "&lt;s&gt;"      + inner + "&lt;/s&gt;";
+    else if (t === "link")   inner = '&lt;a href="' + esc(run.href || "") + '"&gt;' + inner + "&lt;/a&gt;";
+  }
+  return inner;
+}
+
+let html = "";
+for (const r of styleRuns(text, marks)){
+  r.text.split("\n").forEach((part, i) =&gt; {
+    if (i) html += "&lt;br&gt;";
+    if (part) html += wrapRun(part, r);
+  });
+}
+if (/\n$/.test(text)) html += '&lt;br data-bogus="1"&gt;';    // show the final empty line
+editor.innerHTML = html;</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">7</div><h3 class="font-bold text-lg">Bridge the Selection API to model offsets &mdash; both ways</h3></div>
+        <p class="text-sm text-slate-600 mb-3">This is where naive editors lose the caret. A DOM selection is <code>(node, offset)</code> where <code>node</code> is whatever text node or element the browser felt like, and your model wants a single integer. Walk the editor in document order collecting text nodes and <code>&lt;br&gt;</code>s &mdash; a <code>&lt;br&gt;</code> counts as exactly one character, the newline it represents &mdash; and accumulate lengths until you reach the point. Going the other way, walk the same list until the offset falls inside a node. Do this <em>after every re-render</em>, because you just replaced the entire subtree the selection was pointing into. Skip the trailing sentinel <code>&lt;br&gt;</code> in the walk, or every offset past the last newline will be one too large.</p>
+        <div class="relative"><pre>function walkNodes(root){                  // text nodes and &lt;br&gt;, in order
+  const out = [];
+  (function rec(n){
+    for (const c of n.childNodes){
+      if (c.nodeType === 3) out.push(c);
+      else if (c.nodeType === 1){
+        if (c.dataset &amp;&amp; c.dataset.bogus) continue;    // the sentinel is not text
+        if (c.tagName === "BR") out.push(c); else rec(c);
+      }
+    }
+  })(root);
+  return out;
+}
+
+function offsetToPoint(root, offset){
+  let acc = 0;
+  for (const n of walkNodes(root)){
+    const L = n.nodeType === 3 ? n.nodeValue.length : 1;
+    if (offset &lt;= acc + L){
+      if (n.nodeType === 3) return { node: n, off: offset - acc };
+      const p = n.parentNode, i = [...p.childNodes].indexOf(n);
+      return { node: p, off: offset - acc === 0 ? i : i + 1 };
+    }
+    acc += L;
+  }
+  return { node: root, off: root.childNodes.length };
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3">The reverse direction has one wrinkle: the browser can hand you a point anchored on an <em>element</em>, not a text node. Rather than special-casing that, compare a collapsed <code>Range</code> at the point against each walked node with <code>compareBoundaryPoints</code> &mdash; before it, after it, or inside it &mdash; and the element case answers itself.</p>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">8</div><h3 class="font-bold text-lg">Intercept beforeinput and own every edit</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Left alone, a <code>contenteditable</code> will happily invent <code>&lt;font&gt;</code> tags, nested spans and unbalanced markup you never asked for, and your model will be a lie within three keystrokes. <code>beforeinput</code> is the fix: it fires before the browser mutates anything, it names the operation in <code>inputType</code>, and it is cancellable. Cancel it, apply the equivalent change to the model, re-render, restore the caret. The list of input types is long but the handling collapses into four buckets, and the fallthrough is simply <code>preventDefault</code> &mdash; refusing an edit you have not implemented is infinitely better than letting the DOM drift out of sync.</p>
+        <div class="relative"><pre>editor.addEventListener("beforeinput", (e) =&gt; {
+  const sel = getSel() || S.sel;
+  const t = e.inputType;
+  e.preventDefault();                                   // the browser never edits
+  if (t === "insertText")                       typeText(e.data || "", sel);
+  else if (t === "insertParagraph" ||
+           t === "insertLineBreak")             typeText("\n", sel);
+  else if (t.startsWith("delete"))              doDelete(t, sel);
+  else if (t === "historyUndo")                 undo();
+  else if (t === "historyRedo")                 redo();
+  else if (t === "formatBold")                  applyToggle("bold");
+  else if (t === "formatItalic")                applyToggle("italic");
+});
+
+// a collapsed backspace must not cut a surrogate pair in half
+function stepBack(text, p){
+  const c = text.charCodeAt(p - 1);
+  return (c &gt;= 0xDC00 &amp;&amp; c &lt;= 0xDFFF &amp;&amp; p &gt;= 2) ? p - 2 : p - 1;
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">9</div><h3 class="font-bold text-lg">Undo that groups your typing, paste that cannot hurt you, markdown that disappears</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Because every change produces a complete new model, history is a stack of snapshots and undo is an assignment. The only interesting part is <strong>coalescing</strong>: an undo that removes one character at a time is unusable, so consecutive single-character insertions merge into one entry when the new one starts exactly where the previous one ended and arrives inside a short window. Notice what that condition gives you for free &mdash; move the caret and the positions no longer chain, so the run breaks; press bold and the entry kind changes, so the run breaks. No extra flags.</p>
+        <div class="relative"><pre>function canCoalesce(prev, next, windowMs){
+  if (!prev || !next) return false;
+  if (prev.kind !== "insert" || next.kind !== "insert") return false;
+  if (prev.ch === "\n" || next.ch === "\n") return false;
+  if (next.at !== prev.at + prev.len) return false;      // caret jump breaks it
+  return (next.time - prev.time) &lt;= (windowMs == null ? 700 : windowMs);
+}
+
+// paste: an allowlist that converts tags to marks and counts the refusals
+const ALLOWED_TAGS = { B:"bold", STRONG:"bold", I:"italic", EM:"italic",
+                       CODE:"code", S:"strike", STRIKE:"strike", DEL:"strike", A:"link" };
+const DROPPED_TAGS = new Set(["SCRIPT","STYLE","IMG","IFRAME","OBJECT","EMBED",
+                              "SVG","VIDEO","AUDIO","META","LINK","NOSCRIPT"]);
+
+function safeHref(h){
+  const s = String(h == null ? "" : h).trim();
+  if (/^(https?:|mailto:)/i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return "";         // javascript: and friends
+  return s;                                               // relative URLs are fine
+}</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3">The sanitiser walks a plain tree of <code>{tag, attrs, children}</code> rather than live DOM nodes, which keeps it pure and testable: allowed tags open a mark and record the spans their text occupies, dropped tags take their whole subtree with them, and everything else is <em>unwrapped</em> &mdash; its text survives, its identity does not. Markdown input rules are the same shape in reverse: after each inserted character, test a few anchored patterns against the text ending at the caret, and if one matches, splice the inner text back in with a mark and move the caret to the end of it.</p>
+      </li>
+
+      <li class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-3"><div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold flex-none">10</div><h3 class="font-bold text-lg">Prove it against a different representation</h3></div>
+        <p class="text-sm text-slate-600 mb-3">Interval arithmetic is exactly the kind of code that looks right and is wrong at the boundaries, so test it against an implementation that shares none of its shape. Represent the same document as <strong>one <code>Set</code> of active mark keys per character</strong> &mdash; hopelessly inefficient, trivially obviously correct &mdash; implement toggle, insert and delete over that array, and assert that expanding the interval engine&#39;s output back to per-character sets gives the identical answer. The boundary rule expressed in that language is beautifully simple: <em>inserted characters inherit the set of the character to their left</em>, which is the same rule as left-exclusive, right-inclusive, said differently. Then fuzz it: thousands of random documents, random operation sequences, and every adversarial case you can name.</p>
+        <div class="relative"><pre>// ground truth: sets[i] = the mark keys active on character i
+const expand = (len, marks) =&gt; {
+  const s = Array.from({ length: len }, () =&gt; new Set());
+  for (const m of marks) for (let i = m.from; i &lt; m.to; i++) s[i].add(key(m));
+  return s;
+};
+
+function gtInsert(sets, at, len){                  // independent of intervals
+  const inherit = at &gt; 0 ? new Set(sets[at - 1]) : new Set();
+  const add = Array.from({ length: len }, () =&gt; new Set(inherit));
+  return sets.slice(0, at).concat(add, sets.slice(at));
+}
+
+// then, for every random step:
+assertSameSets(expand(r.text.length, r.marks), gtInsert(sets, at, str.length));</pre><button class="copy-btn absolute top-2 right-2 bg-slate-700 text-white text-xs px-2 py-1 rounded" onclick="copy(this)">Copy all</button></div>
+        <p class="text-sm text-slate-600 mt-3">The run sweep gets its own invariant, and it is the strongest one on the page: the runs must <strong>tile</strong> <code>[0, text.length)</code> &mdash; first starts at 0, each starts where the last ended, the last ends at the length &mdash; and every character inside a run must have exactly that run&#39;s style set. If that holds for a million random characters, the renderer cannot produce a hole or a double-styled character.</p>
+      </li>
+
+    </ol>
+    <div class="mt-10 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center"><h3 class="font-bold text-lg text-indigo-900">&#9989; Day 62 of DesignFromZero done &mdash; Rich text editor.</h3><p class="text-sm text-indigo-700 mt-2">You built an editor whose truth is <code>{ text, marks }</code> and whose <code>contenteditable</code> is only a projection. <strong>Toggle</strong> became a real predicate &mdash; all-on removes, anything-off adds &mdash; answered by a coverage sweep rather than by hoping one interval contains the range. <strong>Normalisation</strong> gave every document exactly one representation. <strong>One <code>mapPos</code></strong> moved every endpoint through every change under a boundary rule you can say out loud, so extending, clipping and erasing marks needed no special cases. The <strong>boundary sweep</strong> turned overlapping intervals into runs that tile the text, which is the only way to get valid nesting out of marks that legally cross. And the <strong>Selection bridge</strong> kept the caret alive across a full re-render. <strong>&#128075; When the model is the truth, undo is an assignment, paste is a filter, markdown is a splice and collaboration is a list of changes &mdash; all of them small pure functions you can fuzz against a dumber implementation until you believe them.</strong></p></div>
+  </div>
+</section>
+
+<script>
+// ===== tabs =====
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+});
+
+// ===== ENGINE:BEGIN =====
+// Pure logic — no DOM below this line until ENGINE:END. The node test file
+// extracts exactly this block out of the HTML, so the tests can never drift
+// away from the code the page actually runs.
+//
+// THE DOCUMENT:  { text: string, marks: [{ from, to, type, href? }] }
+// Intervals are HALF-OPEN: `from` inclusive, `to` exclusive.
+//
+// BOUNDARY RULE (stated once, implemented once, tested once):
+//   marks are LEFT-EXCLUSIVE and RIGHT-INCLUSIVE.
+//   Text inserted at mark.from lands OUTSIDE the mark.
+//   Text inserted at mark.to   lands INSIDE  the mark (it extends).
+//   Equivalently: an inserted character inherits the marks of the
+//   character immediately to its left.
+
+// --- 1) identity of a mark ----------------------------------------------
+// Two bold intervals that touch are the same mark and must merge.
+// Two links that touch with different hrefs are not, and must not.
+const MARK_ORDER = ["link", "bold", "italic", "strike", "code"];
+const orderOf = t => { const i = MARK_ORDER.indexOf(t); return i < 0 ? 99 : i; };
+const markKey = m => m.type === "link" ? "link\u0000" + (m.href || "") : m.type;
+const keyType = k => { const i = k.indexOf("\u0000"); return i < 0 ? k : k.slice(0, i); };
+const keyHref = k => { const i = k.indexOf("\u0000"); return i < 0 ? null : k.slice(i + 1); };
+function mkMark(k, from, to){
+  const type = keyType(k);
+  const m = { from, to, type };
+  if (type === "link") m.href = keyHref(k) || "";
+  return m;
+}
+
+// --- 2) normalisation: one canonical form for every document ------------
+function normalizeMarks(marks, len){
+  const buckets = new Map();
+  for (const m of marks || []){
+    if (!m || !m.type) continue;
+    let f = Math.min(m.from, m.to), t = Math.max(m.from, m.to);   // from > to is tolerated
+    if (!isFinite(f) || !isFinite(t)) continue;
+    f = Math.max(0, Math.floor(f)); t = Math.max(0, Math.floor(t));
+    if (typeof len === "number"){ f = Math.min(f, len); t = Math.min(t, len); }
+    if (f >= t) continue;                                          // drop empty ranges
+    const k = markKey(m);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push([f, t]);
+  }
+  const out = [];
+  for (const entry of buckets){
+    const k = entry[0], list = entry[1];
+    list.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let cf = list[0][0], ct = list[0][1];
+    for (let i = 1; i < list.length; i++){
+      const iv = list[i];
+      if (iv[0] <= ct) ct = Math.max(ct, iv[1]);                   // overlapping OR adjacent
+      else { out.push(mkMark(k, cf, ct)); cf = iv[0]; ct = iv[1]; }
+    }
+    out.push(mkMark(k, cf, ct));
+  }
+  out.sort((a, b) => a.from - b.from || a.to - b.to || orderOf(a.type) - orderOf(b.type)
+                  || (markKey(a) < markKey(b) ? -1 : markKey(a) > markKey(b) ? 1 : 0));
+  return out;
+}
+
+// --- 3) coverage: does EVERY character in [from,to) carry this type? ----
+// Answered by a sweep, because the coverage can be spread over several
+// intervals — checking "does one interval contain the range" is wrong.
+function hasMarkThroughout(marks, from, to, type){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a >= b) return false;                       // a collapsed caret covers nothing
+  const ivs = (marks || [])
+    .filter(m => m && m.type === type)
+    .map(m => [Math.min(m.from, m.to), Math.max(m.from, m.to)])
+    .filter(iv => iv[0] < iv[1])
+    .sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  let cursor = a;
+  for (const iv of ivs){
+    if (iv[0] > cursor) return false;             // a hole opened before this interval
+    cursor = Math.max(cursor, iv[1]);
+    if (cursor >= b) return true;
+  }
+  return cursor >= b;
+}
+
+// --- 4) add / remove / toggle -------------------------------------------
+function removeMark(marks, from, to, type){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  const out = [];
+  for (const m of marks || []){
+    if (!m || !m.type) continue;
+    const mf = Math.min(m.from, m.to), mt = Math.max(m.from, m.to);
+    if (m.type !== type || mt <= a || mf >= b){ out.push(Object.assign({}, m, { from: mf, to: mt })); continue; }
+    if (mf < a) out.push(Object.assign({}, m, { from: mf, to: a }));   // left remainder
+    if (mt > b) out.push(Object.assign({}, m, { from: b,  to: mt }));  // right remainder
+  }
+  return normalizeMarks(out);
+}
+// Adding always clears same-type marks in the range first. For bold/italic
+// that is invisible (the normaliser would merge them anyway); for a link it
+// is the rule that makes a range point at exactly one URL.
+function addMark(marks, from, to, type, attrs){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a >= b) return normalizeMarks(marks);
+  const cleared = removeMark(marks, a, b, type);
+  const m = { from: a, to: b, type };
+  if (type === "link") m.href = (attrs && attrs.href) || "";
+  return normalizeMarks(cleared.concat([m]));
+}
+function toggleMark(marks, from, to, type, attrs){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a >= b) return normalizeMarks(marks);
+  return hasMarkThroughout(marks, a, b, type)
+    ? removeMark(marks, a, b, type)
+    : addMark(marks, a, b, type, attrs);
+}
+// The same thing, but keeping the un-normalised intermediate so the page can
+// show what normalisation actually did.
+function toggleMarkTrace(marks, from, to, type, attrs){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  if (a >= b) return { decision: "none", raw: (marks || []).slice(), out: normalizeMarks(marks) };
+  const all = hasMarkThroughout(marks, a, b, type);
+  let raw = [];
+  if (all){
+    for (const m of marks || []){
+      const mf = Math.min(m.from, m.to), mt = Math.max(m.from, m.to);
+      if (m.type !== type || mt <= a || mf >= b){ raw.push(Object.assign({}, m, { from: mf, to: mt })); continue; }
+      if (mf < a) raw.push(Object.assign({}, m, { from: mf, to: a }));
+      if (mt > b) raw.push(Object.assign({}, m, { from: b,  to: mt }));
+    }
+  } else {
+    raw = removeMark(marks, a, b, type).concat([
+      type === "link" ? { from: a, to: b, type, href: (attrs && attrs.href) || "" } : { from: a, to: b, type }
+    ]);
+  }
+  return { decision: all ? "remove" : "add", raw, out: normalizeMarks(raw) };
+}
+
+// --- 5) position mapping: ONE function, both endpoints ------------------
+// ch = { kind:"insert", at, len } | { kind:"delete", from, to }
+function mapPos(pos, ch){
+  if (ch.kind === "insert") return ch.at <= pos ? pos + ch.len : pos;
+  const d = ch.to - ch.from;
+  return pos <= ch.from ? pos : (pos >= ch.to ? pos - d : ch.from);
+}
+function mapMarks(marks, ch){
+  return (marks || []).map(m => Object.assign({}, m, {
+    from: mapPos(Math.min(m.from, m.to), ch),
+    to:   mapPos(Math.max(m.from, m.to), ch)
+  }));
+}
+function applyInsert(text, marks, at, str){
+  const s = String(str == null ? "" : str);
+  const p = Math.max(0, Math.min(text.length, at));
+  const ch = { kind: "insert", at: p, len: s.length };
+  const nt = text.slice(0, p) + s + text.slice(p);
+  const raw = mapMarks(marks, ch);
+  return { text: nt, marks: normalizeMarks(raw, nt.length), change: ch, raw };
+}
+function applyDelete(text, marks, from, to){
+  let a = Math.max(0, Math.min(text.length, Math.min(from, to)));
+  let b = Math.max(0, Math.min(text.length, Math.max(from, to)));
+  const ch = { kind: "delete", from: a, to: b };
+  const nt = text.slice(0, a) + text.slice(b);
+  const raw = mapMarks(marks, ch);
+  return { text: nt, marks: normalizeMarks(raw, nt.length), change: ch, raw };
+}
+// delete-then-insert, with marks supplied relative to the inserted text
+function spliceDoc(text, marks, from, to, insText, insMarks){
+  const a = Math.min(from, to), b = Math.max(from, to);
+  const d = applyDelete(text, marks, a, b);
+  const i = applyInsert(d.text, d.marks, a, insText);
+  const add = (insMarks || []).map(m => Object.assign({}, m, { from: m.from + a, to: m.to + a }));
+  return { text: i.text, marks: normalizeMarks(i.marks.concat(add), i.text.length) };
+}
+
+// --- 6) marks active for a caret at `offset` ----------------------------
+// Same rule as insertion: right-inclusive, left-exclusive.
+function marksAtOffset(marks, offset){
+  return normalizeMarks(marks).filter(m => m.from < offset && offset <= m.to);
+}
+
+// --- 7) the boundary sweep: overlapping intervals -> tiling runs --------
+function styleRuns(text, marks){
+  const len = text.length;
+  if (!len) return [];
+  const ms = normalizeMarks(marks, len);
+  const pts = new Set([0, len]);
+  for (const m of ms){ pts.add(m.from); pts.add(m.to); }
+  const b = Array.from(pts).sort((x, y) => x - y);
+  const runs = [];
+  for (let i = 0; i < b.length - 1; i++){
+    const from = b[i], to = b[i + 1];
+    if (from >= to) continue;
+    const active = ms.filter(m => m.from <= from && m.to >= to)
+                     .sort((x, y) => orderOf(x.type) - orderOf(y.type));
+    const link = active.filter(m => m.type === "link")[0];
+    runs.push({
+      from, to, text: text.slice(from, to),
+      types: active.map(m => m.type),
+      keys:  active.map(markKey),
+      href:  link ? (link.href || "") : null
+    });
+  }
+  return runs;
+}
+
+// --- 8) history with coalescing -----------------------------------------
+function canCoalesce(prev, next, windowMs){
+  if (!prev || !next) return false;
+  if (prev.kind !== "insert" || next.kind !== "insert") return false;
+  if (prev.ch === "\n" || next.ch === "\n") return false;
+  if (next.at !== prev.at + prev.len) return false;      // a caret jump breaks the run
+  return (next.time - prev.time) <= (windowMs == null ? 700 : windowMs);
+}
+function pushHistory(stack, entry, opts){
+  const o = opts || {};
+  const out = (stack || []).slice();
+  const top = out[out.length - 1];
+  if (canCoalesce(top, entry, o.windowMs)){
+    out[out.length - 1] = {
+      before: top.before, after: entry.after, kind: "insert",
+      at: top.at, len: top.len + entry.len, ch: entry.ch,
+      time: entry.time, runs: (top.runs || 1) + 1
+    };
+    return out;
+  }
+  out.push(Object.assign({ runs: 1 }, entry));
+  const limit = o.limit == null ? 200 : o.limit;
+  while (out.length > limit) out.shift();
+  return out;
+}
+
+// --- 9) paste sanitisation over a plain tree (no DOM) -------------------
+// node = { text } | { tag, attrs, children }
+const ALLOWED_TAGS = { B:"bold", STRONG:"bold", I:"italic", EM:"italic", CITE:"italic",
+                       CODE:"code", KBD:"code", SAMP:"code", TT:"code",
+                       S:"strike", STRIKE:"strike", DEL:"strike", A:"link" };
+const DROPPED_TAGS = new Set(["SCRIPT","STYLE","IMG","IFRAME","OBJECT","EMBED","SVG","VIDEO",
+                              "AUDIO","META","LINK","NOSCRIPT","TITLE","HEAD","INPUT","BUTTON","FORM"]);
+const BLOCK_TAGS = new Set(["P","DIV","LI","H1","H2","H3","H4","H5","H6","BLOCKQUOTE","PRE",
+                            "TR","SECTION","ARTICLE","HEADER","FOOTER","UL","OL","TABLE"]);
+function safeHref(h){
+  const s = String(h == null ? "" : h).trim();
+  if (/^(https?:|mailto:)/i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return "";        // javascript:, data:, vbscript: …
+  return s;                                              // relative URLs are fine
+}
+function sanitizeTree(root){
+  const stats = { kept: 0, unwrapped: 0, dropped: 0, attrs: 0, badHref: 0, chars: 0 };
+  let text = "";
+  const marks = [];
+  const nl = () => { if (text.length && text[text.length - 1] !== "\n") text += "\n"; };
+  function walk(n, active){
+    if (!n) return;
+    if (typeof n.text === "string"){
+      const t = n.text.replace(/\r/g, "").replace(/[ \t]*\n[ \t]*/g, " ").replace(/\u00a0/g, " ");
+      if (!t) return;
+      const start = text.length;
+      text += t;
+      for (const rec of active) rec.spans.push([start, text.length]);
+      return;
+    }
+    const tag = String(n.tag || "").toUpperCase();
+    const attrs = n.attrs || {};
+    // a dropped node takes its attributes with it, so it is counted once, as dropped
+    if (DROPPED_TAGS.has(tag)){ stats.dropped++; return; }
+    for (const name of Object.keys(attrs)){
+      if (tag === "A" && name.toLowerCase() === "href"){
+        if (safeHref(attrs[name]) === "" && String(attrs[name]).trim() !== "") stats.badHref++;
+        continue;
+      }
+      stats.attrs++;                                     // style, class, id, on* … all go
+    }
+    const type = ALLOWED_TAGS[tag];
+    if (type){
+      stats.kept++;
+      const rec = { type, href: type === "link" ? safeHref(attrs.href) : undefined, spans: [] };
+      const next = active.concat([rec]);
+      for (const c of (n.children || [])) walk(c, next);
+      for (const sp of rec.spans){
+        if (sp[0] < sp[1]){
+          const m = { from: sp[0], to: sp[1], type };
+          if (type === "link") m.href = rec.href || "";
+          marks.push(m);
+        }
+      }
+      return;
+    }
+    stats.unwrapped++;                                   // text survives, identity does not
+    if (tag === "BR"){ text += "\n"; return; }
+    const block = BLOCK_TAGS.has(tag);
+    if (block) nl();
+    for (const c of (n.children || [])) walk(c, active);
+    if (block) nl();
+  }
+  walk(root, []);
+  let lead = 0; while (lead < text.length && /\s/.test(text[lead])) lead++;
+  let end = text.length; while (end > lead && /\s/.test(text[end - 1])) end--;
+  const outText = text.slice(lead, end);
+  const shifted = marks.map(m => Object.assign({}, m, {
+    from: Math.max(0, Math.min(outText.length, m.from - lead)),
+    to:   Math.max(0, Math.min(outText.length, m.to   - lead))
+  }));
+  stats.chars = outText.length;
+  return { text: outText, marks: normalizeMarks(shifted, outText.length), stats };
+}
+
+// --- 10) markdown input rules -------------------------------------------
+// Each rule is anchored to the caret. `marker` is the delimiter length.
+const MD_RULES = [
+  { type: "bold",   re: /\*\*([^*\n]+)\*\*$/,             marker: 2 },
+  { type: "strike", re: /~~([^~\n]+)~~$/,                 marker: 2 },
+  { type: "code",   re: /`([^`\n]+)`$/,                   marker: 1 },
+  { type: "italic", re: /(?:^|[\s(])_([^_\n]+)_$/,        marker: 1, boundary: true },
+  { type: "italic", re: /(?:^|[\s(])\*([^*\n]+)\*$/,      marker: 1, boundary: true }
+];
+function markdownRule(text, caret){
+  const head = text.slice(0, Math.max(0, Math.min(text.length, caret)));
+  for (const r of MD_RULES){
+    const m = r.re.exec(head);
+    if (!m) continue;
+    const inner = m[1];
+    if (!inner || !inner.trim()) continue;
+    const full = m[0];
+    const matchStart = head.length - full.length;
+    const lead = full.length - (inner.length + r.marker * 2);      // 0 or 1 boundary char
+    return { from: matchStart + lead, to: head.length, insert: inner, type: r.type, removed: r.marker * 2 };
+  }
+  return null;
+}
+
+// --- 11) counters --------------------------------------------------------
+function countWords(text){
+  const t = String(text).trim();
+  return t ? t.split(/\s+/).length : 0;
+}
+function stepBack(text, p){
+  if (p <= 0) return 0;
+  const c = text.charCodeAt(p - 1);
+  return (c >= 0xDC00 && c <= 0xDFFF && p >= 2) ? p - 2 : p - 1;
+}
+function stepForward(text, p){
+  if (p >= text.length) return text.length;
+  const c = text.charCodeAt(p);
+  return (c >= 0xD800 && c <= 0xDBFF && p + 2 <= text.length) ? p + 2 : p + 1;
+}
+function wordBack(text, p){
+  let i = p;
+  while (i > 0 && /\s/.test(text[i - 1])) i--;
+  while (i > 0 && !/\s/.test(text[i - 1])) i--;
+  return i;
+}
+
+const ENGINE_EXPORTS = {
+  MARK_ORDER, orderOf, markKey, keyType, keyHref, mkMark,
+  normalizeMarks, hasMarkThroughout, addMark, removeMark, toggleMark, toggleMarkTrace,
+  mapPos, mapMarks, applyInsert, applyDelete, spliceDoc, marksAtOffset, styleRuns,
+  canCoalesce, pushHistory, ALLOWED_TAGS, DROPPED_TAGS, BLOCK_TAGS, safeHref, sanitizeTree,
+  MD_RULES, markdownRule, countWords, stepBack, stepForward, wordBack
+};
+// ===== ENGINE:END =====
+
+// ===== UI ==============================================================
+const COALESCE_MS = 700;
+const ed        = document.getElementById("rte-ed");
+const barEl     = document.getElementById("rte-bar");
+const statusEl  = document.getElementById("rte-status");
+const modelEl   = document.getElementById("rte-model");
+const runsEl    = document.getElementById("rte-runs");
+const mapEl     = document.getElementById("rte-map");
+const normEl    = document.getElementById("rte-norm");
+const pasteEl   = document.getElementById("rte-paste");
+const histEl    = document.getElementById("rte-hist");
+const lowerEl   = document.getElementById("rte-lower");
+const linkbar   = document.getElementById("rte-linkbar");
+const hrefIn    = document.getElementById("rte-href");
+
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+const SEED_TEXT =
+  "The document model is the truth — the DOM is only a rendering of it.\n" +
+  "Text plus half-open intervals, not a tree of DOM nodes, is the whole document.\n" +
+  "Select any run and press Ctrl+B: if every character already carries the mark, the toggle removes it.";
+
+function seedMarks(){
+  const at = (needle, type, href) => {
+    const i = SEED_TEXT.indexOf(needle);
+    if (i < 0) return null;
+    const m = { from: i, to: i + needle.length, type };
+    if (href) m.href = href;
+    return m;
+  };
+  return normalizeMarks([
+    at("The document model is the truth", "bold"),
+    at("model is the truth — the DOM is only a rendering of it", "italic"),
+    at("half-open intervals", "code"),
+    at("a tree of DOM nodes", "strike"),
+    at("the whole document", "link", "https://dev48.infy.uk/design/"),
+    at("every character already carries the mark", "bold")
+  ].filter(Boolean), SEED_TEXT.length);
+}
+
+const M = { text: SEED_TEXT, marks: seedMarks() };
+const S = {
+  sel: { from: 0, to: 0 },
+  pending: new Set(), pendingHref: "", pendingAt: -1,
+  undo: [], redo: [],
+  md: true, inspect: true,
+  lastChange: null, lastRaw: null, lastTrace: null, lastPaste: null,
+  renders: 0
+};
+
+// ---------- model -> DOM ------------------------------------------------
+function wrapRun(str, r){
+  let inner = esc(str);
+  for (let i = r.types.length - 1; i >= 0; i--){
+    const t = r.types[i];
+    if (t === "bold")        inner = "<strong>" + inner + "</strong>";
+    else if (t === "italic") inner = "<em>" + inner + "</em>";
+    else if (t === "code")   inner = "<code>" + inner + "</code>";
+    else if (t === "strike") inner = "<s>" + inner + "</s>";
+    else if (t === "link")   inner = '<a href="' + esc(r.href || "") + '" rel="noopener">' + inner + "</a>";
+  }
+  return inner;
+}
+function paintDoc(runs){
+  let html = "";
+  for (const r of runs){
+    const parts = r.text.split("\n");
+    for (let i = 0; i < parts.length; i++){
+      if (i) html += "<br>";
+      if (parts[i]) html += wrapRun(parts[i], r);
+    }
+  }
+  if (/\n$/.test(M.text)) html += '<br data-bogus="1">';
+  ed.innerHTML = html;
+  ed.classList.toggle("empty", M.text.length === 0);
+  S.renders++;
+}
+
+// ---------- DOM selection <-> model offsets -----------------------------
+function walkNodes(root){
+  const out = [];
+  (function rec(n){
+    for (const c of n.childNodes){
+      if (c.nodeType === 3) out.push(c);
+      else if (c.nodeType === 1){
+        if (c.dataset && c.dataset.bogus) continue;
+        if (c.tagName === "BR") out.push(c); else rec(c);
+      }
+    }
+  })(root);
+  return out;
+}
+const nodeLen = n => n.nodeType === 3 ? n.nodeValue.length : 1;
+
+function pointToOffset(root, node, off){
+  if (!node) return 0;
+  let P;
+  try { P = document.createRange(); P.setStart(node, off); P.collapse(true); }
+  catch (e){ return 0; }
+  let acc = 0;
+  for (const n of walkNodes(root)){
+    const R = document.createRange();
+    R.selectNode(n);
+    if (P.compareBoundaryPoints(Range.START_TO_START, R) <= 0) return acc;   // point at/before n
+    if (P.compareBoundaryPoints(Range.END_TO_START, R) >= 0){ acc += nodeLen(n); continue; }
+    return n.nodeType === 3 ? acc + Math.min(off, nodeLen(n)) : acc;         // inside n
+  }
+  return acc;
+}
+function offsetToPoint(root, offset){
+  let acc = 0;
+  for (const n of walkNodes(root)){
+    const L = nodeLen(n);
+    if (offset <= acc + L){
+      if (n.nodeType === 3) return { node: n, off: offset - acc };
+      const p = n.parentNode, i = Array.prototype.indexOf.call(p.childNodes, n);
+      return { node: p, off: offset - acc === 0 ? i : i + 1 };
+    }
+    acc += L;
+  }
+  return { node: root, off: root.childNodes.length };
+}
+function getSel(){
+  const s = window.getSelection();
+  if (!s || !s.rangeCount) return null;
+  const r = s.getRangeAt(0);
+  if (!ed.contains(r.startContainer) && r.startContainer !== ed) return null;
+  const a = pointToOffset(ed, r.startContainer, r.startOffset);
+  const b = pointToOffset(ed, r.endContainer, r.endOffset);
+  return { from: Math.min(a, b), to: Math.max(a, b) };
+}
+function setSel(from, to){
+  const a = offsetToPoint(ed, Math.max(0, Math.min(M.text.length, from)));
+  const b = offsetToPoint(ed, Math.max(0, Math.min(M.text.length, to)));
+  try {
+    const r = document.createRange();
+    r.setStart(a.node, a.off); r.setEnd(b.node, b.off);
+    const s = window.getSelection();
+    s.removeAllRanges(); s.addRange(r);
+  } catch (e){ /* the offset fell outside a freshly rebuilt tree */ }
+}
+
+// ---------- render ------------------------------------------------------
+function render(from, to, focus){
+  const runs = styleRuns(M.text, M.marks);
+  paintDoc(runs);
+  S.sel = { from: Math.max(0, Math.min(M.text.length, from)), to: Math.max(0, Math.min(M.text.length, to)) };
+  const wants = focus === true || (focus !== false && document.activeElement === ed);
+  if (wants) setSel(S.sel.from, S.sel.to);
+  paintAll(runs);
+}
+
+// ---------- editing operations -----------------------------------------
+const snap = () => ({ text: M.text, marks: M.marks, from: S.sel.from, to: S.sel.to });
+
+function commit(before, after, meta){
+  S.undo = pushHistory(S.undo, {
+    before, after, kind: meta.kind, at: meta.at == null ? after.from : meta.at,
+    len: meta.len || 0, ch: meta.ch, time: Date.now()
+  }, { limit: 200, windowMs: COALESCE_MS });
+  S.redo = [];
+  M.text = after.text; M.marks = after.marks;
+  render(after.from, after.to, true);
+}
+
+function typeText(str, sel){
+  if (!str) return;
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  let text = M.text, marks = M.marks;
+  const at = sel.from;
+  if (sel.to > sel.from){
+    const d = applyDelete(text, marks, sel.from, sel.to);
+    text = d.text; marks = d.marks;
+  }
+  const ins = applyInsert(text, marks, at, str);
+  text = ins.text; marks = ins.marks;
+  S.lastChange = { op: "insert " + JSON.stringify(str), ch: ins.change, before: marks, raw: ins.raw, marksBefore: before.marks };
+  let caret = at + str.length;
+  if (S.pending.size){
+    for (const t of S.pending) marks = addMark(marks, at, caret, t, t === "link" ? { href: S.pendingHref } : null);
+    marks = normalizeMarks(marks, text.length);
+    S.pending.clear(); S.pendingAt = -1;
+  }
+  let rule = null;
+  if (S.md && str !== "\n"){
+    rule = markdownRule(text, caret);
+    if (rule){
+      const sp = spliceDoc(text, marks, rule.from, rule.to, rule.insert,
+                           [{ from: 0, to: rule.insert.length, type: rule.type }]);
+      text = sp.text; marks = sp.marks;
+      caret = rule.from + rule.insert.length;
+      S.lastChange = { op: "markdown rule → " + rule.type, ch: { kind: "delete", from: rule.from, to: rule.to },
+                       raw: null, marksBefore: before.marks, note: "removed " + rule.removed + " delimiter characters" };
+    }
+  }
+  commit(before, { text, marks, from: caret, to: caret },
+         rule ? { kind: "rule" } : { kind: "insert", at, len: str.length, ch: str });
+}
+
+function doDelete(inputType, sel){
+  let from = sel.from, to = sel.to;
+  if (from === to){
+    if (inputType === "deleteContentForward"){ if (to >= M.text.length) return; to = stepForward(M.text, to); }
+    else if (inputType === "deleteWordBackward"){ if (!from) return; from = wordBack(M.text, from); }
+    else if (inputType === "deleteSoftLineBackward" || inputType === "deleteHardLineBackward"){
+      if (!from) return; from = M.text.lastIndexOf("\n", from - 1) + 1;
+      if (from === to) from = stepBack(M.text, to);
+    }
+    else { if (!from) return; from = stepBack(M.text, from); }
+  }
+  if (from === to) return;
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  const d = applyDelete(M.text, M.marks, from, to);
+  S.lastChange = { op: "delete [" + from + ", " + to + ")", ch: d.change, raw: d.raw, marksBefore: before.marks };
+  commit(before, { text: d.text, marks: d.marks, from, to: from }, { kind: "delete" });
+}
+
+function applyToggle(type, attrs){
+  const sel = getSel() || S.sel;
+  if (sel.from === sel.to){
+    const active = marksAtOffset(M.marks, sel.from).some(m => m.type === type);
+    if (S.pending.has(type)) S.pending.delete(type);
+    else if (!active) S.pending.add(type);
+    else S.pending.delete(type);
+    S.pendingAt = sel.from;
+    paintToolbar(); paintAll(styleRuns(M.text, M.marks));
+    return;
+  }
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  const tr = toggleMarkTrace(M.marks, sel.from, sel.to, type, attrs);
+  S.lastTrace = { type, from: sel.from, to: sel.to, decision: tr.decision, raw: tr.raw, out: tr.out };
+  S.lastChange = { op: "toggleMark(" + type + ", " + sel.from + ", " + sel.to + ") → " + tr.decision,
+                   ch: null, raw: null, marksBefore: before.marks };
+  commit(before, { text: M.text, marks: tr.out, from: sel.from, to: sel.to }, { kind: "mark" });
+}
+
+function setLink(href){
+  const sel = getSel() || S.sel;
+  if (sel.from === sel.to) return;
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  const marks = addMark(M.marks, sel.from, sel.to, "link", { href: safeHref(href) });
+  S.lastChange = { op: "setLink(" + JSON.stringify(safeHref(href)) + ")", ch: null, raw: null, marksBefore: before.marks };
+  commit(before, { text: M.text, marks, from: sel.from, to: sel.to }, { kind: "mark" });
+}
+function clearLink(){
+  const sel = getSel() || S.sel;
+  if (sel.from === sel.to) return;
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  const marks = removeMark(M.marks, sel.from, sel.to, "link");
+  S.lastChange = { op: "removeMark(link, " + sel.from + ", " + sel.to + ")", ch: null, raw: null, marksBefore: before.marks };
+  commit(before, { text: M.text, marks, from: sel.from, to: sel.to }, { kind: "mark" });
+}
+
+function undo(){
+  if (!S.undo.length) return;
+  const e = S.undo.pop();
+  S.redo.push(e);
+  M.text = e.before.text; M.marks = e.before.marks;
+  S.lastChange = { op: "undo (" + (e.runs || 1) + " coalesced " + e.kind + ")", ch: null, raw: null, marksBefore: e.after.marks };
+  render(e.before.from, e.before.to, true);
+}
+function redo(){
+  if (!S.redo.length) return;
+  const e = S.redo.pop();
+  S.undo.push(e);
+  M.text = e.after.text; M.marks = e.after.marks;
+  S.lastChange = { op: "redo (" + e.kind + ")", ch: null, raw: null, marksBefore: e.before.marks };
+  render(e.after.from, e.after.to, true);
+}
+
+// ---------- paste -------------------------------------------------------
+function domToTree(node){
+  if (node.nodeType === 3) return { text: node.nodeValue };
+  if (node.nodeType !== 1) return null;
+  const attrs = {};
+  for (const a of (node.attributes || [])) attrs[a.name] = a.value;
+  const kids = [];
+  for (const c of node.childNodes){ const t = domToTree(c); if (t) kids.push(t); }
+  return { tag: node.nodeName, attrs, children: kids };
+}
+function pasteHtml(html, plain){
+  let clean;
+  if (html && html.trim()){
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    clean = sanitizeTree(domToTree(parsed.body));
+  } else {
+    const t = String(plain || "").replace(/\r/g, "");
+    clean = { text: t, marks: [], stats: { kept: 0, unwrapped: 0, dropped: 0, attrs: 0, badHref: 0, chars: t.length } };
+  }
+  if (!clean.text) { S.lastPaste = clean.stats; paintAll(styleRuns(M.text, M.marks)); return; }
+  const sel = getSel() || S.sel;
+  const before = { text: M.text, marks: M.marks, from: sel.from, to: sel.to };
+  const sp = spliceDoc(M.text, M.marks, sel.from, sel.to, clean.text, clean.marks);
+  S.lastPaste = clean.stats;
+  S.lastChange = { op: "paste " + clean.text.length + " sanitised characters", ch: null, raw: null, marksBefore: before.marks };
+  const caret = sel.from + clean.text.length;
+  commit(before, { text: sp.text, marks: sp.marks, from: caret, to: caret }, { kind: "paste" });
+}
+
+const HOSTILE_HTML =
+  '<div style="color:#f00;font-family:Calibri" class="MsoNormal" id="x">' +
+  '<p style="margin:0"><span style="font-weight:700">Pasted from a word processor</span> with ' +
+  '<b>real bold</b>, <i>real italics</i> and <span style="font-style:italic">fake italics</span>.<\/p>' +
+  '<scr' + 'ipt>alert("xss")<\/scr' + 'ipt>' +
+  '<p>A <a href="https://dev48.infy.uk" onclick="steal()" target="_blank">good link</a>, ' +
+  'a <a href="javascript:alert(1)">bad one</a>, some <code>inline code</code> and ' +
+  '<del>deleted text</del>.<\/p><img src="tracker.gif" width="1" height="1">' +
+  '<ul><li>a list item<\/li><li>another one<\/li><\/ul><\/div>';
+
+// ---------- inspector painting -----------------------------------------
+const TAGCLASS = { bold: "t-bold", italic: "t-italic", code: "t-code", strike: "t-strike", link: "t-link" };
+const tagHtml = t => '<span class="rte-tag ' + (TAGCLASS[t] || "") + '">' + t + "</span>";
+const showText = s => esc(s).replace(/\n/g, '<span class="m">\u23ce</span>');
+const markLine = m => '<span class="k">[' + m.from + ", " + m.to + ')</span> <span class="v">' + m.type + "</span>" +
+  (m.type === "link" ? ' <span class="m">href=</span><span class="g">' + esc(m.href || "") + "</span>" : "");
+
+function paintToolbar(){
+  const sel = S.sel;
+  barEl.querySelectorAll("[data-mark]").forEach(b => {
+    const t = b.dataset.mark;
+    let on;
+    if (sel.from === sel.to){
+      const active = marksAtOffset(M.marks, sel.from).some(m => m.type === t);
+      on = S.pending.has(t) ? !active : active;
+    } else {
+      on = hasMarkThroughout(M.marks, sel.from, sel.to, t);
+    }
+    b.classList.toggle("on", !!on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  const linkBtn = document.getElementById("rte-link");
+  const linked = sel.from === sel.to
+    ? marksAtOffset(M.marks, sel.from).some(m => m.type === "link")
+    : hasMarkThroughout(M.marks, sel.from, sel.to, "link");
+  linkBtn.classList.toggle("on", linked);
+  document.getElementById("rte-undo").disabled = S.undo.length === 0;
+  document.getElementById("rte-redo").disabled = S.redo.length === 0;
+}
+
+function paintStatus(runs){
+  const sel = S.sel;
+  const cps = Array.from(M.text).length;
+  statusEl.innerHTML =
+    "words <b>" + countWords(M.text) + "</b>" +
+    " &middot; chars <b>" + M.text.length + "</b>" +
+    (cps === M.text.length ? "" : " <span>(" + cps + " code points)</span>") +
+    " &middot; marks <b>" + M.marks.length + "</b>" +
+    " &middot; runs <b>" + runs.length + "</b>" +
+    " &middot; selection <b>[" + sel.from + ", " + sel.to + ")</b>" +
+    " &middot; renders <b>" + S.renders + "</b>" +
+    (S.pending.size ? ' &middot; <span class="pill a">pending ' + Array.from(S.pending).join(" + ") + "</span>" : "");
+}
+
+function paintModel(){
+  const sel = S.sel;
+  const activeAt = marksAtOffset(M.marks, sel.from).map(m => m.type);
+  // line index — computed from the text, and the reason a newline is one character
+  const lines = [];
+  let start = 0;
+  for (let i = 0; i <= M.text.length; i++){
+    if (i === M.text.length || M.text[i] === "\n"){ lines.push({ start, end: i }); start = i + 1; }
+  }
+  const lineRows = lines.slice(0, 6).map((l, i) =>
+    '<tr><td class="m">line ' + (i + 1) + '</td><td><span class="k">[' + l.start + ", " + l.end + ')</span></td>' +
+    '<td class="m">' + (l.end - l.start) + " chars" + (l.end < M.text.length ? " + ⏎" : "") + "</td></tr>").join("");
+  modelEl.innerHTML =
+    '<h4>doc.text — ' + M.text.length + " characters</h4>" +
+    '<div class="rte-scroller"><div style="white-space:pre-wrap;word-break:break-word" class="g">' + showText(M.text) + "</div></div>" +
+    '<div class="rte-scroller" style="margin-top:5px"><table>' + lineRows +
+      (lines.length > 6 ? '<tr><td class="m">…</td><td class="m">' + (lines.length - 6) + " more lines</td><td></td></tr>" : "") +
+    "</table></div>" +
+    '<h4 style="margin-top:9px">doc.marks — ' + M.marks.length + " intervals</h4>" +
+    (M.marks.length
+      ? M.marks.map(m => "<div>" + markLine(m) + "</div>").join("")
+      : '<div class="m">(no marks — every character is plain)</div>') +
+    '<h4 style="margin-top:9px">caret / selection</h4>' +
+    '<div><span class="k">[' + sel.from + ", " + sel.to + ')</span> <span class="m">marksAtOffset(' + sel.from + ") =</span> " +
+      '<span class="v">' + (activeAt.length ? activeAt.join(", ") : "none") + "</span></div>";
+}
+
+function paintRuns(runs){
+  const cover = runs.reduce((a, r) => a + (r.to - r.from), 0);
+  const tiles = runs.every((r, i) => r.from === (i ? runs[i - 1].to : 0)) &&
+                (!runs.length || runs[runs.length - 1].to === M.text.length);
+  let rows = "";
+  for (const r of runs.slice(0, 14)){
+    rows += "<tr><td><span class=\"k\">[" + r.from + ", " + r.to + ")</span></td>" +
+            "<td>" + (r.types.length ? r.types.map(tagHtml).join("") : '<span class="m">plain</span>') + "</td>" +
+            '<td class="v">' + showText(r.text.length > 22 ? r.text.slice(0, 21) + "\u2026" : r.text) + "</td></tr>";
+  }
+  runsEl.innerHTML =
+    "<h4>styleRuns(text, marks) — " + runs.length + " runs</h4>" +
+    '<div class="rte-scroller"><table><tr><th>range</th><th>styles</th><th>text</th></tr>' + rows + "</table></div>" +
+    (runs.length > 14 ? '<div class="m">…' + (runs.length - 14) + " more</div>" : "") +
+    '<div style="margin-top:7px" class="' + (tiles ? "g" : "r") + '">tiling check: ' +
+      (tiles ? "runs tile [0, " + M.text.length + ") exactly" : "GAP OR OVERLAP DETECTED") +
+      ' <span class="m">— covered ' + cover + " of " + M.text.length + " characters</span></div>";
+}
+
+function paintMap(){
+  const c = S.lastChange;
+  if (!c){ mapEl.innerHTML = "<h4>position mapping</h4><div class=\"m\">Type, delete or toggle something and every mark endpoint will be shown moving through the change.</div>"; return; }
+  let head = '<h4>last change — position mapping</h4><div class="v">' + esc(c.op) + "</div>";
+  if (c.ch){
+    head += '<div class="m" style="margin-top:3px">mapPos rule: ' +
+      (c.ch.kind === "insert"
+        ? "insert at " + c.ch.at + " of " + c.ch.len + " char(s) &rarr; every endpoint p with " + c.ch.at + " &le; p becomes p + " + c.ch.len
+        : "delete [" + c.ch.from + ", " + c.ch.to + ") &rarr; p &le; " + c.ch.from + " stays, p &ge; " + c.ch.to + " loses " + (c.ch.to - c.ch.from) + ", inside collapses to " + c.ch.from) +
+      "</div>";
+  }
+  if (c.note) head += '<div class="m">' + esc(c.note) + "</div>";
+  let rows = "";
+  const beforeList = normalizeMarks(c.marksBefore || []);
+  if (c.ch && c.raw){
+    const raw = c.raw;
+    for (let i = 0; i < Math.min(beforeList.length, raw.length, 10); i++){
+      const b = beforeList[i], a = raw[i];
+      let note = "unchanged", cls = "m";
+      if (a.from === b.from && a.to === b.to) { note = "unchanged"; cls = "m"; }
+      else if (a.to - a.from > b.to - b.from) { note = "extended"; cls = "g"; }
+      else if (a.to - a.from === 0)           { note = "erased";   cls = "r"; }
+      else if (a.to - a.from < b.to - b.from) { note = "clipped";  cls = "z"; }
+      else                                    { note = "shifted";  cls = "k"; }
+      rows += "<tr><td>" + tagHtml(b.type) + "</td><td><span class=\"m\">[" + b.from + ", " + b.to + ")</span></td>" +
+              '<td class="m">&rarr;</td><td><span class="k">[' + a.from + ", " + a.to + ')</span></td>' +
+              '<td class="' + cls + '">' + note + "</td></tr>";
+    }
+  }
+  mapEl.innerHTML = head + (rows
+    ? '<div class="rte-scroller" style="margin-top:5px"><table><tr><th>mark</th><th>before</th><th></th><th>after</th><th>effect</th></tr>' + rows + "</table></div>"
+    : '<div class="m" style="margin-top:5px">This change rewrote the mark list directly rather than mapping positions, so there is nothing to map.</div>');
+}
+
+// A fixed, deliberately awful input — the OUTPUT is computed live by the
+// same normalizeMarks the editor runs on every keystroke.
+const NORM_DEMO_INPUT = [
+  { from: 6,  to: 2,  type: "bold" },      // reversed
+  { from: 0,  to: 4,  type: "bold" },
+  { from: 4,  to: 7,  type: "bold" },      // adjacent to the one above
+  { from: 9,  to: 9,  type: "italic" },    // empty
+  { from: 12, to: 3,  type: "italic" },    // reversed and overlapping
+  { from: 5,  to: 10, type: "italic" },
+  { from: 0,  to: 3,  type: "link", href: "https://a.example" },
+  { from: 3,  to: 6,  type: "link", href: "https://b.example" }   // touching, different href
+];
+function paintNorm(){
+  const demoOut = normalizeMarks(NORM_DEMO_INPUT, 20);
+  let html = "<h4>normalisation — sort, merge, drop empties</h4>" +
+    '<div class="m">A fixed hostile input, normalised live by the same function the editor calls after every operation:</div>' +
+    '<div class="rte-scroller"><table><tr><th>in (' + NORM_DEMO_INPUT.length + ")</th><th>out (" + demoOut.length + ")</th></tr>";
+  const n = Math.max(NORM_DEMO_INPUT.length, demoOut.length);
+  for (let i = 0; i < n; i++){
+    const a = NORM_DEMO_INPUT[i], b = demoOut[i];
+    html += "<tr><td>" + (a ? markLine(a) : "") + "</td><td>" + (b ? markLine(b) : '<span class="m">&mdash;</span>') + "</td></tr>";
+  }
+  html += "</table></div>";
+  const t = S.lastTrace;
+  if (t){
+    html += '<h4 style="margin-top:9px">last toggle — raw vs normalised</h4>' +
+      '<div class="v">toggleMark(' + t.type + ", " + t.from + ", " + t.to + ") &rarr; " + t.decision +
+      ' <span class="m">(every character already carried it? ' + (t.decision === "remove" ? "yes &rarr; remove" : "no &rarr; add") + ")</span></div>" +
+      '<div class="rte-scroller"><table><tr><th>raw (' + t.raw.length + ")</th><th>normalised (" + t.out.length + ")</th></tr>";
+    const k = Math.max(t.raw.length, t.out.length);
+    const rawSorted = t.raw.slice();
+    for (let i = 0; i < k; i++){
+      const a = rawSorted[i], b = t.out[i];
+      html += "<tr><td>" + (a ? markLine(a) : "") + "</td><td>" + (b ? markLine(b) : '<span class="m">&mdash;</span>') + "</td></tr>";
+    }
+    html += "</table></div>";
+  }
+  normEl.innerHTML = html;
+}
+
+function paintPaste(){
+  const s = S.lastPaste;
+  let html = "<h4>paste sanitiser — allowlist into marks</h4>" +
+    '<div class="m">Allowed: ' + Object.keys(ALLOWED_TAGS).join(", ").toLowerCase() +
+    ". Dropped with their subtree: " + Array.from(DROPPED_TAGS).slice(0, 8).join(", ").toLowerCase() + ", …</div>";
+  if (!s){
+    html += '<div class="m" style="margin-top:5px">Paste some formatted HTML, or press <span class="v">Paste HTML</span> in the toolbar to feed a hostile word-processor blob through the filter.</div>';
+  } else {
+    html += '<div class="rte-scroller" style="margin-top:5px"><table>' +
+      '<tr><td class="m">tags converted to marks</td><td class="g">' + s.kept + "</td></tr>" +
+      '<tr><td class="m">tags unwrapped (text kept, tag discarded)</td><td class="z">' + s.unwrapped + "</td></tr>" +
+      '<tr><td class="m">nodes dropped with their subtree</td><td class="r">' + s.dropped + "</td></tr>" +
+      '<tr><td class="m">attributes stripped</td><td class="r">' + s.attrs + "</td></tr>" +
+      '<tr><td class="m">unsafe href schemes rejected</td><td class="r">' + s.badHref + "</td></tr>" +
+      '<tr><td class="m">characters kept</td><td class="v">' + s.chars + "</td></tr></table></div>";
+  }
+  pasteEl.innerHTML = html;
+}
+
+function paintHist(){
+  const last = S.undo[S.undo.length - 1];
+  let html = "<h4>history — " + S.undo.length + " undo, " + S.redo.length + " redo</h4>" +
+    '<div class="m">Consecutive insertions coalesce while the next one starts exactly where the last ended and lands within ' + COALESCE_MS + "ms.</div>";
+  const rows = S.undo.slice(-6).reverse();
+  if (rows.length){
+    html += '<div class="rte-scroller" style="margin-top:5px"><table><tr><th>kind</th><th>at</th><th>len</th><th>coalesced</th></tr>';
+    for (const e of rows){
+      html += '<tr class="' + (e === last ? "sel" : "") + '"><td class="v">' + e.kind + '</td><td class="k">' +
+        (e.at == null ? "&mdash;" : e.at) + '</td><td class="k">' + (e.len || 0) + '</td><td class="' +
+        ((e.runs || 1) > 1 ? "g" : "m") + '">' + (e.runs || 1) + " step" + ((e.runs || 1) === 1 ? "" : "s") + "</td></tr>";
+    }
+    html += "</table></div>";
+  } else {
+    html += '<div class="m" style="margin-top:5px">(empty — nothing has been edited yet)</div>';
+  }
+  histEl.innerHTML = html;
+}
+
+function paintAll(runs){
+  const r = runs || styleRuns(M.text, M.marks);
+  paintToolbar();
+  paintStatus(r);
+  paintModel();
+  paintRuns(r);
+  paintMap();
+  paintNorm();
+  paintPaste();
+  paintHist();
+}
+
+// ---------- events ------------------------------------------------------
+ed.addEventListener("beforeinput", (e) => {
+  const sel = getSel() || S.sel;
+  const t = e.inputType;
+  e.preventDefault();
+  if (t === "insertText" || t === "insertReplacementText") typeText(e.data || "", sel);
+  else if (t === "insertParagraph" || t === "insertLineBreak") typeText("\n", sel);
+  else if (t.indexOf("delete") === 0) doDelete(t, sel);
+  else if (t === "historyUndo") undo();
+  else if (t === "historyRedo") redo();
+  else if (t === "formatBold") applyToggle("bold");
+  else if (t === "formatItalic") applyToggle("italic");
+});
+
+ed.addEventListener("paste", (e) => {
+  e.preventDefault();
+  const dt = e.clipboardData;
+  if (!dt) return;
+  pasteHtml(dt.getData("text/html"), dt.getData("text/plain"));
+});
+ed.addEventListener("drop", e => e.preventDefault());
+
+ed.addEventListener("keydown", (e) => {
+  const meta = e.ctrlKey || e.metaKey;
+  if (!meta) return;
+  const k = e.key.toLowerCase();
+  if (k === "b"){ e.preventDefault(); applyToggle("bold"); }
+  else if (k === "i"){ e.preventDefault(); applyToggle("italic"); }
+  else if (k === "e"){ e.preventDefault(); applyToggle("code"); }
+  else if (k === "k"){ e.preventDefault(); openLinkBar(); }
+  else if (k === "z"){ e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (k === "y"){ e.preventDefault(); redo(); }
+  else if (k === "a"){ e.preventDefault(); selectAll(); }
+});
+
+document.addEventListener("selectionchange", () => {
+  if (document.activeElement !== ed) return;
+  const s = getSel();
+  if (!s) return;
+  S.sel = s;
+  if (S.pending.size && (s.from !== S.pendingAt || s.to !== S.pendingAt)){ S.pending.clear(); S.pendingAt = -1; }
+  paintToolbar(); paintStatus(styleRuns(M.text, M.marks)); paintModel();
+});
+
+barEl.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault(); });
+barEl.querySelectorAll("[data-mark]").forEach(b => b.onclick = () => { ed.focus(); setSel(S.sel.from, S.sel.to); applyToggle(b.dataset.mark); });
+document.getElementById("rte-undo").onclick = () => { ed.focus(); undo(); };
+document.getElementById("rte-redo").onclick = () => { ed.focus(); redo(); };
+
+function selectAll(){
+  ed.focus();
+  S.sel = { from: 0, to: M.text.length };
+  setSel(0, M.text.length);
+  paintToolbar(); paintStatus(styleRuns(M.text, M.marks)); paintModel();
+}
+document.getElementById("rte-selall").onclick = selectAll;
+document.getElementById("rte-paste-demo").onclick = () => { ed.focus(); setSel(S.sel.from, S.sel.to); pasteHtml(HOSTILE_HTML, ""); };
+document.getElementById("rte-reset").onclick = () => {
+  M.text = SEED_TEXT; M.marks = seedMarks();
+  S.undo = []; S.redo = []; S.pending.clear();
+  S.lastChange = null; S.lastTrace = null; S.lastPaste = null;
+  render(0, 0, false);
+};
+document.getElementById("rte-md").onclick = function(){
+  S.md = !S.md; this.classList.toggle("on", S.md); this.setAttribute("aria-pressed", S.md ? "true" : "false");
+};
+document.getElementById("rte-inspect").onclick = function(){
+  S.inspect = !S.inspect; this.classList.toggle("on", S.inspect);
+  this.setAttribute("aria-pressed", S.inspect ? "true" : "false");
+  lowerEl.style.display = S.inspect ? "" : "none";
+  runsEl.parentElement.style.display = S.inspect ? "" : "none";
+};
+
+function openLinkBar(){
+  const sel = getSel() || S.sel;
+  const existing = marksAtOffset(M.marks, sel.to).filter(m => m.type === "link")[0];
+  hrefIn.value = existing ? (existing.href || "") : "https://";
+  linkbar.classList.add("on");
+  hrefIn.focus(); hrefIn.select();
+}
+document.getElementById("rte-link").onclick = () => { ed.focus(); setSel(S.sel.from, S.sel.to); openLinkBar(); };
+document.getElementById("rte-link-ok").onclick = () => { linkbar.classList.remove("on"); ed.focus(); setSel(S.sel.from, S.sel.to); setLink(hrefIn.value); };
+document.getElementById("rte-link-rm").onclick = () => { linkbar.classList.remove("on"); ed.focus(); setSel(S.sel.from, S.sel.to); clearLink(); };
+document.getElementById("rte-link-x").onclick = () => { linkbar.classList.remove("on"); ed.focus(); };
+hrefIn.addEventListener("keydown", e => {
+  if (e.key === "Enter"){ e.preventDefault(); document.getElementById("rte-link-ok").click(); }
+  else if (e.key === "Escape"){ e.preventDefault(); linkbar.classList.remove("on"); ed.focus(); }
+});
+ed.addEventListener("click", e => { const a = e.target.closest("a"); if (a) e.preventDefault(); });
+
+render(0, 0, false);
+
+// ===== UNDERSTAND steps =================================================
+const CONCEPT_STEPS = [
+ { title:"1. The DOM is a rendering target, not your document",
+   why:"The moment you let the contenteditable be the truth, you have handed your data model to a browser that will cheerfully invent font tags, split text nodes for no reason, and produce different markup in every engine for the same keystroke. Undo becomes irreversible because you no longer know what changed, collaboration becomes impossible because you cannot express a change as anything smaller than the whole innerHTML, and a paste from a word processor smuggles somebody else's CSS straight into your product. Invert it: keep a document you own, render it into the element, and intercept every input event so the browser never mutates anything itself. From then on the element is a picture — a picture you can throw away and redraw at any moment because everything that matters lives somewhere else.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">model &nbsp;{ text, marks }<br>&nbsp;&nbsp;&darr; render<br>DOM &nbsp;&lt;strong&gt;&lt;em&gt;…&lt;/em&gt;&lt;/strong&gt;<br>&nbsp;&nbsp;&uarr; beforeinput (cancelled)<br>keystroke<br><br>the arrow down is the only writer</div>',
+   code:"editor.addEventListener(\"beforeinput\", (e) => {\n  e.preventDefault();              // the browser never edits\n  const sel = getSel();\n  if (e.inputType === \"insertText\") typeText(e.data, sel);\n  else if (e.inputType.startsWith(\"delete\")) doDelete(e.inputType, sel);\n  // …\n});\n\n// every path ends the same way:\nM.text = after.text; M.marks = after.marks;\nrender(after.from, after.to);     // redraw + put the caret back" },
+
+ { title:"2. The model: plain text plus half-open intervals",
+   why:"A document is a string and a list of marks, where a mark is a range plus a type. Choosing half-open ranges — from inclusive, to exclusive, exactly like Array.slice — is what makes the arithmetic pleasant: the length is to minus from with no plus one anywhere, two ranges are adjacent precisely when a.to equals b.from, and an empty range is the obvious from equals to instead of something you have to squint at. Marks are allowed to overlap freely, which is the whole point: bold across words one to three and italic across words two to four is an ordinary sentence, and a tree of nested nodes cannot represent it without inventing a split that the user never asked for. Anything a mark needs beyond its type — an href — rides along as a field, and the identity of a mark for merging purposes is its type plus those fields.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">text&nbsp;&nbsp;"the quick brown fox"<br>index &nbsp;0123456789…<br><br>bold&nbsp;&nbsp;&nbsp;[4, 9)&nbsp;&nbsp;&rarr; "quick"<br>italic [10, 19) &rarr; "brown fox"<br>code&nbsp;&nbsp;&nbsp;[4, 15)&nbsp;&rarr; overlaps both<br><br>length = to - from &middot; adjacent = a.to === b.from</div>',
+   code:"const doc = {\n  text: \"The document model is the truth.\",\n  marks: [\n    { from: 4,  to: 18, type: \"bold\" },\n    { from: 12, to: 31, type: \"italic\" },      // overlaps the bold\n    { from: 0,  to: 3,  type: \"link\", href: \"https://example.com\" }\n  ]\n};\n\nconst MARK_ORDER = [\"link\", \"bold\", \"italic\", \"strike\", \"code\"];\nconst markKey = m =>\n  m.type === \"link\" ? \"link\\u0000\" + (m.href || \"\") : m.type;" },
+
+ { title:"3. Normalisation, or the same document twice",
+   why:"Without a canonical form the same visible document has endlessly many mark lists, and every question you will want to ask — has this changed, do two clients agree, is this dirty, can I diff it — becomes unanswerable. So define exactly one representation and restore it at the end of every single operation. Clamp ranges into the text, throw away anything empty, group by mark key, sort, and merge whatever overlaps or merely touches. Merging on touch is the subtle one and it is what kills the classic bug where bolding a word twice leaves two identical stacked intervals and the next toggle removes only one of them. Note what the key does here: two bold intervals that touch are the same mark and merge, while two links that touch with different hrefs are different marks and must stay apart. One function, no special cases, run everywhere.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">in&nbsp;&nbsp;[6,2] [0,4] [4,7] [9,9] [12,3]<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; swap reversed &middot; drop empty<br>&nbsp;&nbsp;&nbsp;&nbsp;&darr; sort &middot; merge overlap AND touch<br>out [0,7) bold &nbsp;[3,12) italic<br><br>link a [0,3) + link b [3,6) &rarr; NOT merged</div>',
+   code:"for (const [k, list] of buckets){\n  list.sort((a, b) => a[0] - b[0] || a[1] - b[1]);\n  let cf = list[0][0], ct = list[0][1];\n  for (let i = 1; i < list.length; i++){\n    const iv = list[i];\n    if (iv[0] <= ct) ct = Math.max(ct, iv[1]);   // overlap OR touch\n    else { out.push(mkMark(k, cf, ct)); cf = iv[0]; ct = iv[1]; }\n  }\n  out.push(mkMark(k, cf, ct));\n}" },
+
+ { title:"4. toggleMark: all-on removes, anything-off adds",
+   why:"This is the single function that separates a real editor from a demo, and it is where almost everybody's first attempt is wrong. Select a range where half the characters are bold and press bold: the correct answer is that the whole range becomes bold, and only a second press clears it. Implementations that ask whether some interval contains the selection get this wrong in two directions — they miss coverage spread across several adjacent intervals, and they treat partial coverage as full. Ask the right question instead: does every character in the range already carry this type. Answer it with a coverage sweep over the sorted intervals of that type, walking a cursor forward and failing the moment a hole opens. Then the toggle is one conditional, and the toolbar's active state is the very same predicate — a button is on only when the whole selection is covered.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">selection [2, 9)<br>bold&nbsp;&nbsp;[0,5) [5,7)&nbsp;&nbsp;&rarr; cursor 2&rarr;5&rarr;7, hole at 7<br>&rArr; not covered &rArr; ADD [2,9)<br><br>press again: bold [0,9) covers [2,9)<br>&rArr; covered &rArr; REMOVE &rarr; [0,2)</div>',
+   code:"function hasMarkThroughout(marks, from, to, type){\n  const a = Math.min(from, to), b = Math.max(from, to);\n  if (a >= b) return false;                 // a caret covers nothing\n  const ivs = marks.filter(m => m.type === type)\n    .map(m => [Math.min(m.from, m.to), Math.max(m.from, m.to)])\n    .filter(iv => iv[0] < iv[1]).sort((x, y) => x[0] - y[0]);\n  let cursor = a;\n  for (const iv of ivs){\n    if (iv[0] > cursor) return false;        // hole\n    cursor = Math.max(cursor, iv[1]);\n    if (cursor >= b) return true;\n  }\n  return cursor >= b;\n}" },
+
+ { title:"5. One mapPos, and a boundary rule you can say out loud",
+   why:"After an edit, do not rebuild the marks — map them. Every endpoint of every mark is only a position, and a change moves positions by a rule that fits in four lines. What you must decide, and then write down, is the ambiguous case: text typed exactly at a mark's end can land inside it or outside it, and both are defensible. This editor is left-exclusive and right-inclusive — insert at from lands outside, insert at to lands inside — which is why continuing to type at the end of a bold word stays bold while typing immediately before it does not, and which matches what every mainstream editor does. The reward for choosing that particular rule is that both endpoints use an identical comparison, so mapping is one function rather than two, and the same rule tells you which marks a bare caret carries.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">bold [2, 5)&nbsp;&nbsp;insert 1 char<br><br>at 3 (middle) &rarr; [2, 6)&nbsp;&nbsp;grows<br>at 5 (right)&nbsp;&nbsp;&rarr; [2, 6)&nbsp;&nbsp;grows &nbsp;&larr; inclusive<br>at 2 (left)&nbsp;&nbsp;&nbsp;&rarr; [3, 6)&nbsp;&nbsp;pushed &larr; exclusive<br><br>same rule: a new char inherits its LEFT neighbour</div>',
+   code:"// ch = { kind:\"insert\", at, len } | { kind:\"delete\", from, to }\nfunction mapPos(pos, ch){\n  if (ch.kind === \"insert\") return ch.at <= pos ? pos + ch.len : pos;\n  const d = ch.to - ch.from;\n  return pos <= ch.from ? pos\n       : pos >= ch.to   ? pos - d\n       : ch.from;\n}\n\nconst mapMarks = (marks, ch) => marks.map(m => ({\n  ...m, from: mapPos(m.from, ch), to: mapPos(m.to, ch)\n}));" },
+
+ { title:"6. Deletes clip, swallow and erase — with no special cases",
+   why:"The three outcomes people write three branches for all fall out of the one mapPos. A mark entirely before the deleted span never moves. A mark entirely after it slides left by the deleted length. A mark straddling the boundary has one endpoint mapped and the other clamped to the deletion point, which is exactly clipping. And a mark entirely inside the deleted span has both endpoints collapse to the same number, becoming empty — at which point the normaliser you already run at the end of every operation deletes it for you. That is the payoff of insisting on a canonical form: erasure is not code, it is a consequence. The only thing left to be careful about is a collapsed backspace, which must step back two UTF-16 units when it is standing behind a surrogate pair, or you will split an emoji in half and render a replacement glyph.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">delete [3, 8)&nbsp;&nbsp;&nbsp;(5 characters)<br><br>[0, 2) &rarr; [0, 2)&nbsp;&nbsp;untouched<br>[2, 5) &rarr; [2, 3)&nbsp;&nbsp;clipped<br>[4, 7) &rarr; [3, 3)&nbsp;&nbsp;empty &rarr; erased<br>[9,12) &rarr; [4, 7)&nbsp;&nbsp;shifted left by 5</div>',
+   code:"function applyDelete(text, marks, from, to){\n  const a = Math.max(0, Math.min(text.length, Math.min(from, to)));\n  const b = Math.max(0, Math.min(text.length, Math.max(from, to)));\n  const ch = { kind: \"delete\", from: a, to: b };\n  const nt = text.slice(0, a) + text.slice(b);\n  return { text: nt, marks: normalizeMarks(mapMarks(marks, ch), nt.length) };\n}\n\n// never cut a surrogate pair in half\nfunction stepBack(text, p){\n  const c = text.charCodeAt(p - 1);\n  return (c >= 0xDC00 && c <= 0xDFFF && p >= 2) ? p - 2 : p - 1;\n}" },
+
+ { title:"7. You cannot wrap each mark in its own tag",
+   why:"Here is the structural fact that forces the whole rendering design. Marks may overlap, HTML elements must nest, and the two are not compatible: bold over characters zero to five with italic over three to nine has no expression as one tag per mark, because you would need to close the bold inside the italic and the italic inside the bold at the same time. Browsers will silently repair whatever you emit, and the repair will not match your model, so the caret will land in the wrong place and the next render will differ from the last. The way out is a boundary sweep. Collect every from and to, add the two ends of the text, sort them, and walk the gaps between consecutive points. Inside a gap nothing can start or stop, so the set of active marks is constant, and the output is a strip of non-overlapping runs that tiles the text exactly.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">bold&nbsp;&nbsp;&nbsp;[0, 5)&nbsp;&nbsp;italic [3, 9)<br>&lt;b&gt;abc&lt;i&gt;de&lt;/b&gt;fghi&lt;/i&gt; &nbsp;&#10007; invalid<br><br>boundaries 0 3 5 9<br>[0,3) bold &middot; [3,5) bold+italic &middot; [5,9) italic<br>&#10003; three runs, no overlap, no gap</div>',
+   code:"const pts = new Set([0, text.length]);\nfor (const m of ms){ pts.add(m.from); pts.add(m.to); }\nconst b = [...pts].sort((x, y) => x - y);\n\nfor (let i = 0; i < b.length - 1; i++){\n  const from = b[i], to = b[i + 1];\n  const active = ms.filter(m => m.from <= from && m.to >= to);\n  runs.push({ from, to, text: text.slice(from, to),\n              types: active.map(m => m.type) });\n}" },
+
+ { title:"8. Nest the runs in a fixed order",
+   why:"With non-overlapping runs the renderer becomes a loop, but one detail decides whether the caret survives: the nesting order must be deterministic. Sort each run's active types by one global order — link outermost, then bold, italic, strike, and code innermost — and wrap from the inside out. Because the order is global rather than per-run, two adjacent runs carrying the same marks emit identical structure, which is what allows the browser to keep them stable and what stops the selection jumping when you redraw. Escape the text yourself rather than trusting anything, keep the surface at white-space pre-wrap so consecutive spaces survive without non-breaking-space hacks, emit one br per newline, and add a single trailing sentinel br when the text ends with a newline, because otherwise the browser refuses to display that final empty line. Mark the sentinel so your offset walk knows to skip it.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">run [3, 5) types [link, bold, code]<br>&nbsp;&nbsp;&darr; wrap inside &rarr; out<br>&lt;a&gt;&lt;strong&gt;&lt;code&gt;de&lt;/code&gt;&lt;/strong&gt;&lt;/a&gt;<br><br>order link &gt; bold &gt; italic &gt; strike &gt; code<br>same marks &rArr; same markup &rArr; stable caret</div>',
+   code:"function wrapRun(str, r){\n  let inner = esc(str);\n  for (let i = r.types.length - 1; i >= 0; i--){   // inside -> out\n    const t = r.types[i];\n    if (t === \"bold\")        inner = \"<strong>\" + inner + \"</strong>\";\n    else if (t === \"italic\") inner = \"<em>\"     + inner + \"</em>\";\n    else if (t === \"code\")   inner = \"<code>\"   + inner + \"</code>\";\n    else if (t === \"strike\") inner = \"<s>\"      + inner + \"</s>\";\n    else if (t === \"link\")   inner = '<a href=\"' + esc(r.href) + '\">' + inner + \"</a>\";\n  }\n  return inner;\n}" },
+
+ { title:"9. Selection: the bridge naive editors fall off",
+   why:"A DOM selection is a pair of node-and-offset points, where the node is whichever text node or element the browser happened to choose, and your model wants one integer. Build both directions and use them constantly. Going in, walk the editor in document order collecting text nodes and br elements — a br counts as exactly one character, the newline it stands for — and accumulate lengths until you reach the point; a collapsed Range compared against each node with compareBoundaryPoints answers before, after or inside without special-casing the annoying situation where the browser anchors the selection on an element rather than a text node. Going out, walk the same list until the offset falls inside a node. Then call it after every render, because you just replaced the entire subtree the selection was pointing into, and skip the sentinel br or every offset past the last newline will be one too large.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">&lt;strong&gt;"The "&lt;/strong&gt;&lt;em&gt;"doc"&lt;/em&gt;&lt;br&gt;&lt;code&gt;"x"&lt;/code&gt;<br>lengths&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;1<br>offsets&nbsp;&nbsp;0&ndash;4&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4&ndash;7&nbsp;&nbsp;&nbsp;7&nbsp;&nbsp;8&ndash;9<br><br>("doc" text node, 2) &rarr; model offset 6<br>model 8 &rarr; ("x" text node, 0)</div>',
+   code:"function walkNodes(root){                  // text nodes and <br>, in order\n  const out = [];\n  (function rec(n){\n    for (const c of n.childNodes){\n      if (c.nodeType === 3) out.push(c);\n      else if (c.nodeType === 1){\n        if (c.dataset && c.dataset.bogus) continue;   // sentinel is not text\n        if (c.tagName === \"BR\") out.push(c); else rec(c);\n      }\n    }\n  })(root);\n  return out;\n}\nconst nodeLen = n => n.nodeType === 3 ? n.nodeValue.length : 1;" },
+
+ { title:"10. Undo that groups your typing",
+   why:"Because every operation produces a complete new model, history is a stack of snapshots and undo is an assignment — no inverse operations to derive, no risk of an inverse being subtly wrong. The only interesting part is coalescing, because an undo that removes one character at a time is unusable. Merge a new insertion into the previous entry when it starts exactly where that one ended and arrives inside a short window, around seven hundred milliseconds. Look at what that condition buys without any extra bookkeeping: move the caret and the positions stop chaining, so the run breaks; press bold and the entry kind is no longer an insertion, so the run breaks; pause to think and the timestamp gap breaks it. Keep the before snapshot of the first entry in the run and the after snapshot of the latest, cap the stack, and clear the redo stack on any fresh edit.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">h e l l o &nbsp;typed in 300ms<br>&rarr; ONE entry { at: 12, len: 5, runs: 5 }<br><br>hello &middot; move caret &middot; world &rarr; two entries<br>hello &middot; Ctrl+B &middot; world &rarr; three entries<br><br>Ctrl+Z undoes a word, not a letter</div>',
+   code:"function canCoalesce(prev, next, windowMs){\n  if (!prev || !next) return false;\n  if (prev.kind !== \"insert\" || next.kind !== \"insert\") return false;\n  if (prev.ch === \"\\n\" || next.ch === \"\\n\") return false;\n  if (next.at !== prev.at + prev.len) return false;   // caret jump\n  return (next.time - prev.time) <= (windowMs == null ? 700 : windowMs);\n}\n\nout[out.length - 1] = { before: top.before, after: next.after,\n                        at: top.at, len: top.len + next.len,\n                        kind: \"insert\", runs: (top.runs || 1) + 1 };" },
+
+ { title:"11. Paste is hostile input",
+   why:"Clipboard HTML from a word processor or a web page is the single largest source of junk in any editor: inline styles, class names, font tags, tracking pixels, comment nodes, and occasionally a script. Never insert it. Run it through an allowlist that maps a handful of tags onto your mark types, drops a known set of tags together with their entire subtree, and unwraps everything else — the text survives, the identity does not. Do the walk over a plain tree of tag, attrs and children rather than live DOM nodes, and the sanitiser becomes a pure function you can unit test without a browser. Two rules deserve special care: any attribute that is not an anchor's href is stripped unconditionally, and the href itself is scheme-checked, so http, https, mailto and relative URLs pass while javascript and data URLs become empty. Count everything you refused and show the number, because a sanitiser you cannot observe is a sanitiser nobody trusts.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">&lt;b&gt; &lt;strong&gt; &rarr; bold&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kept<br>&lt;i&gt; &lt;em&gt; &rarr; italic&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;kept<br>&lt;a href&gt; &rarr; link (scheme-checked)<br>&lt;span style&gt; &lt;div&gt; &lt;p&gt;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;unwrapped<br>&lt;script&gt; &lt;img&gt; &lt;style&gt;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;dropped<br>style= class= onclick=&nbsp;&nbsp;&nbsp;&nbsp;stripped</div>',
+   code:"function safeHref(h){\n  const s = String(h == null ? \"\" : h).trim();\n  if (/^(https?:|mailto:)/i.test(s)) return s;\n  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return \"\";   // javascript:, data: …\n  return s;                                         // relative URLs are fine\n}\n\nif (DROPPED_TAGS.has(tag)){ stats.dropped++; return; }\nconst type = ALLOWED_TAGS[tag];\nif (type){ stats.kept++; /* open a mark, record its spans */ }\nelse { stats.unwrapped++; /* keep the text, discard the tag */ }" },
+
+ { title:"12. Input rules: markdown that disappears as you type",
+   why:"The last piece is the one that makes an editor feel alive. After each inserted character, test a few patterns anchored to the caret — two asterisks around a phrase, a pair of backticks, underscores, tildes — and when one matches, replace the whole matched span with just its inner text plus the corresponding mark, then place the caret at the end of that text. The source characters vanish, which is the entire effect. Anchor every pattern to the end of the text before the caret so a rule can only ever fire at the moment you complete it, exclude the delimiter from the inner class so the match cannot run away across a paragraph, and require a boundary before a single underscore or asterisk so that snake_case identifiers and multiplication are left alone. Because the rewrite is expressed as a splice on the model rather than a DOM edit, it composes with undo for free — one Ctrl+Z puts the asterisks back.",
+   concept:'<div class="bg-slate-100 p-4 rounded text-sm w-full text-center font-mono concept-box">type&nbsp;&nbsp;**bold**&nbsp;&nbsp;&nbsp;caret at 8<br>match /\\*\\*([^*\\n]+)\\*\\*$/ &rarr; "bold"<br>splice [0, 8) &rarr; "bold" + bold [0, 4)<br>caret &rarr; 4 &nbsp;&middot;&nbsp; 4 delimiters removed<br><br>`code` &nbsp;_italic_ &nbsp;~~strike~~</div>',
+   code:"const MD_RULES = [\n  { type:\"bold\",   re:/\\*\\*([^*\\n]+)\\*\\*$/,        marker:2 },\n  { type:\"strike\", re:/~~([^~\\n]+)~~$/,            marker:2 },\n  { type:\"code\",   re:/`([^`\\n]+)`$/,              marker:1 },\n  { type:\"italic\", re:/(?:^|[\\s(])_([^_\\n]+)_$/,   marker:1, boundary:true }\n];\n\nconst rule = markdownRule(text, caret);\nif (rule){\n  const sp = spliceDoc(text, marks, rule.from, rule.to, rule.insert,\n                       [{ from: 0, to: rule.insert.length, type: rule.type }]);\n  caret = rule.from + rule.insert.length;\n}" }
+];
+const stepsEl = document.getElementById("steps");
+const prevS = document.getElementById("prev-s"), nextB = document.getElementById("next-btn"), autoB = document.getElementById("auto");
+let curStep = 0;
+CONCEPT_STEPS.forEach((s,i)=>{ const bn=document.createElement("button"); bn.className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; bn.innerHTML=`<div class="font-semibold">${s.title}</div>`; bn.onclick=()=>show(i); stepsEl.appendChild(bn); });
+function show(i){ curStep=i; const s=CONCEPT_STEPS[i];
+  document.getElementById("concept").innerHTML=`<div class="fade-in w-full flex items-center justify-center">${s.concept}</div>`;
+  document.getElementById("why").innerHTML=`<span class="fade-in inline-block">${s.why}</span>`;
+  document.getElementById("code").textContent=s.code;
+  stepsEl.querySelectorAll("button").forEach((bn,idx)=>{ bn.className = idx===i ? "w-full text-left p-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 text-sm font-semibold" : "w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-400 text-sm"; });
+}
+prevS.onclick=()=>show(Math.max(0,curStep-1)); nextB.onclick=()=>show(Math.min(CONCEPT_STEPS.length-1,curStep+1));
+let tm=null; autoB.onclick=()=>{ if(tm){clearInterval(tm);tm=null;autoB.textContent="▶ Auto-play";return;} autoB.textContent="⏸ Pause"; show(0); tm=setInterval(()=>{ if(curStep>=CONCEPT_STEPS.length-1){clearInterval(tm);tm=null;autoB.textContent="▶ Replay";return;} show(curStep+1); },4600); };
+show(0);
+
+function copy(btn){ const pre=btn.parentElement.querySelector("pre"); navigator.clipboard.writeText(pre.textContent); const o=btn.textContent; btn.textContent="✓ Copied!"; setTimeout(()=>btn.textContent=o,1500); }
+</script>
+</body>
+</html>
