@@ -65,6 +65,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 
 - [DesignFromZero · Day 61 — Emoji Picker](https://dev48v.infy.uk/design/day61-emoji-picker.html) — `day61-emoji-picker.html`
 - [DesignFromZero · Day 62 — Rich Text Editor](https://dev48v.infy.uk/design/day62-rich-text-editor.html) — `day62-rich-text-editor.html`
+- [DesignFromZero · Day 63 — Notion-style toggle blocks](https://dev48v.infy.uk/design/day63-toggle-blocks.html) — `day63-toggle-blocks.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

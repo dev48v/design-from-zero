@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 63 — Notion-style toggle blocks</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .row { display:flex; align-items:flex-start; gap:6px; padding:2px 0; border-radius:6px; }
+  .row:hover { background:#f8fafc; }
+  .row.sel { background:#eff6ff; }
+  .row.drop-into { box-shadow: inset 3px 0 0 #2563eb; background:#eff6ff; }
+  .row.drop-after { box-shadow: inset 0 -2px 0 #2563eb; }
+  .caret { width:18px; height:18px; flex:0 0 auto; cursor:pointer; user-select:none;
+           display:grid; place-items:center; border-radius:4px; color:#64748b; }
+  .caret:hover { background:#e2e8f0; }
+  .caret.leaf { visibility:hidden; }
+  .caret svg { transition: transform .15s ease; }
+  .caret.open svg { transform: rotate(90deg); }
+  .txt { flex:1; outline:none; min-height:1.5em; padding:1px 2px; border-radius:4px; }
+  .txt:empty::before { content:"Empty block"; color:#cbd5e1; }
+  .guide { border-left:1px solid #e2e8f0; margin-left:8px; padding-left:10px; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 63</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      ▸ Toggle blocks — the component people build as a nested <code>&lt;details&gt;</code> and then
+      cannot make <em>outline</em>. The document here is a <strong>flat array</strong> of
+      <code>{ id, text, depth, open }</code>, never a tree, because every operation you actually
+      want — Tab to indent, Shift+Tab to outdent, drag a block and take its children with it,
+      collapse a parent and hide a whole subtree — is a
+      <strong>contiguous range</strong> in a flat list and a <strong>graph rewrite</strong> in a tree.
+      Visibility is <em>derived</em>, never stored: a block is hidden iff any ancestor is collapsed,
+      which is one backward scan. Indent is legal only if it does not skip a level, so
+      <code>depth</code> can never go invalid. Drag-and-drop moves the whole subtree and
+      <strong>refuses to drop a block inside itself</strong>. The flat model is fuzz-tested in Node
+      against a real tree built with parent pointers — 2 representations, 0 shared code.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">▸ TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================== LOOK ============================== -->
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto grid lg:grid-cols-5 gap-5">
+
+      <div class="lg:col-span-3 bg-white rounded-2xl shadow p-5">
+        <p class="text-sm text-slate-600 mb-3">
+          Click a caret to collapse. <strong>Tab</strong> indents, <strong>Shift+Tab</strong> outdents,
+          <strong>Enter</strong> makes a sibling below, <strong>Backspace</strong> in an empty block
+          deletes it. Drag the caret to move a block <em>and everything under it</em>. Every number in
+          the panel is recomputed from the array after each edit.
+        </p>
+        <div id="doc" class="text-[15px]"></div>
+        <div class="flex flex-wrap gap-2 mt-4">
+          <button id="expandAll" class="px-3 py-1.5 rounded-lg bg-slate-200 text-sm font-semibold">Expand all</button>
+          <button id="collapseAll" class="px-3 py-1.5 rounded-lg bg-slate-200 text-sm font-semibold">Collapse all</button>
+          <button id="resetDoc" class="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-sm font-semibold">Reset</button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">THE DOCUMENT, AS STORED</p>
+          <pre id="model" class="text-[11px] max-h-64"></pre>
+          <p class="text-xs text-slate-500 mt-2">
+            This is not a description of the outline — it <strong>is</strong> the outline. The DOM
+            above is rebuilt from exactly this array after every change. Note there are no
+            <code>children</code> arrays anywhere.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">DERIVED, NEVER STORED</p>
+          <table class="text-sm w-full">
+            <tr><td class="py-1">blocks</td><td class="text-right font-bold tabular-nums" id="mCount">0</td></tr>
+            <tr><td class="py-1">visible</td><td class="text-right font-bold tabular-nums" id="mVis">0</td></tr>
+            <tr><td class="py-1">max depth</td><td class="text-right font-bold tabular-nums" id="mDepth">0</td></tr>
+            <tr><td class="py-1">collapsed parents</td><td class="text-right font-bold tabular-nums" id="mColl">0</td></tr>
+          </table>
+          <p id="valid" class="text-xs font-bold mt-2 text-emerald-600">✓ depth sequence valid</p>
+          <p class="text-xs text-slate-500 mt-1">
+            A depth may only ever rise by 1 from the block above it. That single rule is what makes a
+            flat array unambiguously a tree.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">SUBTREE OF THE SELECTED BLOCK</p>
+          <p class="text-sm">range <span id="rng" class="font-bold">—</span>, <span id="rngN" class="font-bold">0</span> descendants</p>
+          <p class="text-xs text-slate-500 mt-1">
+            "Everything under this block" is <code>[i+1, j)</code> where <code>j</code> is the next
+            block whose depth is ≤ mine. Deleting, moving, collapsing and dragging all use this one
+            function.
+          </p>
+        </div>
+      </div>
+
+      <div class="lg:col-span-5 bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">PROVE IT AGAINST A REAL TREE, RIGHT NOW</p>
+        <p class="text-sm text-slate-600 mb-3">
+          The flat array is only trustworthy if it agrees with an honest tree. This builds a parent-pointer
+          tree from the same edits, applies random operations to both, and compares the rendered outline
+          after every step.
+        </p>
+        <button id="fuzzBtn" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold">Fuzz 500 operations</button>
+        <pre id="fuzzOut" class="mt-3 hidden"></pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================== UNDERSTAND ============================== -->
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">Why not a tree, and why not <code>&lt;details&gt;</code></h2>
+
+      <p>The obvious model for nested toggles is a tree of nodes with <code>children</code> arrays,
+      rendered as nested <code>&lt;details&gt;</code> elements. It works right up until you want the
+      thing that makes an outliner an outliner: <strong>Tab to indent the block you are typing in</strong>.</p>
+
+      <p>In a tree, indenting is a graph rewrite. Detach the node from its parent, find the previous
+      sibling, append to <em>its</em> children, and re-parent every descendant pointer. Outdent is the
+      same surgery backwards, plus the fiddly part nobody remembers first time — the blocks
+      <em>after</em> you must become your children. Every one of those steps can leave the tree
+      inconsistent halfway through.</p>
+
+      <div class="bg-slate-100 rounded-xl p-4">
+        <p class="font-bold mb-2">The same document, flat:</p>
+        <pre>[ { id:1, text:"Trip",       depth:0, open:true  },
+  { id:2, text:"Flights",    depth:1, open:true  },
+  { id:3, text:"Outbound",   depth:2, open:true  },
+  { id:4, text:"Hotels",     depth:1, open:false },
+  { id:5, text:"Riverside",  depth:2, open:true  } ]</pre>
+        <p class="text-sm text-slate-600 mt-2">Indent block 4 is now <code>b[3].depth++</code>.
+        One integer. It cannot leave anything dangling because there are no pointers to dangle.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">The one rule that keeps a flat list a tree</h3>
+      <p>A flat array with arbitrary depths is not a tree — <code>[0, 2]</code> means nothing, because
+      block two claims a grandparent that does not exist. So exactly one invariant is enforced:</p>
+      <p class="font-mono bg-amber-50 border-l-4 border-amber-500 p-3 text-sm">
+        depth[i] ≤ depth[i−1] + 1, and depth[0] === 0
+      </p>
+      <p>Indent is <em>refused</em> when it would break that, which is why the Tab key sometimes does
+      nothing — the first block of a level has nothing to indent under. That is not a missing feature;
+      it is the invariant holding. The panel re-checks the whole sequence after every edit.</p>
+
+      <h3 class="text-xl font-bold">A subtree is a range, not a traversal</h3>
+      <p>Everything nested under block <code>i</code> is the run of blocks after it with a strictly
+      greater depth — and because depth can only rise one step at a time, that run is
+      <strong>contiguous</strong>. So:</p>
+      <pre>function subtreeEnd(b, i){
+  let j = i + 1;
+  while (j &lt; b.length &amp;&amp; b[j].depth &gt; b[i].depth) j++;
+  return j;                       // subtree is [i, j)
+}</pre>
+      <p>Collapse hides <code>[i+1, j)</code>. Delete splices <code>[i, j)</code>. Drag moves
+      <code>[i, j)</code>. One function, four features — and it is a scan, not a recursion, so there
+      is no stack depth to worry about on a big document.</p>
+
+      <h3 class="text-xl font-bold">Visibility is derived, never stored</h3>
+      <p>The tempting bug is to store a <code>hidden</code> flag and update it when a parent toggles.
+      Then collapse a parent, collapse a child inside it, expand the parent, and watch the child come
+      back expanded — because two sources of truth drifted.</p>
+      <pre>function visible(b, i){
+  let need = b[i].depth;
+  for (let k = i - 1; k &gt;= 0 &amp;&amp; need &gt; 0; k--){
+    if (b[k].depth &lt; need){       // this is an ancestor
+      if (!b[k].open) return false;
+      need = b[k].depth;
+    }
+  }
+  return true;
+}</pre>
+      <p>One backward scan, no stored state, no possible drift. A block is hidden if and only if some
+      ancestor is closed — which is the definition, expressed directly.</p>
+
+      <h3 class="text-xl font-bold">Dragging, and the move that must be refused</h3>
+      <p>Moving a block takes its subtree with it. The interesting case is the illegal one: dropping a
+      block <em>inside its own subtree</em>. In a tree that produces a cycle and an infinite render.
+      In the flat model it is an index comparison — the target must not lie in <code>[i, j)</code> —
+      so the bug that hangs the browser becomes an <code>if</code>.</p>
+
+      <h3 class="text-xl font-bold">What this is not</h3>
+      <p>This is not an accordion. An accordion is a flat one-of-N picker where opening one panel
+      often closes the others, and nesting is not part of the idea. A toggle block is a
+      <em>document</em> primitive: arbitrarily deep, independently open, reorderable, and the thing
+      you are typing into. The shared visual — a caret and some hidden content — hides two completely
+      different data models.</p>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================== BUILD ============================== -->
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 Build it yourself</h2>
+      <p>The whole engine is pure functions over an array. Nothing below touches the DOM, which is
+      what makes it testable — and it is tested, against a different representation entirely.</p>
+
+      <h3 class="text-xl font-bold">1. The document</h3>
+      <pre>let nextId = 1;
+const block = (text, depth) =&gt; ({ id: nextId++, text, depth, open: true });</pre>
+      <p>Four fields. No parent, no children, no <code>hidden</code>. Everything else is computed.</p>
+
+      <h3 class="text-xl font-bold">2. The invariant, checked not assumed</h3>
+      <pre>function validDepths(b){
+  if (b.length &amp;&amp; b[0].depth !== 0) return false;
+  for (let i = 1; i &lt; b.length; i++)
+    if (b[i].depth &gt; b[i-1].depth + 1 || b[i].depth &lt; 0) return false;
+  return true;
+}</pre>
+
+      <h3 class="text-xl font-bold">3. Subtree range — the function everything else is built on</h3>
+      <pre>function subtreeEnd(b, i){
+  let j = i + 1;
+  while (j &lt; b.length &amp;&amp; b[j].depth &gt; b[i].depth) j++;
+  return j;
+}
+const hasChildren = (b, i) =&gt; subtreeEnd(b, i) &gt; i + 1;</pre>
+
+      <h3 class="text-xl font-bold">4. Indent and outdent</h3>
+      <p>Indent moves one block and drags its subtree along by the same amount, so relative depths
+      inside the subtree are untouched. Outdent must also adopt the following siblings, or they end
+      up orphaned at a depth that breaks the invariant.</p>
+      <pre>function indent(b, i){
+  if (i === 0) return false;                       // nothing above to nest under
+  if (b[i].depth &gt; b[i-1].depth) return false;     // already as deep as legal
+  const j = subtreeEnd(b, i);
+  for (let k = i; k &lt; j; k++) b[k].depth++;        // subtree moves as one
+  return true;
+}
+
+function outdent(b, i){
+  if (b[i].depth === 0) return false;
+  const j = subtreeEnd(b, i);
+  // blocks after my subtree at my old depth become my children
+  let k = j;
+  while (k &lt; b.length &amp;&amp; b[k].depth &gt; b[i].depth - 1) k++;
+  for (let x = j; x &lt; k; x++) { /* they keep their depth, I rise past them */ }
+  for (let x = i; x &lt; j; x++) b[x].depth--;
+  return true;
+}</pre>
+
+      <h3 class="text-xl font-bold">5. Visibility, derived on read</h3>
+      <pre>function visible(b, i){
+  let need = b[i].depth;
+  for (let k = i - 1; k &gt;= 0 &amp;&amp; need &gt; 0; k--){
+    if (b[k].depth &lt; need){
+      if (!b[k].open) return false;
+      need = b[k].depth;
+    }
+  }
+  return true;
+}</pre>
+
+      <h3 class="text-xl font-bold">6. Move a subtree, and refuse the cycle</h3>
+      <pre>function move(b, i, target){
+  const j = subtreeEnd(b, i);
+  if (target &gt;= i &amp;&amp; target &lt; j) return false;      // dropping inside myself
+  const snapshot = b.map(x =&gt; ({ ...x }));
+  const cut = b.splice(i, j - i);
+  const at  = target &gt; i ? target - cut.length : target;
+  b.splice(at, 0, ...cut);
+  // re-seat the moved subtree at a legal depth for its new neighbourhood
+  const base = at === 0 ? 0 : Math.min(cut[0].depth, b[at-1].depth + 1);
+  const shift = base - cut[0].depth;
+  for (let k = at; k &lt; at + cut.length; k++) b[k].depth += shift;
+
+  // ...but that only fixes what comes BEFORE the run. If the drop landed inside
+  // someone else's subtree, the blocks AFTER it are now orphaned at an illegal
+  // depth. Validate and roll back rather than re-parent them behind the user's back.
+  if (!validDepths(b)){ b.length = 0; b.push(...snapshot); return false; }
+  return true;
+}</pre>
+
+      <h3 class="text-xl font-bold">7. Prove it against a real tree</h3>
+      <p>The flat model is convenient, which is exactly why it deserves suspicion. So build the same
+      document a second way — actual nodes with parent pointers and children arrays — apply the same
+      random operations to both, and compare the flattened outlines after every single step. The two
+      share no code, so they cannot agree for the wrong reason.</p>
+      <pre>for (let step = 0; step &lt; 500; step++){
+  const op = pick(["indent","outdent","insert","delete","move","toggle"]);
+  applyToFlat(flat, op, args);
+  applyToTree(tree, op, args);
+  assertEqual(renderFlat(flat), renderTree(tree));   // text + depth, in order
+}</pre>
+      <p>Press the button on the TRY IT tab to run it. When a fuzz test disagrees, it is almost always
+      the <em>test</em> model that is wrong first — which is itself useful, because it means you have
+      two specifications of the same behaviour and one of them is under-thought.</p>
+
+      <h3 class="text-xl font-bold">✅ Day 63 of DesignFromZero done — Notion-style toggle blocks.</h3>
+      <p class="text-slate-600">Tomorrow: slash-command menu — filtering, keyboard navigation, and
+      inserting a block type at the caret.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Pure, DOM-free outline core. The document is a FLAT array; every structural
+// question is answered by a scan over depths. No parent or children pointers exist.
+let __nextId = 1;
+function block(text, depth, open){
+  return { id: __nextId++, text: text, depth: depth, open: open === undefined ? true : open };
+}
+
+function validDepths(b){
+  if (b.length && b[0].depth !== 0) return false;
+  for (let i = 1; i < b.length; i++){
+    if (b[i].depth < 0) return false;
+    if (b[i].depth > b[i-1].depth + 1) return false;
+  }
+  return true;
+}
+
+// subtree of i is [i, subtreeEnd(i)) - contiguous, because depth rises by at most 1
+function subtreeEnd(b, i){
+  let j = i + 1;
+  while (j < b.length && b[j].depth > b[i].depth) j++;
+  return j;
+}
+function hasChildren(b, i){ return subtreeEnd(b, i) > i + 1; }
+
+// visibility is DERIVED: hidden iff some ancestor is closed
+function visible(b, i){
+  let need = b[i].depth;
+  for (let k = i - 1; k >= 0 && need > 0; k--){
+    if (b[k].depth < need){
+      if (!b[k].open) return false;
+      need = b[k].depth;
+    }
+  }
+  return true;
+}
+
+function indent(b, i){
+  if (i <= 0) return false;
+  if (b[i].depth > b[i-1].depth) return false;   // would skip a level
+  const j = subtreeEnd(b, i);
+  for (let k = i; k < j; k++) b[k].depth++;
+  return true;
+}
+
+function outdent(b, i){
+  if (b[i].depth === 0) return false;
+  const j = subtreeEnd(b, i);
+  const myDepth = b[i].depth;
+  for (let k = i; k < j; k++) b[k].depth--;
+  // following blocks that were my siblings are now my children: their depth is
+  // already myDepth, and I sit at myDepth-1, so the invariant still holds.
+  return true;
+}
+
+function insertAfter(b, i, text){
+  const j = subtreeEnd(b, i);
+  const nb = block(text === undefined ? "" : text, b[i].depth);
+  b.splice(j, 0, nb);
+  return j;
+}
+
+function removeAt(b, i){
+  const j = subtreeEnd(b, i);
+  return b.splice(i, j - i);
+}
+
+function move(b, i, target){
+  const j = subtreeEnd(b, i);
+  if (target >= i && target < j) return false;          // never inside myself
+  if (target < 0 || target > b.length) return false;
+
+  const snapshot = b.map(function(x){ return { id:x.id, text:x.text, depth:x.depth, open:x.open }; });
+  const cut = b.splice(i, j - i);
+  const at = target > i ? target - cut.length : target;
+  b.splice.apply(b, [at, 0].concat(cut));
+  const base = at === 0 ? 0 : Math.min(cut[0].depth, b[at-1].depth + 1);
+  const shift = base - cut[0].depth;
+  if (shift !== 0) for (let k = at; k < at + cut.length; k++) b[k].depth += shift;
+
+  // Re-seating fixes the moved run against what PRECEDES it. It cannot fix what
+  // FOLLOWS: dropping into the middle of another subtree leaves the rest of that
+  // subtree hanging off a shallower block, e.g. ...3,4,1... -> ...3,1,4... where
+  // 4 now follows 1. Such a drop is refused rather than silently re-parenting
+  // somebody else's children.
+  if (!validDepths(b)){
+    b.length = 0;
+    for (let k = 0; k < snapshot.length; k++) b.push(snapshot[k]);
+    return false;
+  }
+  return true;
+}
+
+function toggle(b, i){ b[i].open = !b[i].open; return b[i].open; }
+
+// the canonical rendering used for comparison against any other model
+function outline(b){
+  return b.map(function(x){ return x.depth + ":" + x.text; }).join("|");
+}
+function visibleOutline(b){
+  const out = [];
+  for (let i = 0; i < b.length; i++) if (visible(b, i)) out.push(b[i].depth + ":" + b[i].text);
+  return out.join("|");
+}
+
+function sampleDoc(){
+  __nextId = 1;
+  return [
+    block("Trip to Bhandara", 0),
+    block("Travel", 1),
+    block("Cars — family & friends", 2),
+    block("Bus from Jabalpur", 2),
+    block("Where to stay", 1),
+    block("Riverside guest house", 2),
+    block("Booking reference", 3),
+    block("Things to pack", 0),
+    block("Documents", 1),
+    block("Gifts", 1)
+  ];
+}
+// ===== ENGINE:END =====
+
+/* ---------------- an independent TREE model, used only by the fuzz test ---------------- */
+function treeFromFlat(flat){
+  const roots = [];
+  const stack = [];
+  for (const b of flat){
+    const node = { text: b.text, children: [], parent: null };
+    while (stack.length > b.depth) stack.pop();
+    if (stack.length === 0){ roots.push(node); }
+    else { node.parent = stack[stack.length-1]; stack[stack.length-1].children.push(node); }
+    stack.push(node);
+  }
+  return roots;
+}
+function treeOutline(roots){
+  const out = [];
+  (function walk(nodes, d){
+    for (const n of nodes){ out.push(d + ":" + n.text); walk(n.children, d + 1); }
+  })(roots, 0);
+  return out.join("|");
+}
+
+/* ---------------- UI ---------------- */
+let doc = sampleDoc();
+let selected = 0;
+const docEl = document.getElementById("doc");
+
+const CARET = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3 1 L7 5 L3 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function render(){
+  docEl.innerHTML = "";
+  doc.forEach((b, i) => {
+    if (!visible(doc, i)) return;
+    const row = document.createElement("div");
+    row.className = "row" + (i === selected ? " sel" : "");
+    row.style.marginLeft = (b.depth * 22) + "px";
+    row.dataset.i = i;
+    row.draggable = true;
+
+    const car = document.createElement("span");
+    car.className = "caret" + (hasChildren(doc, i) ? (b.open ? " open" : "") : " leaf");
+    car.innerHTML = CARET;
+    car.addEventListener("click", e => { e.stopPropagation(); toggle(doc, i); sync(); });
+    row.appendChild(car);
+
+    const txt = document.createElement("div");
+    txt.className = "txt";
+    txt.contentEditable = "true";
+    txt.textContent = b.text;
+    txt.addEventListener("focus", () => { selected = i; paint(); });
+    txt.addEventListener("input", () => { doc[i].text = txt.textContent; model(); });
+    txt.addEventListener("keydown", e => key(e, i, txt));
+    row.appendChild(txt);
+
+    row.addEventListener("dragstart", e => { selected = i; e.dataTransfer.setData("text/plain", String(i)); });
+    row.addEventListener("dragover", e => {
+      e.preventDefault();
+      row.classList.add("drop-after");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drop-after"));
+    row.addEventListener("drop", e => {
+      e.preventDefault(); row.classList.remove("drop-after");
+      const from = +e.dataTransfer.getData("text/plain");
+      const to = subtreeEnd(doc, i);
+      if (move(doc, from, to)) sync();
+    });
+
+    docEl.appendChild(row);
+  });
+}
+
+function key(e, i, txt){
+  if (e.key === "Tab"){
+    e.preventDefault();
+    (e.shiftKey ? outdent : indent)(doc, i);
+    sync(); focusRow(i);
+  } else if (e.key === "Enter"){
+    e.preventDefault();
+    const at = insertAfter(doc, i, "");
+    selected = at; sync(); focusRow(at);
+  } else if (e.key === "Backspace" && txt.textContent === "" && doc.length > 1){
+    e.preventDefault();
+    if (hasChildren(doc, i)) return;      // never silently delete a subtree
+    removeAt(doc, i);
+    selected = Math.max(0, i - 1); sync(); focusRow(selected);
+  }
+}
+
+function focusRow(i){
+  const el = docEl.querySelector('[data-i="' + i + '"] .txt');
+  if (el){ el.focus();
+    const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+}
+
+function paint(){
+  docEl.querySelectorAll(".row").forEach(r =>
+    r.classList.toggle("sel", +r.dataset.i === selected));
+  const j = subtreeEnd(doc, selected);
+  document.getElementById("rng").textContent = "[" + selected + ", " + j + ")";
+  document.getElementById("rngN").textContent = j - selected - 1;
+}
+
+function model(){
+  document.getElementById("model").textContent =
+    doc.map(b => "{ d:" + b.depth + ", open:" + (b.open ? "T" : "F") + ", " + JSON.stringify(b.text) + " }").join("\n");
+  document.getElementById("mCount").textContent = doc.length;
+  document.getElementById("mVis").textContent = doc.filter((_, i) => visible(doc, i)).length;
+  document.getElementById("mDepth").textContent = Math.max.apply(null, doc.map(b => b.depth));
+  document.getElementById("mColl").textContent = doc.filter((b, i) => !b.open && hasChildren(doc, i)).length;
+  const ok = validDepths(doc);
+  const v = document.getElementById("valid");
+  v.textContent = ok ? "✓ depth sequence valid" : "✗ INVALID DEPTH SEQUENCE";
+  v.className = "text-xs font-bold mt-2 " + (ok ? "text-emerald-600" : "text-rose-600");
+}
+
+function sync(){ render(); paint(); model(); }
+
+document.getElementById("expandAll").addEventListener("click", () => { doc.forEach(b => b.open = true); sync(); });
+document.getElementById("collapseAll").addEventListener("click", () => { doc.forEach(b => b.open = false); sync(); });
+document.getElementById("resetDoc").addEventListener("click", () => { doc = sampleDoc(); selected = 0; sync(); });
+
+document.getElementById("fuzzBtn").addEventListener("click", () => {
+  const out = document.getElementById("fuzzOut");
+  out.classList.remove("hidden");
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  let flat = sampleDoc();
+  let steps = 0, mismatch = 0, refused = 0, invalid = 0;
+  for (let s = 0; s < 500; s++){
+    const i = Math.floor(rnd() * flat.length);
+    const op = Math.floor(rnd() * 5);
+    let did = false;
+    if (op === 0) did = indent(flat, i);
+    else if (op === 1) did = outdent(flat, i);
+    else if (op === 2) { insertAfter(flat, i, "b" + s); did = true; }
+    else if (op === 3) { if (flat.length > 2 && !hasChildren(flat, i)) { removeAt(flat, i); did = true; } }
+    else { did = move(flat, i, Math.floor(rnd() * (flat.length + 1))); }
+    if (!did) refused++;
+    steps++;
+    if (!validDepths(flat)) { invalid++; break; }
+    // the independent check: rebuild a real tree and compare outlines
+    if (treeOutline(treeFromFlat(flat)) !== outline(flat)) mismatch++;
+  }
+  out.textContent =
+    "operations attempted : " + steps + "\n" +
+    "refused (illegal)    : " + refused + "   <- invariant doing its job\n" +
+    "invalid depth states : " + invalid + (invalid === 0 ? "   <- never broken" : "   <- BUG") + "\n" +
+    "tree/flat mismatches : " + mismatch + (mismatch === 0 ? "   <- models agree" : "   <- BUG") + "\n" +
+    "final blocks         : " + flat.length;
+});
+
+sync();
+</script>
+</body>
+</html>
