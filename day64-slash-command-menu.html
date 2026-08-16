@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 64 — Slash-command menu</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .editor { min-height:220px; outline:none; padding:12px; border:1px solid #e2e8f0; border-radius:10px;
+            background:#fff; font-size:15px; line-height:1.6; }
+  .menu { position:absolute; z-index:30; width:290px; background:#fff; border:1px solid #e2e8f0;
+          border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.13); overflow:hidden; }
+  .item { display:flex; gap:10px; align-items:center; padding:8px 10px; cursor:pointer; font-size:13px; }
+  .item[aria-selected="true"] { background:#eff6ff; }
+  .item .ic { width:26px; height:26px; display:grid; place-items:center; border-radius:6px;
+              background:#f1f5f9; flex:0 0 auto; }
+  .item mark { background:#fde68a; color:inherit; border-radius:2px; padding:0 1px; }
+  .grp { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; padding:6px 10px 2px; }
+  .empty { padding:14px 10px; font-size:13px; color:#64748b; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 64</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      ⌘ Slash-command menu — the component that looks like a dropdown and is really a
+      <strong>parser attached to a caret</strong>. Typing <code>/</code> does not open a menu; it opens
+      a menu <em>only</em> at a word boundary, and the menu stays open only while the text after the
+      slash is still a plausible query — so <code>3/4</code> and a URL never trigger it, and typing a
+      space usually closes it. Filtering is <strong>subsequence matching with a real score</strong>
+      (prefix beats word-start beats scattered), not <code>includes()</code>, and the page shows the
+      score for every candidate so you can see why the order is what it is. Keyboard handling is the
+      part everyone gets wrong: arrows must not move the caret while the menu is open, Enter must not
+      insert a newline, Escape must close the menu without losing focus, and the whole thing must be
+      announced to a screen reader as a <code>combobox</code> with
+      <code>aria-activedescendant</code> — because a menu you can only use with a mouse is not a
+      command palette. The matcher is fuzz-tested in Node against a brute-force subsequence checker.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">⌘ TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-5xl mx-auto grid lg:grid-cols-5 gap-5">
+
+      <div class="lg:col-span-3 bg-white rounded-2xl shadow p-5">
+        <p class="text-sm text-slate-600 mb-3">
+          Type <strong>/</strong> to open the menu, then keep typing to filter. <strong>↑ ↓</strong>
+          to move, <strong>Enter</strong> or <strong>Tab</strong> to insert, <strong>Esc</strong> to
+          close. Then try the cases that should <em>not</em> open it: <code>3/4</code>,
+          <code>and/or</code>, <code>https://x.com</code>.
+        </p>
+        <div class="relative">
+          <div id="ed" class="editor" contenteditable="true" role="combobox"
+               aria-expanded="false" aria-haspopup="listbox" aria-controls="menu"></div>
+          <div id="menu" class="menu hidden" role="listbox" aria-label="Commands"></div>
+        </div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button id="clearBtn" class="px-3 py-1.5 rounded-lg bg-slate-200 text-sm font-semibold">Clear</button>
+          <button id="demoBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-sm font-semibold">Insert the tricky cases</button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">TRIGGER STATE</p>
+          <table class="text-sm w-full">
+            <tr><td class="py-1">menu open</td><td class="text-right font-bold" id="sOpen">no</td></tr>
+            <tr><td class="py-1">query</td><td class="text-right font-mono" id="sQuery">—</td></tr>
+            <tr><td class="py-1">matches</td><td class="text-right font-bold tabular-nums" id="sCount">0</td></tr>
+            <tr><td class="py-1">selected index</td><td class="text-right font-bold tabular-nums" id="sIdx">—</td></tr>
+          </table>
+          <p class="text-xs text-slate-500 mt-2">
+            The menu is a function of the text before the caret. There is no "menu is open" flag that
+            can drift out of sync with what you typed.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">WHY THAT ORDER</p>
+          <div id="scores" class="text-[11px] font-mono space-y-0.5 max-h-56 overflow-auto"></div>
+          <p class="text-xs text-slate-500 mt-2">
+            Score components: prefix bonus, word-start bonus, adjacency bonus, minus a penalty for
+            gaps and for a long candidate.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">TRIGGER TRUTH TABLE</p>
+          <table class="w-full text-[12px]">
+            <thead class="text-slate-500"><tr><th class="text-left">text before caret</th><th>opens?</th></tr></thead>
+            <tbody id="truth" class="font-mono"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="lg:col-span-5 bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">FUZZ THE MATCHER</p>
+        <p class="text-sm text-slate-600 mb-3">
+          The scorer is only trustworthy if it agrees with a plain definition of subsequence
+          matching. This runs both on random strings and compares the yes/no answer.
+        </p>
+        <button id="fuzzBtn" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold">Fuzz 5,000 pairs</button>
+        <pre id="fuzzOut" class="mt-3 hidden"></pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">It is not a dropdown. It is a parser with a caret.</h2>
+
+      <p>The naive implementation is one line: when the user types <code>/</code>, show the menu. It
+      works in the demo and is wrong the moment somebody types a fraction, a date, a file path or a
+      URL. Three quarters becomes a command palette.</p>
+
+      <h3 class="text-xl font-bold">The trigger is a boundary condition</h3>
+      <p>A slash starts a command only if it is at the <strong>start of a line or preceded by
+      whitespace</strong>. That single condition removes every false positive above:</p>
+
+      <div class="bg-slate-100 rounded-xl p-4">
+        <pre>"/"          → opens      (start of line)
+"text /"     → opens      (preceded by a space)
+"3/4"        → no         (preceded by a digit)
+"and/or"     → no         (preceded by a letter)
+"https://x"  → no         (preceded by ':' then '/')</pre>
+      </div>
+
+      <h3 class="text-xl font-bold">Derive the state, do not store it</h3>
+      <p>The tempting design is a boolean <code>menuOpen</code> that you set on <code>/</code> and
+      clear on various events. It will drift — the user pastes, undoes, clicks elsewhere, deletes the
+      slash from the middle of the query — and now the menu is open with nothing to filter on.</p>
+      <p>Instead, compute it from the text before the caret every time anything changes:</p>
+      <pre>{ open: boolean, query: string, slashAt: number } = parseTrigger(textBeforeCaret)</pre>
+      <p>Delete the slash and the menu closes because <code>parseTrigger</code> stops finding one, not
+      because some handler remembered to close it.</p>
+
+      <h3 class="text-xl font-bold">Filtering: subsequence, with a score</h3>
+      <p><code>includes()</code> is too strict — nobody types <code>headi</code> to reach
+      "Heading 1", they type <code>h1</code>. Plain subsequence matching is too loose: it ranks
+      "Bulleted list" above "Heading 1" for the query <code>h1</code> because it found an
+      <em>h</em> and a <em>1</em> somewhere.</p>
+      <p>So the matcher returns a score, and the score is made of things that correspond to what
+      people actually mean:</p>
+      <ul class="list-disc ml-6 space-y-1">
+        <li><strong>prefix</strong> — the query starts the candidate</li>
+        <li><strong>word start</strong> — each matched character begins a word ("h1" → <b>H</b>eading <b>1</b>)</li>
+        <li><strong>adjacency</strong> — consecutive matches beat scattered ones</li>
+        <li><strong>penalties</strong> — for gaps, and for a very long candidate</li>
+      </ul>
+      <p>The panel on the TRY IT tab prints the score for every candidate, so the ranking is
+      inspectable rather than mysterious.</p>
+
+      <h3 class="text-xl font-bold">The keyboard is the whole feature</h3>
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">Every arrow key that moves the caret while the menu is open is a bug.
+        Every Enter that inserts a newline instead of running the command is a bug. Both require
+        <code>preventDefault()</code>, and both are invisible in a mouse-driven demo — which is why
+        so many slash menus feel broken the first time you try to use them without touching the
+        mouse.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">Escape must not steal focus</h3>
+      <p>Closing on Escape is easy. Closing on Escape <em>while leaving the caret exactly where it
+      was</em> is the part that matters — otherwise the user is punished for changing their mind.</p>
+
+      <h3 class="text-xl font-bold">Accessibility is not decoration here</h3>
+      <p>The editor is the <code>combobox</code>; the menu is the <code>listbox</code>; the highlighted
+      row is pointed at by <code>aria-activedescendant</code>. Focus never leaves the editor, which is
+      exactly why the ARIA pattern exists — a screen reader needs to be told which row is current
+      even though focus has not moved.</p>
+      <p>Announcing "0 results" matters too. Silence is indistinguishable from a broken menu.</p>
+
+      <h3 class="text-xl font-bold">Closing rules, stated</h3>
+      <p>Close on: Escape, a space that produces no matches, deleting the slash, clicking outside, or
+      running a command. Do <em>not</em> close on every space — multi-word commands like
+      <code>/code block</code> need one, which is why the rule is "no matches" rather than "any
+      whitespace".</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 Build it yourself</h2>
+
+      <h3 class="text-xl font-bold">1. Parse the trigger from the text before the caret</h3>
+      <pre>function parseTrigger(before, maxQuery = 24){
+  const slash = before.lastIndexOf("/");
+  if (slash === -1) return { open:false, query:"", slashAt:-1 };
+
+  // boundary: start of line, or preceded by whitespace
+  const prev = slash === 0 ? "\n" : before[slash - 1];
+  if (!/\s/.test(prev)) return { open:false, query:"", slashAt:-1 };
+
+  const query = before.slice(slash + 1);
+  if (query.length &gt; maxQuery) return { open:false, query:"", slashAt:-1 };
+  if (/\n/.test(query))        return { open:false, query:"", slashAt:-1 };
+  return { open:true, query, slashAt:slash };
+}</pre>
+      <p>Pure, synchronous, and testable without a DOM. Everything else reads from it.</p>
+
+      <h3 class="text-xl font-bold">2. Score a candidate</h3>
+      <pre>function score(query, label){
+  if (!query) return { hit:true, score:1, positions:[] };
+  const q = query.toLowerCase(), s = label.toLowerCase();
+  let qi = 0, prev = -2, total = 0;
+  const positions = [];
+  for (let i = 0; i &lt; s.length &amp;&amp; qi &lt; q.length; i++){
+    if (s[i] !== q[qi]) continue;
+    let point = 1;
+    if (i === 0) point += 8;                                  // prefix
+    else if (/[\s\-_]/.test(s[i-1])) point += 5;              // word start
+    if (i === prev + 1) point += 3;                           // adjacency
+    else if (prev &gt;= 0) point -= Math.min(3, i - prev - 1);   // gap penalty
+    total += point; positions.push(i); prev = i; qi++;
+  }
+  if (qi &lt; q.length) return { hit:false, score:0, positions:[] };
+  return { hit:true, score: total - label.length * 0.05, positions };
+}</pre>
+
+      <h3 class="text-xl font-bold">3. Check it against the plain definition</h3>
+      <p>The scorer is fiddly, so pin its <em>yes/no</em> answer to something obviously correct:</p>
+      <pre>const isSubsequence = (q, s) =&gt; {
+  let i = 0;
+  for (const ch of s.toLowerCase()) if (ch === q[i]) i++;
+  return i === q.length;
+};
+// for random q and s: score(q,s).hit  ===  isSubsequence(q, s)</pre>
+      <p>Five thousand random pairs. Any disagreement means the scorer is rejecting things it should
+      match or matching things it should not, and the ranking is the least of your problems.</p>
+
+      <h3 class="text-xl font-bold">4. Own the keys before the editor sees them</h3>
+      <pre>ed.addEventListener("keydown", e =&gt; {
+  const t = trigger();                       // derived, not stored
+  if (!t.open) return;                       // menu closed: hands off entirely
+  switch (e.key){
+    case "ArrowDown": e.preventDefault(); move(+1); break;
+    case "ArrowUp":   e.preventDefault(); move(-1); break;
+    case "Enter":
+    case "Tab":       if (matches.length){ e.preventDefault(); run(matches[sel]); } break;
+    case "Escape":    e.preventDefault(); dismiss(); break;   // caret stays put
+  }
+});</pre>
+      <p>The early <code>return</code> matters as much as the cases. A handler that swallows arrows
+      when the menu is closed breaks ordinary text editing, and it is a maddening bug to find.</p>
+
+      <h3 class="text-xl font-bold">5. Replace the query, not the whole line</h3>
+      <pre>function run(cmd){
+  const before = textBeforeCaret();
+  const t = parseTrigger(before);
+  // delete exactly from the slash to the caret - never more
+  deleteRange(t.slashAt, before.length);
+  insert(cmd.insert);
+}</pre>
+
+      <h3 class="text-xl font-bold">6. Wire the ARIA, and mean it</h3>
+      <pre>ed.setAttribute("role", "combobox");
+ed.setAttribute("aria-expanded", String(open));
+ed.setAttribute("aria-controls", "menu");
+ed.setAttribute("aria-activedescendant", open ? ("cmd-" + sel) : "");
+menu.setAttribute("role", "listbox");
+item.setAttribute("role", "option");
+item.setAttribute("aria-selected", String(i === sel));</pre>
+      <p>Focus stays in the editor throughout. <code>aria-activedescendant</code> is precisely the
+      mechanism for "the focused element is here, but the interesting row is over there".</p>
+
+      <h3 class="text-xl font-bold">✅ Day 64 of DesignFromZero done — slash-command menu.</h3>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Pure, DOM-free slash-menu core: trigger parsing + fuzzy scoring. Both are
+// functions of a string, which is what makes the whole component testable.
+const COMMANDS = [
+  { id: "h1",     label: "Heading 1",     group: "Basic",  icon: "H1", insert: "# " },
+  { id: "h2",     label: "Heading 2",     group: "Basic",  icon: "H2", insert: "## " },
+  { id: "h3",     label: "Heading 3",     group: "Basic",  icon: "H3", insert: "### " },
+  { id: "bul",    label: "Bulleted list", group: "Basic",  icon: "\u2022",  insert: "- " },
+  { id: "num",    label: "Numbered list", group: "Basic",  icon: "1.", insert: "1. " },
+  { id: "todo",   label: "To-do list",    group: "Basic",  icon: "\u2611",  insert: "[ ] " },
+  { id: "quote",  label: "Quote",         group: "Basic",  icon: "\u201d",  insert: "> " },
+  { id: "code",   label: "Code block",    group: "Media",  icon: "{}", insert: "```\n\n```" },
+  { id: "div",    label: "Divider",       group: "Media",  icon: "\u2014",  insert: "---\n" },
+  { id: "table",  label: "Table",         group: "Media",  icon: "\u25a6",  insert: "| a | b |\n|---|---|\n" },
+  { id: "img",    label: "Image",         group: "Media",  icon: "\u25a3",  insert: "![](" + ")" },
+  { id: "toggle", label: "Toggle block",  group: "Media",  icon: "\u25b8",  insert: "\u25b8 " },
+  { id: "date",   label: "Today's date",  group: "Insert", icon: "\u25f4",  insert: "2026-08-17" },
+  { id: "callout",label: "Callout",       group: "Insert", icon: "\u26a0",  insert: "> \u26a0 " },
+  { id: "math",   label: "Equation",      group: "Insert", icon: "\u03a3",  insert: "$$\n\n$$" }
+];
+
+// A slash starts a command only at a word boundary. This one condition is what
+// stops "3/4", "and/or" and "https://x" from opening a command palette.
+function parseTrigger(before, maxQuery){
+  maxQuery = maxQuery === undefined ? 24 : maxQuery;
+  const slash = String(before).lastIndexOf("/");
+  if (slash === -1) return { open: false, query: "", slashAt: -1 };
+  const prev = slash === 0 ? "\n" : before[slash - 1];
+  if (!/\s/.test(prev)) return { open: false, query: "", slashAt: -1 };
+  const query = before.slice(slash + 1);
+  if (query.length > maxQuery) return { open: false, query: "", slashAt: -1 };
+  if (/\n/.test(query)) return { open: false, query: "", slashAt: -1 };
+  return { open: true, query: query, slashAt: slash };
+}
+
+// Subsequence match with a score. The yes/no answer must agree with a plain
+// subsequence test; the score only decides ORDER.
+function scoreLabel(query, label){
+  if (!query) return { hit: true, score: 1, positions: [] };
+  const q = String(query).toLowerCase(), s = String(label).toLowerCase();
+  let qi = 0, prev = -2, total = 0;
+  const positions = [];
+  for (let i = 0; i < s.length && qi < q.length; i++){
+    if (s[i] !== q[qi]) continue;
+    let point = 1;
+    if (i === 0) point += 8;
+    else if (/[\s\-_]/.test(s[i - 1])) point += 5;
+    if (i === prev + 1) point += 3;
+    else if (prev >= 0) point -= Math.min(3, i - prev - 1);
+    total += point;
+    positions.push(i);
+    prev = i;
+    qi++;
+  }
+  if (qi < q.length) return { hit: false, score: 0, positions: [] };
+  return { hit: true, score: total - s.length * 0.05, positions: positions };
+}
+
+function filterCommands(query, commands){
+  const list = commands || COMMANDS;
+  const out = [];
+  for (let i = 0; i < list.length; i++){
+    const r = scoreLabel(query, list[i].label);
+    if (r.hit) out.push({ cmd: list[i], score: r.score, positions: r.positions });
+  }
+  out.sort(function(a, b){ return b.score - a.score || a.cmd.label.localeCompare(b.cmd.label); });
+  return out;
+}
+
+// the obviously-correct definition, used only to check the scorer
+function isSubsequence(q, s){
+  const a = String(q).toLowerCase(), b = String(s).toLowerCase();
+  let i = 0;
+  for (let k = 0; k < b.length && i < a.length; k++) if (b[k] === a[i]) i++;
+  return i === a.length;
+}
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+// ===== ENGINE:END =====
+
+/* ---------------- UI ---------------- */
+const ed = document.getElementById("ed");
+const menu = document.getElementById("menu");
+let sel = 0, dismissed = false, matches = [];
+
+function textBeforeCaret(){
+  const s = getSelection();
+  if (!s.rangeCount) return "";
+  const r = s.getRangeAt(0).cloneRange();
+  r.selectNodeContents(ed);
+  r.setEnd(s.getRangeAt(0).endContainer, s.getRangeAt(0).endOffset);
+  return r.toString();
+}
+
+function trigger(){
+  if (dismissed) return { open: false, query: "", slashAt: -1 };
+  return parseTrigger(textBeforeCaret());
+}
+
+function sync(){
+  const t = trigger();
+  matches = t.open ? filterCommands(t.query) : [];
+  if (sel >= matches.length) sel = 0;
+
+  document.getElementById("sOpen").textContent = t.open ? "yes" : "no";
+  document.getElementById("sQuery").textContent = t.open ? JSON.stringify(t.query) : "\u2014";
+  document.getElementById("sCount").textContent = matches.length;
+  document.getElementById("sIdx").textContent = t.open && matches.length ? sel : "\u2014";
+
+  ed.setAttribute("aria-expanded", String(!!t.open));
+  ed.setAttribute("aria-activedescendant", t.open && matches.length ? "cmd-" + sel : "");
+
+  if (!t.open){ menu.classList.add("hidden"); renderScores(""); return; }
+  menu.classList.remove("hidden");
+
+  if (!matches.length){
+    menu.innerHTML = '<div class="empty">No commands match \u201c' +
+      t.query.replace(/[<>&]/g, "") + '\u201d</div>';
+  } else {
+    let html = "", lastGroup = null;
+    matches.forEach(function(m, i){
+      if (m.cmd.group !== lastGroup){ html += '<div class="grp">' + m.cmd.group + '</div>'; lastGroup = m.cmd.group; }
+      html += '<div class="item" role="option" id="cmd-' + i + '" aria-selected="' + (i === sel) + '" data-i="' + i + '">' +
+        '<span class="ic">' + m.cmd.icon + '</span><span>' + highlight(m.cmd.label, m.positions) + '</span></div>';
+    });
+    menu.innerHTML = html;
+    menu.querySelectorAll(".item").forEach(function(el){
+      el.addEventListener("mousedown", function(e){ e.preventDefault(); run(matches[+el.dataset.i]); });
+    });
+  }
+  placeMenu();
+  renderScores(t.query);
+}
+
+function highlight(label, positions){
+  let out = "", set = new Set(positions);
+  for (let i = 0; i < label.length; i++){
+    const ch = label[i].replace(/[<>&]/g, "");
+    out += set.has(i) ? "<mark>" + ch + "</mark>" : ch;
+  }
+  return out;
+}
+
+function placeMenu(){
+  const s = getSelection();
+  if (!s.rangeCount) return;
+  const rect = s.getRangeAt(0).getBoundingClientRect();
+  const host = ed.getBoundingClientRect();
+  const top = (rect.bottom || host.top) - host.top + 6;
+  const left = Math.min((rect.left || host.left) - host.left, host.width - 300);
+  menu.style.top = top + "px";
+  menu.style.left = Math.max(0, left) + "px";
+}
+
+function renderScores(query){
+  const box = document.getElementById("scores");
+  if (!query){ box.innerHTML = '<span class="text-slate-400">type a query to see scores</span>'; return; }
+  box.innerHTML = COMMANDS.map(function(c){
+    const r = scoreLabel(query, c.label);
+    return '<div class="' + (r.hit ? "" : "text-slate-300") + '">' +
+      (r.hit ? r.score.toFixed(2).padStart(6) : "   \u2014  ") + "  " + c.label + "</div>";
+  }).join("");
+}
+
+function move(d){
+  if (!matches.length) return;
+  sel = (sel + d + matches.length) % matches.length;
+  sync();
+}
+
+function run(m){
+  if (!m) return;
+  const before = textBeforeCaret();
+  const t = parseTrigger(before);
+  if (!t.open) return;
+  const remove = before.length - t.slashAt;
+  const s = getSelection();
+  for (let i = 0; i < remove; i++) document.execCommand("delete", false);
+  document.execCommand("insertText", false, m.cmd.insert);
+  dismissed = false; sel = 0;
+  sync();
+}
+
+ed.addEventListener("keydown", function(e){
+  const t = trigger();
+  if (!t.open) return;                       // menu closed: do not touch the keyboard
+  if (e.key === "ArrowDown"){ e.preventDefault(); move(1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); move(-1); }
+  else if (e.key === "Enter" || e.key === "Tab"){
+    if (matches.length){ e.preventDefault(); run(matches[sel]); }
+  } else if (e.key === "Escape"){ e.preventDefault(); dismissed = true; sync(); }
+});
+ed.addEventListener("input", function(){ dismissed = false; sync(); });
+ed.addEventListener("keyup", function(e){ if (e.key.indexOf("Arrow") === 0) sync(); });
+ed.addEventListener("click", sync);
+ed.addEventListener("blur", function(){ menu.classList.add("hidden"); });
+
+document.getElementById("clearBtn").addEventListener("click", function(){
+  ed.textContent = ""; dismissed = false; ed.focus(); sync();
+});
+document.getElementById("demoBtn").addEventListener("click", function(){
+  ed.textContent = "three quarters is 3/4, choose and/or, see https://example.com \u2014 none of those opened a menu. Now type a slash after this space: ";
+  ed.focus();
+  const r = document.createRange(); r.selectNodeContents(ed); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  sync();
+});
+
+document.getElementById("truth").innerHTML = [
+  ["/", true], ["text /", true], ["3/4", false], ["and/or", false],
+  ["https://x", false], ["a/b/c", false], ["\\n/", true]
+].map(function(row){
+  const probe = row[0].replace("\\n", "\n");
+  const got = parseTrigger(probe).open;
+  return "<tr><td class='py-0.5'>" + JSON.stringify(row[0]) + "</td><td class='text-right font-bold " +
+    (got === row[1] ? "text-emerald-600'>" : "text-rose-600'>") + (got ? "opens" : "no") + "</td></tr>";
+}).join("");
+
+document.getElementById("fuzzBtn").addEventListener("click", function(){
+  const out = document.getElementById("fuzzOut");
+  out.classList.remove("hidden");
+  const rng = mulberry32(64064);
+  const alpha = "abcdefgh 12";
+  let disagree = 0, hits = 0, n = 0;
+  for (let t = 0; t < 5000; t++){
+    let q = "", s = "";
+    const ql = 1 + Math.floor(rng() * 4), sl = 3 + Math.floor(rng() * 14);
+    for (let i = 0; i < ql; i++) q += alpha[Math.floor(rng() * alpha.length)];
+    for (let i = 0; i < sl; i++) s += alpha[Math.floor(rng() * alpha.length)];
+    const a = scoreLabel(q, s).hit, b = isSubsequence(q, s);
+    if (a !== b) disagree++;
+    if (a) hits++;
+    n++;
+  }
+  out.textContent =
+    "random (query, label) pairs : " + n + "\n" +
+    "scorer said MATCH           : " + hits + "\n" +
+    "disagreements with the plain subsequence test : " + disagree +
+    (disagree === 0 ? "   <- the scorer only changes ORDER, never membership"
+                    : "   <- BUG: the scorer changes which items match");
+});
+
+ed.focus(); sync();
+</script>
+</body>
+</html>
