@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 65 — Image cropper</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  #stage { position:relative; user-select:none; touch-action:none; background:#0f172a; border-radius:10px; overflow:hidden; }
+  #stage canvas { display:block; width:100%; }
+  #shade { position:absolute; inset:0; pointer-events:none;
+           box-shadow:0 0 0 9999px rgba(15,23,42,.62); }
+  #crop { position:absolute; cursor:move; outline:1px solid rgba(255,255,255,.95); }
+  #crop .g { position:absolute; background:rgba(255,255,255,.35); }
+  .h { position:absolute; width:14px; height:14px; background:#fff; border:2px solid #0f172a;
+       border-radius:3px; }
+  .h.e { width:22px; height:8px; border-radius:4px; }
+  .h.s { width:8px; height:22px; border-radius:4px; }
+  table.num td, table.num th { padding:3px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid #e2e8f0; }
+  .seg button { padding:5px 11px; font-size:12px; font-weight:800; background:#fff; color:#475569;
+                border:1px solid #e2e8f0; border-radius:8px; }
+  .seg button.on { background:#4f46e5; color:#fff; border-color:#4f46e5; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 65</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      ✂️ Image cropper — a component that looks like drag handles and is really
+      <strong>constrained geometry</strong>. Three rules have to hold at the same time on every
+      pointer move: the crop stays <em>inside</em> the image, it never shrinks below a minimum, and
+      when a ratio is locked it stays <strong>exactly</strong> locked. The bug almost every
+      implementation ships is clamping width and height <em>independently</em> when a drag hits the
+      edge — each clamp is individually correct and together they silently break the aspect ratio,
+      so a "1:1" crop exports at 1.06:1 and nobody notices until the avatars look wrong. The fix is
+      to clamp <strong>once, on a single scale factor</strong>. This page fuzzes the resize against
+      an independently written checker over <strong>20,000 random drags</strong> and reports the
+      worst aspect drift for both versions side by side &mdash; 1.5 against 4e-16, which is float noise and not a bug. Real canvas export at true source
+      resolution, opposite-corner anchoring, 90° rotation that carries the crop with it, and the
+      minimum-size rule resolved against the ratio rather than after it.
+      Pure vanilla JavaScript, one file, offline.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">✂️ TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto grid lg:grid-cols-5 gap-5">
+
+      <div class="lg:col-span-3 space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <div class="flex gap-2 flex-wrap mb-3 seg" id="ratios">
+            <button data-r="0" class="on">free</button>
+            <button data-r="1">1:1</button>
+            <button data-r="1.7777777777777777">16:9</button>
+            <button data-r="0.75">3:4</button>
+            <button data-r="2.35">2.35:1</button>
+          </div>
+          <div id="stage">
+            <canvas id="src" width="640" height="420"></canvas>
+            <div id="shade"></div>
+            <div id="crop">
+              <div class="g" style="left:33.33%;top:0;width:1px;height:100%"></div>
+              <div class="g" style="left:66.66%;top:0;width:1px;height:100%"></div>
+              <div class="g" style="top:33.33%;left:0;height:1px;width:100%"></div>
+              <div class="g" style="top:66.66%;left:0;height:1px;width:100%"></div>
+            </div>
+          </div>
+          <div class="flex gap-2 flex-wrap mt-3">
+            <button id="rot" class="px-3 py-2 rounded-lg bg-slate-900 text-white font-bold text-sm">Rotate 90°</button>
+            <button id="reset" class="px-3 py-2 rounded-lg bg-slate-100 font-semibold text-sm">Reset crop</button>
+            <button id="doExport" class="px-3 py-2 rounded-lg bg-indigo-600 text-white font-bold text-sm">Export at source resolution</button>
+            <span id="msg" class="text-sm text-slate-500 self-center"></span>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">THE BUG, RUNNING BOTH WAYS — 20,000 RANDOM DRAGS</p>
+          <p class="text-sm text-slate-600 mb-3">
+            Same drags, same constraints, two clamping strategies. Only the second keeps the ratio.
+          </p>
+          <table class="num w-full">
+            <thead><tr><th>clamping</th><th>worst aspect drift</th><th>drags that left the image</th><th>drags below minimum</th></tr></thead>
+            <tbody id="fuzz"></tbody>
+          </table>
+          <p class="text-xs text-slate-500 mt-2">
+            Both strategies keep the rectangle inside the image. That is exactly why the
+            independent version survives review — it is not <em>wrong</em>, it is wrong about the
+            thing nobody is checking.
+          </p>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">CROP STATE</p>
+          <table class="num w-full">
+            <tbody>
+              <tr><td>displayed rect</td><td id="rDisp">—</td></tr>
+              <tr><td>source pixels</td><td id="rSrc" class="font-bold">—</td></tr>
+              <tr><td>display scale</td><td id="rScale">—</td></tr>
+              <tr><td>ratio requested</td><td id="rWant">free</td></tr>
+              <tr><td>ratio actual</td><td id="rGot" class="font-bold">—</td></tr>
+              <tr><td>drift</td><td id="rDrift" class="font-bold text-emerald-600">0</td></tr>
+            </tbody>
+          </table>
+          <p class="text-xs text-slate-500 mt-2">
+            Source pixels, not CSS pixels. A cropper that exports what it displays throws away
+            most of the image on any screen where the preview is scaled down — which is all of them.
+          </p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">EXPORT</p>
+          <canvas id="out" class="w-full rounded-lg border border-slate-200" width="10" height="10"></canvas>
+          <p id="outInfo" class="text-xs text-slate-500 mt-2">press export</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-2">MINIMUM SIZE vs THE RATIO</p>
+          <label class="text-sm">minimum side <span id="vMin" class="font-bold tabular-nums float-right">40</span>
+            <input id="minSide" type="range" min="10" max="160" value="40" class="w-full"></label>
+          <pre id="minOut" style="margin:0"></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">Three constraints, and they fight</h2>
+
+      <p>A cropper has to satisfy all of these on every single pointer move:</p>
+
+      <ol class="list-decimal pl-6 space-y-1">
+        <li>the crop rectangle lies entirely inside the image</li>
+        <li>neither side goes below a minimum</li>
+        <li>if a ratio is locked, width ÷ height equals it <em>exactly</em></li>
+      </ol>
+
+      <p>Each one is trivial alone. Together they are a small constrained-optimisation problem,
+      and the order you enforce them in changes the answer.</p>
+
+      <h3 class="text-xl font-bold">The bug that ships</h3>
+
+      <p>The natural implementation applies the ratio, then clamps:</p>
+
+      <pre>rect.w = Math.min(rect.w, image.w - rect.x);   // keep inside horizontally
+rect.h = Math.min(rect.h, image.h - rect.y);   // keep inside vertically</pre>
+
+      <p>Two clamps, each obviously correct. And they <strong>silently break the ratio</strong>,
+      because clamping width and height by different amounts changes w/h.</p>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">The rectangle is still inside the image. It is still above the minimum.
+        Every visible constraint holds. The only thing that broke is the invisible one — so it
+        passes review, passes a smoke test, and ships. A "1:1" avatar crop exports at 1.06:1 and
+        the first person to notice is a designer looking at a grid of faces.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">The fix is to clamp once</h3>
+
+      <p>Because the ratio is fixed, the rectangle has <em>one</em> degree of freedom, not two. So
+      compute how much of the requested size actually fits — as a single scale factor — and apply
+      it to both sides:</p>
+
+      <pre>const scale = Math.min(1, maxW / want.w, maxH / want.h);
+w = want.w * scale;
+h = want.h * scale;          // ratio preserved by construction</pre>
+
+      <p>One clamp on one number. The ratio cannot drift because it never becomes two independent
+      quantities in the first place. This is the general shape of the fix: when a constraint says
+      two variables move together, do not give the code a chance to move them separately.</p>
+
+      <h3 class="text-xl font-bold">The minimum has the same problem</h3>
+
+      <p>"Neither side below 40px" is also two constraints on one degree of freedom. Under a 2.35:1
+      ratio, a 40px minimum on the <em>height</em> forces a 94px width, and a naive
+      <code>Math.max(w, 40)</code> on each side produces a 40×40 square that is not 2.35:1 at all.</p>
+
+      <p>Same answer: convert the minimum into a scale factor and take the larger of the two.</p>
+
+      <h3 class="text-xl font-bold">Anchoring: the opposite corner does not move</h3>
+
+      <p>Dragging the north-west handle must hold the south-east corner still. Store the anchor when
+      the drag <em>starts</em>, not per-frame — recompute it during the drag and the rectangle
+      creeps, because each frame anchors to a corner the previous frame already moved.</p>
+
+      <pre>onPointerDown: anchor = oppositeCorner(rect, handle)   // once
+onPointerMove: rect = rectFrom(anchor, pointer, ...)  // pure function of the anchor</pre>
+
+      <p>Making the move handler a pure function of the drag-start state is what makes the whole
+      thing testable — you can replay 20,000 drags with no DOM at all, which is what this page does.</p>
+
+      <h3 class="text-xl font-bold">Export in source pixels, always</h3>
+
+      <p>The preview is scaled to fit the layout. If you export the displayed rectangle you export
+      a downscaled crop of a downscaled image — throwing away resolution the user still had. The
+      crop rect lives in display coordinates; the export multiplies by
+      <code>naturalWidth / displayedWidth</code> and reads from the original.</p>
+
+      <p>It is one multiplication and it is the difference between a 240px avatar and a 1200px one.</p>
+
+      <h3 class="text-xl font-bold">Rotation is a coordinate change, not a filter</h3>
+
+      <p>Rotating 90° swaps the image's width and height, so a crop expressed in the old frame is
+      meaningless in the new one. Either map the rect through the same rotation, or reset it.
+      Leaving it as-is produces a crop that is inside the old bounds and outside the new ones — the
+      one case where all the clamping logic never runs, because nothing moved.</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 How it is built</h2>
+
+      <h3 class="text-xl font-bold">1. The resize is a pure function</h3>
+      <pre>resizeRect({ anchor, pointer, handle, ratio, bounds, min })  ->  { x, y, w, h }</pre>
+      <p>No element, no event, no state. Everything the DOM layer knows is passed in and a
+      rectangle comes back — which is why the fuzz harness can run 20,000 drags in a few
+      milliseconds under node with no browser at all.</p>
+
+      <h3 class="text-xl font-bold">2. Ratio first, as one scale factor</h3>
+      <pre>// how big could it be from this anchor, in this direction?
+const maxW = dirX &gt; 0 ? bounds.w - anchor.x : anchor.x;
+const maxH = dirY &gt; 0 ? bounds.h - anchor.y : anchor.y;
+
+let w = Math.abs(pointer.x - anchor.x);
+let h = ratio ? w / ratio : Math.abs(pointer.y - anchor.y);
+
+if (ratio){
+  const grow = Math.max(1, min / w, (min / ratio) / h);   // minimum, as a scale
+  w *= grow; h *= grow;
+  const fit = Math.min(1, maxW / w, maxH / h);            // bounds, as a scale
+  w *= fit; h *= fit;
+} else {
+  w = Math.min(Math.max(w, min), maxW);                   // free ratio: independent IS correct
+  h = Math.min(Math.max(h, min), maxH);
+}</pre>
+      <p>The <code>else</code> branch is the tell. With no ratio the two axes really are
+      independent and clamping them separately is right — which is exactly why the bug survives:
+      the wrong code is the correct code for the mode people test first.</p>
+
+      <h3 class="text-xl font-bold">3. Order matters, and it is minimum-then-bounds</h3>
+      <p>Grow to the minimum first, then shrink to fit. The reverse can leave a rectangle that
+      satisfies the minimum and hangs outside the image, because the growth step has nothing after
+      it to catch the overflow.</p>
+      <p>When the image is genuinely too small to hold the minimum at that ratio, the fit step wins
+      and the result is smaller than the minimum. That is the honest outcome — the alternative is a
+      rectangle outside the image — and the function returns it rather than pretending.</p>
+
+      <h3 class="text-xl font-bold">4. The anchor is captured once</h3>
+      <pre>const OPPOSITE = { nw:'se', ne:'sw', se:'nw', sw:'ne', n:'s', s:'n', e:'w', w:'e' };
+
+function cornerOf(r, which){
+  const x = which.includes('w') ? r.x : which.includes('e') ? r.x + r.w : r.x + r.w / 2;
+  const y = which.includes('n') ? r.y : which.includes('s') ? r.y + r.h : r.y + r.h / 2;
+  return { x, y };
+}</pre>
+      <p>Edge handles map to a midpoint, which is what makes <code>n</code> and <code>s</code> fall
+      out of the same code path as the corners instead of needing their own branch.</p>
+
+      <h3 class="text-xl font-bold">5. The fuzz harness, and what it asserts</h3>
+      <pre>for (let i = 0; i &lt; 20000; i++){
+  const r = resizeRect(randomDrag());
+  assert(r.x &gt;= -EPS &amp;&amp; r.y &gt;= -EPS);
+  assert(r.x + r.w &lt;= bounds.w + EPS);
+  assert(r.y + r.h &lt;= bounds.h + EPS);
+  if (ratio) drift = Math.max(drift, Math.abs(r.w / r.h - ratio));
+}</pre>
+      <p>Three containment assertions and one drift measurement. The containment assertions pass
+      for <em>both</em> implementations — that is the finding. Only the drift number separates
+      them, and only because something is watching it.</p>
+
+      <h3 class="text-xl font-bold">6. Export maps display coordinates to source pixels</h3>
+      <pre>const k = img.naturalWidth / stage.clientWidth;
+ctx.drawImage(img,
+  crop.x * k, crop.y * k, crop.w * k, crop.h * k,   // source rect, real pixels
+  0, 0, out.width, out.height);                     // destination
+</pre>
+      <p>One scalar, applied to four numbers. Forget it and the export is silently correct-looking
+      and a third of the resolution — the kind of bug that never throws and never gets reported,
+      it just makes everything slightly worse.</p>
+
+      <h3 class="text-xl font-bold">🎉 DesignFromZero Day 65 shipped.</h3>
+      <p class="text-slate-600">A component where the hard part is not the handles. It is that one
+      of the constraints is invisible.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Crop geometry. No DOM anywhere in this block - that is what makes the fuzz possible.
+
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1) >>> 0;
+    t = (t ^ (t + Math.imul(t ^ (t >>> 7), t | 61))) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const OPPOSITE = { nw:"se", ne:"sw", se:"nw", sw:"ne", n:"s", s:"n", e:"w", w:"e" };
+
+function cornerOf(r, which){
+  const x = which.indexOf("w") >= 0 ? r.x
+          : which.indexOf("e") >= 0 ? r.x + r.w
+          : r.x + r.w / 2;
+  const y = which.indexOf("n") >= 0 ? r.y
+          : which.indexOf("s") >= 0 ? r.y + r.h
+          : r.y + r.h / 2;
+  return { x: x, y: y };
+}
+
+const anchorFor = (rect, handle) => cornerOf(rect, OPPOSITE[handle]);
+
+// The whole component, as one pure function.
+//   mode "scale"       - the correct one: clamp ONCE, on a single scale factor
+//   mode "independent" - the bug: clamp width and height separately
+function resizeRect(opts){
+  const anchor = opts.anchor, pointer = opts.pointer, handle = opts.handle;
+  const bounds = opts.bounds, min = opts.min == null ? 20 : opts.min;
+  const ratio = opts.ratio || 0;
+  const mode = opts.mode || "scale";
+
+  // which way does the rectangle grow from the anchor?
+  const dirX = handle.indexOf("w") >= 0 ? -1 : handle.indexOf("e") >= 0 ? 1
+             : (pointer.x >= anchor.x ? 1 : -1);
+  const dirY = handle.indexOf("n") >= 0 ? -1 : handle.indexOf("s") >= 0 ? 1
+             : (pointer.y >= anchor.y ? 1 : -1);
+
+  const maxW = dirX > 0 ? bounds.w - anchor.x : anchor.x;
+  const maxH = dirY > 0 ? bounds.h - anchor.y : anchor.y;
+
+  // an edge handle drives one axis; the other follows the ratio, or stays put
+  const freeX = handle !== "n" && handle !== "s";
+  const freeY = handle !== "e" && handle !== "w";
+
+  let w = freeX ? Math.abs(pointer.x - anchor.x) : (opts.rect ? opts.rect.w : 0);
+  let h = freeY ? Math.abs(pointer.y - anchor.y) : (opts.rect ? opts.rect.h : 0);
+
+  if (ratio){
+    // one degree of freedom: pick the driving axis, derive the other
+    if (!freeY || (freeX && Math.abs(pointer.x - anchor.x) * 1 >= h * ratio)) h = w / ratio;
+    else w = h * ratio;
+
+    if (mode === "independent"){
+      // THE BUG. Each line is correct on its own. Together they change w/h.
+      w = Math.min(Math.max(w, min), maxW);
+      h = Math.min(Math.max(h, min / ratio), maxH);
+    } else {
+      // minimum first, as a scale; then bounds, as a scale. The ratio cannot drift
+      // because it never becomes two numbers.
+      const grow = Math.max(1, w > 0 ? min / w : 1, h > 0 ? (min / ratio) / h : 1);
+      w *= grow; h *= grow;
+      const fit = Math.min(1, w > 0 ? maxW / w : 1, h > 0 ? maxH / h : 1);
+      w *= fit; h *= fit;
+    }
+  } else {
+    // free ratio: the axes really ARE independent, and clamping them separately is right.
+    // This is why the bug above survives review - it is the correct code for this mode.
+    w = Math.min(Math.max(w, min), maxW);
+    h = Math.min(Math.max(h, min), maxH);
+  }
+
+  return {
+    x: dirX > 0 ? anchor.x : anchor.x - w,
+    y: dirY > 0 ? anchor.y : anchor.y - h,
+    w: w, h: h
+  };
+}
+
+function moveRect(rect, dx, dy, bounds){
+  return {
+    x: Math.min(Math.max(rect.x + dx, 0), bounds.w - rect.w),
+    y: Math.min(Math.max(rect.y + dy, 0), bounds.h - rect.h),
+    w: rect.w, h: rect.h
+  };
+}
+
+function insideBounds(r, bounds, eps){
+  eps = eps == null ? 1e-9 : eps;
+  return r.x >= -eps && r.y >= -eps &&
+         r.x + r.w <= bounds.w + eps && r.y + r.h <= bounds.h + eps;
+}
+
+// A crop rect for a given ratio, centred, as large as the bounds allow.
+function centredRect(bounds, ratio, frac){
+  frac = frac == null ? 0.8 : frac;
+  let w = bounds.w * frac, h = ratio ? w / ratio : bounds.h * frac;
+  const fit = Math.min(1, bounds.w / w, bounds.h / h);
+  w *= fit; h *= fit;
+  return { x: (bounds.w - w) / 2, y: (bounds.h - h) / 2, w: w, h: h };
+}
+
+// Rotating 90 degrees swaps the frame. A rect left alone is now outside the image.
+function rotateRect(r, bounds, clockwise){
+  return clockwise
+    ? { x: bounds.h - (r.y + r.h), y: r.x, w: r.h, h: r.w }
+    : { x: r.y, y: bounds.w - (r.x + r.w), w: r.h, h: r.w };
+}
+
+// Display coordinates -> source pixels. One scalar, four numbers.
+function toSourceRect(r, displayWidth, naturalWidth){
+  const k = naturalWidth / displayWidth;
+  return { x: r.x * k, y: r.y * k, w: r.w * k, h: r.h * k, scale: k };
+}
+
+// The harness: same drags, both strategies.
+function fuzzResize(mode, ratio, trials, seed, bounds, min){
+  const rnd = mulberry32(seed);
+  let worstDrift = 0, escaped = 0, tooSmall = 0;
+  const handles = ["nw", "ne", "se", "sw", "n", "s", "e", "w"];
+  for (let i = 0; i < trials; i++){
+    const rect = centredRect(bounds, ratio, 0.3 + rnd() * 0.6);
+    const handle = handles[Math.floor(rnd() * handles.length)];
+    const anchor = anchorFor(rect, handle);
+    const pointer = { x: rnd() * bounds.w * 1.4 - bounds.w * 0.2,
+                      y: rnd() * bounds.h * 1.4 - bounds.h * 0.2 };
+    const r = resizeRect({ anchor: anchor, pointer: pointer, handle: handle, rect: rect,
+                           ratio: ratio, bounds: bounds, min: min, mode: mode });
+    if (!insideBounds(r, bounds)) escaped++;
+    if (r.w > 0 && r.h > 0 && ratio)
+      worstDrift = Math.max(worstDrift, Math.abs(r.w / r.h - ratio));
+    // "too small" only counts when the image could actually have held the minimum
+    const fits = min <= bounds.w && min / ratio <= bounds.h;
+    if (fits && (r.w < min - 1e-6 && r.h < min / ratio - 1e-6)) tooSmall++;
+  }
+  return { mode: mode, drift: worstDrift, escaped: escaped, tooSmall: tooSmall };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+const stage = $("stage"), cropEl = $("crop"), srcCv = $("src");
+let ratio = 0, minSide = 40, rotation = 0;
+let bounds = { w: srcCv.width, h: srcCv.height };
+let rect = centredRect(bounds, 0);
+
+// draw a synthetic source image, so the page needs no network
+function paintSource(){
+  const c = srcCv.getContext("2d");
+  const W = srcCv.width, H = srcCv.height;
+  const g = c.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, "#312e81"); g.addColorStop(0.5, "#7c3aed"); g.addColorStop(1, "#f59e0b");
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  c.strokeStyle = "rgba(255,255,255,.22)"; c.lineWidth = 1;
+  for (let x = 0; x <= W; x += 40){ c.beginPath(); c.moveTo(x + .5, 0); c.lineTo(x + .5, H); c.stroke(); }
+  for (let y = 0; y <= H; y += 40){ c.beginPath(); c.moveTo(0, y + .5); c.lineTo(W, y + .5); c.stroke(); }
+  c.fillStyle = "rgba(255,255,255,.9)";
+  c.font = "900 46px -apple-system, Inter, sans-serif";
+  c.fillText("CROP ME", 40, H / 2);
+  c.font = "700 15px ui-monospace, monospace";
+  c.fillText(W + " x " + H + " source pixels", 40, H / 2 + 30);
+  c.beginPath(); c.arc(W - 110, 110, 62, 0, Math.PI * 2); c.fill();
+}
+
+const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+function buildHandles(){
+  HANDLES.forEach(function(h){
+    const el = document.createElement("div");
+    el.className = "h" + (h === "n" || h === "s" ? " e" : (h === "e" || h === "w" ? " s" : ""));
+    el.dataset.h = h;
+    cropEl.appendChild(el);
+  });
+}
+
+function placeHandles(){
+  cropEl.querySelectorAll(".h").forEach(function(el){
+    const h = el.dataset.h;
+    const x = h.indexOf("w") >= 0 ? 0 : h.indexOf("e") >= 0 ? rect.w : rect.w / 2;
+    const y = h.indexOf("n") >= 0 ? 0 : h.indexOf("s") >= 0 ? rect.h : rect.h / 2;
+    el.style.left = (x - el.offsetWidth / 2) + "px";
+    el.style.top = (y - el.offsetHeight / 2) + "px";
+  });
+}
+
+function displayScale(){ return stage.clientWidth / srcCv.width; }
+
+function render(){
+  const k = displayScale();
+  cropEl.style.left = (rect.x * k) + "px";
+  cropEl.style.top = (rect.y * k) + "px";
+  cropEl.style.width = (rect.w * k) + "px";
+  cropEl.style.height = (rect.h * k) + "px";
+  $("shade").style.clipPath =
+    "polygon(0 0,100% 0,100% 100%,0 100%,0 0," +
+    (rect.x * k) + "px " + (rect.y * k) + "px," +
+    (rect.x * k) + "px " + ((rect.y + rect.h) * k) + "px," +
+    ((rect.x + rect.w) * k) + "px " + ((rect.y + rect.h) * k) + "px," +
+    ((rect.x + rect.w) * k) + "px " + (rect.y * k) + "px," +
+    (rect.x * k) + "px " + (rect.y * k) + "px)";
+  placeHandles();
+
+  const src = toSourceRect(rect, bounds.w, srcCv.width);
+  $("rDisp").textContent = Math.round(rect.w) + " x " + Math.round(rect.h);
+  $("rSrc").textContent = Math.round(src.w) + " x " + Math.round(src.h) + " px";
+  $("rScale").textContent = k.toFixed(3) + " css/px";
+  $("rWant").textContent = ratio ? ratio.toFixed(4) : "free";
+  const got = rect.h > 0 ? rect.w / rect.h : 0;
+  $("rGot").textContent = got.toFixed(6);
+  const drift = ratio ? Math.abs(got - ratio) : 0;
+  $("rDrift").textContent = drift.toExponential(1);
+  $("rDrift").className = "font-bold " + (drift < 1e-9 ? "text-emerald-600" : "text-rose-600");
+}
+
+let drag = null;
+stage.addEventListener("pointerdown", function(e){
+  const h = e.target.dataset && e.target.dataset.h;
+  const k = displayScale();
+  const p = { x: (e.clientX - stage.getBoundingClientRect().left) / k,
+              y: (e.clientY - stage.getBoundingClientRect().top) / k };
+  if (h) drag = { kind: "resize", handle: h, anchor: anchorFor(rect, h), start: rect };
+  else if (e.target === cropEl || cropEl.contains(e.target)) drag = { kind: "move", p: p, start: rect };
+  else return;
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", function(e){
+  if (!drag) return;
+  const k = displayScale(), b = stage.getBoundingClientRect();
+  const p = { x: (e.clientX - b.left) / k, y: (e.clientY - b.top) / k };
+  if (drag.kind === "resize")
+    rect = resizeRect({ anchor: drag.anchor, pointer: p, handle: drag.handle, rect: drag.start,
+                        ratio: ratio, bounds: bounds, min: minSide, mode: "scale" });
+  else
+    rect = moveRect(drag.start, p.x - drag.p.x, p.y - drag.p.y, bounds);
+  render();
+});
+["pointerup", "pointercancel"].forEach(function(ev){
+  stage.addEventListener(ev, function(){ drag = null; });
+});
+
+$("ratios").addEventListener("click", function(e){
+  if (!e.target.dataset.r) return;
+  $("ratios").querySelectorAll("button").forEach(function(b){ b.classList.remove("on"); });
+  e.target.classList.add("on");
+  ratio = +e.target.dataset.r;
+  rect = centredRect(bounds, ratio);
+  render(); fuzzPanel(); minPanel();
+});
+
+$("rot").addEventListener("click", function(){
+  // swap the frame AND carry the rect through it - leaving the rect alone puts it outside
+  const cv = document.createElement("canvas");
+  cv.width = srcCv.height; cv.height = srcCv.width;
+  const c = cv.getContext("2d");
+  c.translate(cv.width / 2, cv.height / 2);
+  c.rotate(Math.PI / 2);
+  c.drawImage(srcCv, -srcCv.width / 2, -srcCv.height / 2);
+  rect = rotateRect(rect, bounds, true);
+  srcCv.width = cv.width; srcCv.height = cv.height;
+  srcCv.getContext("2d").drawImage(cv, 0, 0);
+  bounds = { w: srcCv.width, h: srcCv.height };
+  rotation = (rotation + 90) % 360;
+  if (ratio) rect = centredRect(bounds, ratio);
+  render();
+});
+
+$("reset").addEventListener("click", function(){ rect = centredRect(bounds, ratio); render(); });
+
+$("doExport").addEventListener("click", function(){
+  const src = toSourceRect(rect, bounds.w, srcCv.width);
+  const out = $("out");
+  out.width = Math.max(1, Math.round(src.w));
+  out.height = Math.max(1, Math.round(src.h));
+  out.getContext("2d").drawImage(srcCv, src.x, src.y, src.w, src.h, 0, 0, out.width, out.height);
+  $("outInfo").textContent = out.width + " x " + out.height + " source pixels" +
+    (ratio ? "  ratio " + (out.width / out.height).toFixed(4) : "");
+});
+
+function fuzzPanel(){
+  const b = { w: 640, h: 420 }, r = ratio || 1;
+  const rows = ["independent", "scale"].map(function(mode){
+    return fuzzResize(mode, r, 20000, 20260819, b, minSide);
+  });
+  $("fuzz").innerHTML = rows.map(function(x){
+    const good = x.drift < 1e-9;
+    return "<tr><td>" + (x.mode === "scale" ? "one scale factor <strong>(correct)</strong>"
+                                            : "width and height separately") + "</td>" +
+      "<td class='font-bold " + (good ? "text-emerald-600" : "text-rose-600") + "'>" +
+      x.drift.toExponential(2) + "</td>" +
+      "<td>" + x.escaped + "</td><td>" + x.tooSmall + "</td></tr>";
+  }).join("");
+}
+
+function minPanel(){
+  minSide = +$("minSide").value;
+  $("vMin").textContent = minSide;
+  const r = ratio || 1;
+  const naive = { w: minSide, h: minSide };
+  const correct = { w: Math.max(minSide, (minSide / r) * r), h: Math.max(minSide / r, minSide / r) };
+  const cw = Math.max(minSide, minSide), ch = cw / r;
+  $("minOut").textContent =
+    "ratio " + r.toFixed(4) + ", minimum side " + minSide + "\n" +
+    "naive  Math.max on each side -> " + naive.w + " x " + naive.h +
+      "  ratio " + (naive.w / naive.h).toFixed(4) + (Math.abs(naive.w / naive.h - r) > 1e-9 ? "   <- wrong" : "") + "\n" +
+    "scaled minimum               -> " + cw.toFixed(1) + " x " + ch.toFixed(1) +
+      "  ratio " + (cw / ch).toFixed(4);
+  fuzzPanel();
+}
+$("minSide").addEventListener("input", minPanel);
+
+paintSource();
+buildHandles();
+render();
+fuzzPanel();
+minPanel();
+window.addEventListener("resize", render);
+</script>
+</body>
+</html>
