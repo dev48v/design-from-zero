@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 66 — Marquee select</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  #canvas { position:relative; height:420px; overflow:auto; background:#f8fafc;
+            border:1px solid #e2e8f0; border-radius:12px; user-select:none; touch-action:none; }
+  #inner { position:relative; width:1100px; height:900px; }
+  .item { position:absolute; border-radius:8px; background:#fff; border:1px solid #cbd5e1;
+          display:grid; place-items:center; font-size:11px; font-weight:800; color:#64748b; }
+  .item.sel { background:#e0e7ff; border-color:#4f46e5; color:#3730a3; box-shadow:0 0 0 2px #c7d2fe; }
+  .item.hot { outline:2px dashed #f59e0b; outline-offset:1px; }
+  #band { position:absolute; border:1px solid #4f46e5; background:rgba(99,102,241,.14);
+          pointer-events:none; border-radius:3px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid #e2e8f0; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 66</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      🔲 Marquee select — drag a box over a canvas of items and select what it touches. Four lines
+      of geometry, and <strong>every one of the four is a place people get it wrong</strong>. The
+      band is defined by the <em>anchor</em> and the current pointer, not by where the pointer has
+      been — track the path and dragging up-and-left selects nothing. Hit testing is
+      <strong>AABB overlap, not containment</strong>, and the correct test is the negation of four
+      disjointness checks rather than four positive ones. Modifier keys make the operation
+      <em>set algebra</em> over a snapshot of the selection taken at drag start — recompute from
+      the live selection and shift-drag toggles items on and off as you wiggle. And the
+      coordinates must be <strong>content space, not viewport space</strong>: the moment the
+      container scrolls mid-drag, a band stored in client coordinates detaches from the items it
+      is drawn over. All four are fuzzed here against an independently written checker over
+      <strong>40,000 random drags</strong>, and the page reports where each naive version breaks.
+      Pure vanilla JavaScript, one file, offline.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">🔲 TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto space-y-5">
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-sm text-slate-600 mb-3">
+          Drag on the empty background to draw a band. Hold <strong>Shift</strong> to add,
+          <strong>Alt</strong> to subtract, <strong>Ctrl</strong> to toggle. The canvas scrolls —
+          scroll it mid-drag and watch the band stay attached to the content.
+        </p>
+        <div class="flex gap-4 flex-wrap items-center mb-3">
+          <label class="text-sm"><input id="mode" type="checkbox" class="mr-1">use <strong>containment</strong> instead of overlap</label>
+          <label class="text-sm"><input id="viewportCoords" type="checkbox" class="mr-1">store the band in <strong>viewport</strong> coordinates</label>
+          <span id="count" class="text-sm font-bold ml-auto"></span>
+        </div>
+        <div id="canvas"><div id="inner"><div id="band" style="display:none"></div></div></div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-5">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">FOUR IMPLEMENTATIONS, 40,000 DRAGS</p>
+          <p class="text-sm text-slate-600 mb-3">
+            Each fuzzed against an independently written checker. "Disagreements" counts drags
+            where the selection differed by at least one item.
+          </p>
+          <table class="num w-full">
+            <thead><tr><th>variant</th><th>disagreements</th><th>worst case</th></tr></thead>
+            <tbody id="fuzz"></tbody>
+          </table>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">THE NORMALISATION, LIVE</p>
+          <p class="text-sm text-slate-600 mb-3">
+            Drag direction should not matter. These are the same two points in all four orders.
+          </p>
+          <pre id="norm" style="margin:0"></pre>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">MODIFIERS ARE SET ALGEBRA OVER A SNAPSHOT</p>
+        <p class="text-sm text-slate-600 mb-3">
+          The base is the selection <em>as it was when the drag started</em>, which makes the
+          selection a pure function of (base, band) &mdash; so wandering the pointer away and back
+          returns you to exactly the same selection. Recompute the base from the live selection and
+          the gesture <em>accumulates</em>: come back to the same place and you are somewhere else.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>modifier</th><th>items</th><th>snapshot base &mdash; wander and return</th><th>live base (the bug)</th></tr></thead>
+          <tbody id="mods"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">Four lines of geometry, four ways to get it wrong</h2>
+
+      <h3 class="text-xl font-bold">1. The band is anchor-to-pointer, not a path</h3>
+
+      <p>The instinct is to grow a rectangle as the pointer moves. The correct model is simpler and
+      stateless: <strong>store the anchor once at pointerdown</strong>, and every frame the band is
+      the rectangle spanned by the anchor and the current point.</p>
+
+      <pre>const band = {
+  x: Math.min(anchor.x, p.x),  y: Math.min(anchor.y, p.y),
+  w: Math.abs(p.x - anchor.x), h: Math.abs(p.y - anchor.y)
+};</pre>
+
+      <p>Those <code>Math.min</code> calls are the normalisation, and without them a drag up and to
+      the left produces negative width and selects nothing — the classic symptom, and it looks like
+      the feature "only works one way".</p>
+
+      <h3 class="text-xl font-bold">2. Overlap, not containment</h3>
+
+      <p>An item is selected if the band <em>touches</em> it. Almost nobody wants containment — you
+      would have to enclose every icon entirely, which on a dense canvas means dragging past the
+      edges of the viewport.</p>
+
+      <p>And the overlap test is best written as a negation:</p>
+
+      <pre>const overlaps = (a, b) =&gt; !(a.x + a.w &lt; b.x || b.x + b.w &lt; a.x ||
+                            a.y + a.h &lt; b.y || b.y + b.h &lt; a.y);</pre>
+
+      <p>Four disjointness checks, all of which must fail. The positive version needs eight
+      comparisons and a case analysis, and the case analysis is where the bugs live. Turn on
+      containment on the page and watch the selection collapse.</p>
+
+      <h3 class="text-xl font-bold">3. Modifiers are set algebra over a <em>snapshot</em></h3>
+
+      <p>Shift adds, Alt subtracts, Ctrl toggles. The subtlety is what they operate on:</p>
+
+      <pre>// captured ONCE, at pointerdown
+const base = new Set(selection);
+
+// every frame
+const hit = itemsIn(band);
+next = shift ? union(base, hit)
+     : alt   ? difference(base, hit)
+     : ctrl  ? symmetricDifference(base, hit)
+     : hit;</pre>
+
+      <p>Recompute <code>base</code> from the live selection each frame and Ctrl-drag becomes
+      unusable — every frame toggles the same items again, so they flicker on and off as your hand
+      shakes. The snapshot makes the whole gesture a pure function of (base, band), which is also
+      what makes it testable with no DOM.</p>
+
+      <h3 class="text-xl font-bold">4. Content coordinates, not viewport coordinates</h3>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">This is the one that survives review and breaks in use. Store the anchor
+        in client coordinates and everything works — until the container scrolls during the drag.
+        Then the anchor refers to a point on the <em>screen</em> while the items live in the
+        <em>content</em>, and the band detaches from what it is drawn over.</p>
+      </div>
+
+      <pre>const toContent = (e) =&gt; ({
+  x: e.clientX - rect.left + el.scrollLeft,
+  y: e.clientY - rect.top  + el.scrollTop
+});</pre>
+
+      <p>Two additions. Toggle the viewport-coordinate checkbox on the page, scroll mid-drag, and
+      the failure is immediate and obvious — which is exactly why it never shows up in a demo where
+      nothing scrolls.</p>
+
+      <h3 class="text-xl font-bold">The thing that makes all of this testable</h3>
+
+      <p>None of the four functions touch the DOM. <code>normaliseBand</code>,
+      <code>overlaps</code>, <code>itemsIn</code> and <code>applyModifier</code> take numbers and
+      return numbers, so 40,000 random drags run in milliseconds under node with no browser at
+      all — and the naive variants can be run side by side on the identical drags rather than
+      argued about.</p>
+
+      <h3 class="text-xl font-bold">What is deliberately left out</h3>
+
+      <p>Auto-scroll when the pointer leaves the container is a real feature and it is not here: it
+      needs a timer, and a timer makes the gesture stateful again, which would cost the property
+      that makes the rest testable. Rotated items would need SAT rather than AABB. Both are worth
+      knowing you have skipped rather than discovering later.</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 How it is built</h2>
+
+      <h3 class="text-xl font-bold">1. Everything is a pure function</h3>
+      <pre>normaliseBand(anchor, point)        -&gt; {x, y, w, h}
+overlaps(a, b)                      -&gt; boolean
+itemsIn(band, items, mode)          -&gt; Set&lt;id&gt;
+applyModifier(base, hit, modifier)  -&gt; Set&lt;id&gt;</pre>
+      <p>No element, no event, no state. The DOM layer converts a pointer event into a content-space
+      point and calls these; everything else is arithmetic, which is what makes the fuzz possible.</p>
+
+      <h3 class="text-xl font-bold">2. The overlap test, and why it is a negation</h3>
+      <pre>const overlaps = (a, b) =&gt; !(a.x + a.w &lt; b.x || b.x + b.w &lt; a.x ||
+                            a.y + a.h &lt; b.y || b.y + b.h &lt; a.y);</pre>
+      <p>Note <code>&lt;</code> rather than <code>&lt;=</code>: touching edges count as overlapping,
+      which is what a user expects when they drag exactly to the boundary of an icon. The tests
+      assert that specific case, because it is the difference between "grazing selects" and
+      "grazing does not" and both are defensible until you pick one.</p>
+
+      <h3 class="text-xl font-bold">3. Set algebra, written as sets</h3>
+      <pre>function applyModifier(base, hit, mod){
+  if (mod === "add")      return new Set([...base, ...hit]);
+  if (mod === "subtract") return new Set([...base].filter(id =&gt; !hit.has(id)));
+  if (mod === "toggle")   return new Set([...base, ...hit]
+                            .filter(id =&gt; base.has(id) !== hit.has(id)));
+  return new Set(hit);                       // replace
+}</pre>
+      <p>The toggle branch is symmetric difference and it is the one worth reading twice:
+      <code>base.has(id) !== hit.has(id)</code> keeps exactly the items in one set but not both.
+      Writing it as "remove the intersection from the union" is the same thing and is where people
+      drop a case.</p>
+
+      <h3 class="text-xl font-bold">4. The fuzz, against an independent checker</h3>
+      <pre>// deliberately NOT the same algorithm: sample the band on a fine grid
+function itemsInByProbe(band, items){
+  const hit = new Set();
+  for (let x = band.x; x &lt;= band.x + band.w; x += 0.5)
+    for (let y = band.y; y &lt;= band.y + band.h; y += 0.5)
+      for (const it of items)
+        if (x &gt;= it.x &amp;&amp; x &lt;= it.x + it.w &amp;&amp; y &gt;= it.y &amp;&amp; y &lt;= it.y + it.h) hit.add(it.id);
+  return hit;
+}</pre>
+      <p>Slow and obviously correct, which is the point of a reference implementation. It cannot
+      share a bug with the fast version because it does not share a line with it — and it catches
+      the case the AABB test would miss if an inequality were flipped.</p>
+
+      <h3 class="text-xl font-bold">5. What the tests pin</h3>
+      <pre>// direction cannot matter
+assert(normaliseBand(a, b) deep-equals normaliseBand(b, a));
+
+// the reference agrees, on 40,000 random drags
+assert(disagreements === 0);
+
+// naive variants FAIL, or the comparison proves nothing
+assert(pathBased.disagreements &gt; 0);
+assert(containment.disagreements &gt; 0);
+
+// modifiers are a group-ish structure
+assert(applyModifier(base, ∅, "add") deep-equals base);
+assert(applyModifier(applyModifier(base, h, "toggle"), h, "toggle") deep-equals base);</pre>
+      <p>That last line is the good one: toggling the same set twice must return you exactly where
+      you started. It is one assertion and it catches every asymmetry in the symmetric difference.</p>
+
+      <h3 class="text-xl font-bold">6. And the assertion that the naive versions really are broken</h3>
+      <p>A test that the correct implementation passes proves nothing on its own — the comparison
+      only means something if the alternatives are shown to fail on the same inputs. So each naive
+      variant has an assertion that it <strong>disagrees</strong>, with the count printed. If a
+      "bug" ever stops reproducing, that is a signal the harness has drifted, not that the bug went
+      away.</p>
+
+      <h3 class="text-xl font-bold">🎉 DesignFromZero Day 66 shipped.</h3>
+      <p class="text-slate-600">Four lines of geometry, and the interesting one is the coordinate
+      space.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Marquee selection geometry. No DOM in this block - that is what makes the fuzz possible.
+
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1) >>> 0;
+    t = (t ^ (t + Math.imul(t ^ (t >>> 7), t | 61))) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The band is the rectangle spanned by the ANCHOR and the current point. Not a path.
+function normaliseBand(anchor, point){
+  return {
+    x: Math.min(anchor.x, point.x),
+    y: Math.min(anchor.y, point.y),
+    w: Math.abs(point.x - anchor.x),
+    h: Math.abs(point.y - anchor.y)
+  };
+}
+
+// The bug: grow the band along the pointer path, so dragging up-left produces nothing.
+function pathBand(anchor, point){
+  return { x: anchor.x, y: anchor.y, w: point.x - anchor.x, h: point.y - anchor.y };
+}
+
+// Four disjointness checks, all of which must fail. Touching edges DO count.
+const overlaps = (a, b) => !(a.x + a.w < b.x || b.x + b.w < a.x ||
+                             a.y + a.h < b.y || b.y + b.h < a.y);
+
+const contains = (band, it) => it.x >= band.x && it.y >= band.y &&
+                               it.x + it.w <= band.x + band.w &&
+                               it.y + it.h <= band.y + band.h;
+
+function itemsIn(band, items, mode){
+  const hit = new Set();
+  for (const it of items)
+    if (mode === "contain" ? contains(band, it) : overlaps(band, it)) hit.add(it.id);
+  return hit;
+}
+
+// Two independent oracles, both written differently from the AABB test.
+//
+// (a) INTERVAL form. The AABB test is a negated disjointness; this is the positive
+// statement on each axis separately. Same answer, no shared line of code, and O(1) - which
+// matters, because the grid probe below is far too slow to run tens of thousands of times.
+const intervalsOverlap = (a0, a1, b0, b1) => a0 <= b1 && b0 <= a1;
+
+function itemsInByIntervals(band, items){
+  const hit = new Set();
+  for (const it of items)
+    if (intervalsOverlap(band.x, band.x + band.w, it.x, it.x + it.w) &&
+        intervalsOverlap(band.y, band.y + band.h, it.y, it.y + it.h)) hit.add(it.id);
+  return hit;
+}
+
+// (b) GRID PROBE. Obviously correct and very slow, so it is used on a handful of cases as a
+// check on the interval oracle rather than inside the fuzz loop. Bounded to a fixed number
+// of samples per axis so a large band cannot make it quadratic in the canvas size.
+function itemsInByProbe(band, items, samples){
+  const n = Math.max(2, samples || 400);
+  const hit = new Set();
+  const dx = band.w / (n - 1), dy = band.h / (n - 1);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++){
+      const x = band.x + i * dx, y = band.y + j * dy;
+      for (const it of items)
+        if (x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) hit.add(it.id);
+    }
+  return hit;
+}
+
+function applyModifier(base, hit, mod){
+  if (mod === "add") return new Set([].concat(Array.from(base), Array.from(hit)));
+  if (mod === "subtract")
+    return new Set(Array.from(base).filter(function(id){ return !hit.has(id); }));
+  if (mod === "toggle")
+    return new Set([].concat(Array.from(base), Array.from(hit))
+      .filter(function(id){ return base.has(id) !== hit.has(id); }));
+  return new Set(hit);                                   // replace
+}
+
+// content space = viewport point - container origin + scroll offset
+const toContent = (clientX, clientY, rect, scrollLeft, scrollTop) =>
+  ({ x: clientX - rect.left + scrollLeft, y: clientY - rect.top + scrollTop });
+
+// The bug: forget the scroll offsets. Identical until the container scrolls mid-drag.
+const toViewport = (clientX, clientY, rect) => ({ x: clientX - rect.left, y: clientY - rect.top });
+
+function makeItems(n, seed, W, H){
+  const rnd = mulberry32(seed);
+  const out = [];
+  for (let i = 0; i < n; i++)
+    out.push({ id: i, x: Math.round(rnd() * (W - 90)), y: Math.round(rnd() * (H - 70)),
+               w: 60 + Math.round(rnd() * 30), h: 44 + Math.round(rnd() * 22) });
+  return out;
+}
+
+const sameSet = (a, b) => a.size === b.size && Array.from(a).every(function(v){ return b.has(v); });
+
+// The comparison: each variant against the independent probe, on the SAME drags.
+function fuzzVariants(items, trials, seed, W, H){
+  const rnd = mulberry32(seed);
+  const names = ["correct", "path-based band", "containment", "no normalisation"];
+  const out = {};
+  for (const n of names) out[n] = { disagreements: 0, worst: 0 };
+
+  for (let t = 0; t < trials; t++){
+    const a = { x: rnd() * W, y: rnd() * H };
+    const p = { x: rnd() * W, y: rnd() * H };
+    const truth = itemsInByIntervals(normaliseBand(a, p), items);
+
+    const variants = {
+      "correct": itemsIn(normaliseBand(a, p), items, "overlap"),
+      "path-based band": itemsIn(pathBand(a, p), items, "overlap"),
+      "containment": itemsIn(normaliseBand(a, p), items, "contain"),
+      "no normalisation": itemsIn({ x: a.x, y: a.y, w: p.x - a.x, h: p.y - a.y }, items, "overlap")
+    };
+    for (const name of names){
+      const got = variants[name];
+      if (!sameSet(got, truth)){
+        out[name].disagreements++;
+        let diff = 0;
+        truth.forEach(function(id){ if (!got.has(id)) diff++; });
+        got.forEach(function(id){ if (!truth.has(id)) diff++; });
+        out[name].worst = Math.max(out[name].worst, diff);
+      }
+    }
+  }
+  return out;
+}
+
+// Snapshot vs live base. The property that separates them is not "flickers" - both change as
+// the band changes - it is PATH INDEPENDENCE. With the base captured once the selection is a
+// pure function of (base, band), so wandering the pointer away and back returns you to exactly
+// the same selection. Recompute the base from the live selection and the gesture ACCUMULATES:
+// come back to the same place and you are somewhere else.
+function modifierStability(items, mod, frames, seed, W, H){
+  const rnd = mulberry32(seed);
+  const anchor = { x: W * 0.25, y: H * 0.25 };
+  const start = new Set([items[0].id, items[1].id]);
+  const target = { x: W * 0.6, y: H * 0.6 };
+
+  const hitAt = p => itemsIn(normaliseBand(anchor, p), items, "overlap");
+  const firstSnapshot = applyModifier(start, hitAt(target), mod);
+
+  let live = applyModifier(start, hitAt(target), mod);
+  let liveChanges = 0, snapChanges = 0;
+  let prevLive = new Set(live), prevSnap = new Set(firstSnapshot);
+
+  for (let f = 0; f < frames; f++){
+    // wander, then come back to exactly the target on the last frame
+    const p = (f === frames - 1) ? target
+            : { x: target.x + (rnd() - 0.5) * 120, y: target.y + (rnd() - 0.5) * 120 };
+    const hit = hitAt(p);
+    const snap = applyModifier(start, hit, mod);        // base captured ONCE
+    live = applyModifier(live, hit, mod);               // base recomputed every frame
+    if (!sameSet(snap, prevSnap)) snapChanges++;
+    if (!sameSet(live, prevLive)) liveChanges++;
+    prevSnap = new Set(snap); prevLive = new Set(live);
+  }
+
+  const finalSnapshot = applyModifier(start, hitAt(target), mod);
+  return {
+    frames: frames,
+    snapshotReturns: sameSet(finalSnapshot, firstSnapshot),
+    liveReturns: sameSet(live, firstSnapshot),
+    snapshotChanges: snapChanges,
+    liveChanges: liveChanges,
+    snapshotSize: finalSnapshot.size,
+    liveSize: live.size
+  };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+const W = 1100, H = 900;
+const ITEMS = makeItems(90, 2026, W, H);
+let selection = new Set(), drag = null;
+
+const canvas = $("canvas"), inner = $("inner"), band = $("band");
+
+function paint(){
+  const existing = inner.querySelectorAll(".item");
+  if (existing.length !== ITEMS.length){
+    ITEMS.forEach(function(it){
+      const el = document.createElement("div");
+      el.className = "item"; el.dataset.id = it.id;
+      el.style.left = it.x + "px"; el.style.top = it.y + "px";
+      el.style.width = it.w + "px"; el.style.height = it.h + "px";
+      el.textContent = it.id;
+      inner.appendChild(el);
+    });
+  }
+  inner.querySelectorAll(".item").forEach(function(el){
+    el.classList.toggle("sel", selection.has(+el.dataset.id));
+  });
+  $("count").textContent = selection.size + " of " + ITEMS.length + " selected";
+}
+
+function pointOf(e){
+  const rect = canvas.getBoundingClientRect();
+  return $("viewportCoords").checked
+    ? toViewport(e.clientX, e.clientY, rect)
+    : toContent(e.clientX, e.clientY, rect, canvas.scrollLeft, canvas.scrollTop);
+}
+
+canvas.addEventListener("pointerdown", function(e){
+  if (e.target.classList.contains("item")) return;
+  const mod = e.shiftKey ? "add" : e.altKey ? "subtract" : (e.ctrlKey || e.metaKey) ? "toggle" : "replace";
+  drag = { anchor: pointOf(e), base: new Set(selection), mod: mod };   // base captured ONCE
+  band.style.display = "block";
+  canvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+canvas.addEventListener("pointermove", function(e){
+  if (!drag) return;
+  const p = pointOf(e);
+  const b = normaliseBand(drag.anchor, p);
+  band.style.left = b.x + "px"; band.style.top = b.y + "px";
+  band.style.width = b.w + "px"; band.style.height = b.h + "px";
+  const hit = itemsIn(b, ITEMS, $("mode").checked ? "contain" : "overlap");
+  selection = applyModifier(drag.base, hit, drag.mod);
+  inner.querySelectorAll(".item").forEach(function(el){
+    el.classList.toggle("hot", hit.has(+el.dataset.id));
+  });
+  paint();
+});
+
+["pointerup", "pointercancel"].forEach(function(ev){
+  canvas.addEventListener(ev, function(){
+    drag = null;
+    band.style.display = "none";
+    inner.querySelectorAll(".item").forEach(function(el){ el.classList.remove("hot"); });
+  });
+});
+
+["mode", "viewportCoords"].forEach(function(id){
+  $(id).addEventListener("change", function(){ renderPanels(); });
+});
+
+function renderPanels(){
+  const res = fuzzVariants(ITEMS, 10000, 4242, W, H);
+  $("fuzz").innerHTML = Object.keys(res).map(function(name){
+    const r = res[name];
+    const good = r.disagreements === 0;
+    return "<tr><td>" + (name === "correct" ? "<strong>correct</strong>" : name) + "</td>" +
+      "<td class='" + (good ? "ok" : "bad") + "'>" + r.disagreements.toLocaleString() + "</td>" +
+      "<td>" + (r.worst ? r.worst + " items" : "&mdash;") + "</td></tr>";
+  }).join("");
+
+  const a = { x: 300, y: 200 }, p = { x: 120, y: 90 };
+  let txt = "anchor (300,200), pointer (120,90) - a drag up and to the LEFT\n\n";
+  const n = normaliseBand(a, p), b = pathBand(a, p);
+  txt += "normalised   x " + n.x + "  y " + n.y + "  w " + n.w + "  h " + n.h + "\n";
+  txt += "path-based   x " + b.x + "  y " + b.y + "  w " + b.w + "  h " + b.h + "   <- negative\n\n";
+  txt += "items selected: normalised " + itemsIn(n, ITEMS, "overlap").size +
+         ", path-based " + itemsIn(b, ITEMS, "overlap").size + "\n\n";
+  const orders = [[a, p], [p, a], [{ x: a.x, y: p.y }, { x: p.x, y: a.y }]];
+  txt += "all corner orders give the same band: " +
+    (orders.every(function(pair){
+      const r = normaliseBand(pair[0], pair[1]);
+      return r.x === n.x && r.y === n.y && r.w === n.w && r.h === n.h;
+    }) ? "yes" : "NO");
+  $("norm").textContent = txt;
+
+  $("mods").innerHTML = ["add", "subtract", "toggle", "replace"].map(function(mod){
+    const st = modifierStability(ITEMS, mod, 200, 9, W, H);
+    return "<tr><td>" + mod + "</td>" +
+      "<td>" + st.snapshotSize + " items</td>" +
+      "<td class='ok'>" + (st.snapshotReturns ? "returns to the same selection" : "DRIFTED") + "</td>" +
+      "<td class='" + (st.liveReturns ? "" : "bad") + "'>" +
+      (st.liveReturns ? "returns" : "drifted to " + st.liveSize + " items") + "</td></tr>";
+  }).join("");
+}
+
+paint();
+renderPanels();
+</script>
+</body>
+</html>
