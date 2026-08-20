@@ -69,6 +69,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 64 — Slash-command menu](https://dev48v.infy.uk/design/day64-slash-command-menu.html) — `day64-slash-command-menu.html`
 - [DesignFromZero · Day 65 — Image cropper](https://dev48.infy.uk/design/day65-image-cropper.html) — `day65-image-cropper.html`
 - [DesignFromZero · Day 66 — Marquee select](https://dev48.infy.uk/design/day66-marquee-select.html) — `day66-marquee-select.html`
+- [DesignFromZero · Day 67 — Day-view event layout](https://dev48.infy.uk/design/day67-event-layout.html) — `day67-event-layout.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

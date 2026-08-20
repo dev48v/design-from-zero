@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 67 — Day-view event layout</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  #day { position:relative; height:660px; background:#fff; border:1px solid #e2e8f0;
+         border-radius:12px; user-select:none; touch-action:none; overflow:hidden; }
+  #gutter { position:absolute; left:0; top:0; width:56px; height:100%; border-right:1px solid #e2e8f0; }
+  #lane   { position:absolute; left:56px; right:0; top:0; height:100%; }
+  .hourline { position:absolute; left:0; right:0; border-top:1px solid #f1f5f9; }
+  .hourlab  { position:absolute; left:0; width:48px; text-align:right; font-size:10px;
+              font-weight:700; color:#94a3b8; transform:translateY(-6px); }
+  .ev { position:absolute; border-radius:6px; background:#eef2ff; border:1px solid #6366f1;
+        border-left:3px solid #4f46e5; padding:3px 6px; font-size:11px; line-height:1.25;
+        color:#312e81; overflow:hidden; cursor:grab; box-sizing:border-box; }
+  .ev .t { font-weight:800; }
+  .ev .h { font-weight:600; color:#4f46e5; opacity:.8; }
+  .ev .t .h { font-weight:600; margin-left:3px; }
+  .ev.clash { background:#fee2e2; border-color:#dc2626; border-left-color:#b91c1c; color:#7f1d1d; }
+  .ev .grip { position:absolute; left:0; right:0; bottom:0; height:7px; cursor:ns-resize; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid #e2e8f0; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 67</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      🗓️ Day-view event layout — the calendar column that puts overlapping meetings
+      <em>side by side</em>. Underneath, it is <strong>interval-graph colouring</strong>: cluster the
+      day, give every event the lowest free column, then let each one expand rightwards over the
+      columns nothing blocks. That greedy pass is <strong>optimal — but only in start-time
+      order</strong>, and nothing on screen tells you when you got it wrong, because <em>a layout
+      using too many columns still never overlaps</em>. That is the trap: the one property everyone
+      tests is satisfied by <strong>four of the six wrong versions here</strong> — the real defects
+      are narrower, not broken. Intervals are half-open, so 10:00–11:00 and 11:00–12:00 do
+      <em>not</em> collide; get that wrong and a day of back-to-back meetings silently halves its own
+      width. Fuzzed against two independently written oracles over <strong>12,000 random
+      schedules</strong>. Pure vanilla JavaScript, one file, offline.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">🗓️ TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto space-y-5">
+
+      <div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-5">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-sm text-slate-600 mb-3">
+            <strong>Drag an event</strong> to move it, or drag its bottom edge to resize — everything
+            snaps to 15 minutes and the whole day re-lays out on every frame. Switch the algorithm and
+            watch what changes: red boxes are ones an independent checker found sitting on top of
+            something they overlap in time.
+          </p>
+          <div class="flex gap-3 flex-wrap items-center mb-3 text-sm">
+            <label>algorithm <select id="variant" class="border rounded px-2 py-1 text-sm"></select></label>
+            <label>day <select id="preset" class="border rounded px-2 py-1 text-sm">
+              <option value="mixed">a normal day</option>
+              <option value="long">long meetings</option>
+              <option value="backToBack">back-to-back</option>
+            </select></label>
+            <button id="reroll" class="bg-slate-900 text-white px-3 py-1 rounded font-semibold">re-roll</button>
+          </div>
+          <div id="day"><div id="gutter"></div><div id="lane"></div></div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">THIS DAY, MEASURED</p>
+          <table class="num w-full"><tbody id="live"></tbody></table>
+          <p class="text-xs text-slate-500 mt-4">
+            <strong>columns used</strong> comes from the layout. <strong>most at once</strong> comes
+            from a sweep line that knows nothing about the layout. When they are equal the layout is
+            provably optimal — an interval graph needs exactly as many columns as its busiest moment,
+            never one more.
+          </p>
+          <p id="assertline" class="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200"></p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">SEVEN IMPLEMENTATIONS, 12,000 SCHEDULES</p>
+        <p class="text-sm text-slate-600 mb-3">
+          The same random days through every version. <em>Overlapping boxes</em> is what a reviewer
+          looks for; <em>extra columns</em> is the defect they will not see.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>variant</th><th>days with overlapping boxes</th><th>overlapping pairs</th>
+            <th>days using extra columns</th><th>worst</th><th>mean width</th></tr></thead>
+          <tbody id="fuzz"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          Mean width is the fraction of the lane an average event gets — the number that decides
+          whether a title fits. Every row with <span class="ok">0</span> overlapping boxes passes the
+          only assertion most calendars ever write. And note that mean width does not rank layouts
+          on its own either: <em>longest event first</em> spends an extra column on 2.8% of days yet
+          reads marginally <em>wider</em> on average, because the days it gets wrong are not the days
+          that dominate the mean. The column count against the sweep line is the check that is
+          actually decisive.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-5">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">FOUR MEETINGS THAT NEED TWO COLUMNS</p>
+          <p class="text-sm text-slate-600 mb-3">
+            Never more than two at once, so two columns is optimal. Place them in the order the API
+            returned them and you get three — with no overlap, no error, and three of the four
+            meetings a third narrower.
+          </p>
+          <pre id="ce" style="margin:0"></pre>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">HALF-OPEN vs CLOSED, ON A BACK-TO-BACK DAY</p>
+          <p class="text-sm text-slate-600 mb-3">
+            09:00–09:30, 09:30–10:00, 10:00–10:30 &hellip; nothing actually overlaps. Test with
+            <code>&lt;=</code> instead of <code>&lt;</code> and every meeting touches its neighbour.
+          </p>
+          <table class="num w-full">
+            <thead><tr><th>meetings</th><th>half-open cols</th><th>width</th><th>closed cols</th><th>width</th></tr></thead>
+            <tbody id="b2b"></tbody>
+          </table>
+          <p class="text-xs text-slate-500 mt-3">
+            Both are collision-free. One of them wastes half the screen on a day where nothing
+            clashes at all.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">A calendar column is a graph colouring problem</h2>
+
+      <p>Each event is an interval. Two events that overlap in time may not share horizontal space.
+      Give every event a colour so that no two adjacent intervals share one, and use as few colours
+      as possible: that is exactly <strong>graph colouring on an interval graph</strong>, and the
+      colours are your columns.</p>
+
+      <p>Interval graphs are <em>perfect</em>, which has a very concrete payoff here: the smallest
+      number of columns you can possibly need equals the largest number of events happening at the
+      same instant. Not an approximation — an identity. So there is an oracle for the column count
+      that shares no code at all with the layout: sweep the endpoints, count up on a start and down
+      on an end, and take the maximum.</p>
+
+      <pre>function maxConcurrency(events){
+  const pts = [];
+  for (const e of events){ pts.push({t:e.start, d:+1}); pts.push({t:e.end, d:-1}); }
+  pts.sort((p,q) =&gt; p.t - q.t || p.d - q.d);   // ends before starts at equal t
+  let cur = 0, mx = 0;
+  for (const p of pts){ cur += p.d; if (cur &gt; mx) mx = cur; }
+  return mx;
+}</pre>
+
+      <p>That <code>|| p.d - q.d</code> is the half-open rule again: at 10:00 the meeting that ends
+      must be counted out before the meeting that starts is counted in, or a day of back-to-back
+      meetings reports two at once.</p>
+
+      <h3 class="text-xl font-bold">1. Half-open intervals, decided once</h3>
+
+      <p>An event runs <code>[start, end)</code>. 10:00–11:00 and 11:00–12:00 do not overlap.</p>
+
+      <pre>const overlaps = (a, b) =&gt; a.start &lt; b.end &amp;&amp; b.start &lt; a.end;   // NOT &lt;=</pre>
+
+      <p>Write <code>&lt;=</code> and nothing breaks visibly — the layout is <em>more</em>
+      conservative, so it can never produce a collision. It just puts every meeting in a day of
+      back-to-back meetings into two columns instead of one and halves the width of the entire day.
+      Over 12,000 random schedules the closed-interval version needed extra columns on more than a
+      quarter of them, and produced zero overlaps on all of them.</p>
+
+      <h3 class="text-xl font-bold">2. Cluster against the running maximum end</h3>
+
+      <p>Events are grouped into clusters — maximal runs that are connected by overlap — because the
+      column count is per cluster, and a fresh cluster resets to full width. Sorted by start, an
+      event joins the current cluster if it starts before the <strong>latest end seen so far</strong>.</p>
+
+      <pre>let maxEnd = -Infinity;
+for (const e of sorted){
+  if (cluster.length &amp;&amp; e.start &gt;= maxEnd) { flush(); }
+  cluster.push(e); maxEnd = Math.max(maxEnd, e.end);   // running MAX, not e.end
+}</pre>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">Compare against the <em>previous</em> event's end instead and one long
+        event stops holding its cluster together. A 09:00–17:00 all-hands with two short meetings
+        inside it splits after the first, the second gets a cluster of its own and full width, and
+        the two are drawn on top of each other. This is the one broken version that fails loudly —
+        41% of random days.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">3. Greedy is optimal, in exactly one order</h3>
+
+      <p>Place events one at a time into the lowest-numbered column with nothing conflicting in it.
+      Sorted by start time this is provably optimal: when you place an event, everything already
+      placed that conflicts with it is live at that instant, so those events pairwise overlap each
+      other too and occupy that many distinct columns. You land in column <em>k</em> only when
+      <em>k</em> events are already running, and the sweep line says the same thing.</p>
+
+      <p>Take the sort away and the argument evaporates. Four meetings, never more than two at once:</p>
+
+      <pre>11:15-12:15   11:45-13:00   12:45-13:45   13:30-15:00
+
+by start time :  2 columns, 0 overlaps
+in array order:  3 columns, 0 overlaps  &lt;- both are "correct"</pre>
+
+      <p>Both layouts pass every collision test you can write. Three of the four meetings come out a
+      third narrower, and the mean width across the day falls from half the lane to 41.7% of it. This
+      is why the ordering line is the one that gets refactored away in a cleanup — it looks
+      decorative, and removing it breaks nothing you can see.</p>
+
+      <h3 class="text-xl font-bold">4. Expansion, and why it must be checked</h3>
+
+      <p>An event in column 0 of a three-column cluster gets a third of the lane even if columns 1
+      and 2 are empty for its entire duration. So after assignment each event expands rightwards,
+      stopping at the first column that holds something it overlaps in time.</p>
+
+      <pre>let span = 1;
+for (let c = e.col + 1; c &lt; ncols; c++){
+  if (cluster.some(o =&gt; o !== e &amp;&amp; o.col === c &amp;&amp; overlaps(o, e))) break;
+  span++;
+}</pre>
+
+      <p>Drop the <code>overlaps</code> check and take <code>ncols - e.col</code> instead — the
+      obvious simplification, and it destroys the layout: 95% of random days come out with boxes on
+      top of each other. Drop expansion altogether and nothing is ever wrong; it simply touches
+      <strong>6.2%</strong> of events, and those end up <strong>2.7&times;</strong> wider. That is the
+      honest size of the feature, and it is smaller than it feels: expansion is a whole-event
+      property, so one blocked minute anywhere in a meeting stops it expanding for its entire
+      duration, and in a dense cluster almost every minute is blocked somewhere.</p>
+
+      <h3 class="text-xl font-bold">What is deliberately left out</h3>
+
+      <p>All-day events live in their own strip above the grid and are not intervals in this sense.
+      Events that cross midnight need splitting per day before any of this runs. A minimum height for
+      a 5-minute meeting breaks the clean mapping from time to pixels and has to be applied after
+      layout, never before, or short events start colliding for real. And DST means a "day" is
+      sometimes 23 or 25 hours long — a reason to lay out in minutes-from-day-start rather than in
+      timestamps.</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 How it is built</h2>
+
+      <h3 class="text-xl font-bold">1. Four pure functions and no DOM</h3>
+      <pre>clusters(sortedEvents)              -&gt; Event[][]
+assignColumns(cluster, order)       -&gt; number of columns  (sets e.col)
+expandSpan(e, cluster, ncols)       -&gt; number of columns e may span
+layout(events, opts)                -&gt; { items:[{left, width, ...}], columns }</pre>
+      <p><code>left</code> and <code>width</code> come out as fractions of the lane, so the DOM layer
+      is two lines of percentage arithmetic and everything above it can be fuzzed under node.</p>
+
+      <h3 class="text-xl font-bold">2. The conflict test is over the whole column</h3>
+      <pre>for (c = 0; c &lt; cols.length; c++)
+  if (!cols[c].some(o =&gt; overlaps(o, e))) break;   // first column with no conflict</pre>
+      <p>The tempting optimisation is to keep one <code>colEnd[c]</code> per column and test
+      <code>colEnd[c] &lt;= e.start</code>. That is correct <em>only</em> while the input is sorted by
+      start — which makes the sort load-bearing in a second, invisible way. Testing the whole column
+      costs nothing at calendar sizes and keeps the ordering question isolated to one line, which is
+      what makes the ordering variants measurable here at all.</p>
+
+      <h3 class="text-xl font-bold">3. Two oracles, neither of which shares a line with the layout</h3>
+      <pre>// (a) does the layout use the right NUMBER of columns?
+//     sweep line over endpoints - knows nothing about columns
+maxConcurrency(events) === layout(events).columns
+
+// (b) do the rectangles it produced actually avoid each other?
+//     the layout never asks this question anywhere, so it is a real check
+for each pair (a, b):
+  if (a.start &lt; b.end &amp;&amp; b.start &lt; a.end)          // overlap in TIME
+    assert(!(a.left &lt; b.left + b.width &amp;&amp;
+             b.left &lt; a.left + a.width))             // must be disjoint in X</pre>
+      <p>Oracle (b) is the important one philosophically: non-collision is never computed by the
+      layout, it is a <em>consequence</em> of the column assignment. Checking it is genuinely testing
+      the algorithm rather than restating it.</p>
+
+      <h3 class="text-xl font-bold">4. And a third one that is far too slow to use</h3>
+      <pre>// paint the day into (minute-slot x lane-slot) cells, sampling cell CENTRES so
+// rounding cannot invent a collision, and count cells claimed twice.
+function occupancyCollisions(items, T, X, dayStart, dayEnd){
+  for (let t = 0; t &lt; T; t++){
+    const tm = dayStart + (t + 0.5) * (dayEnd - dayStart) / T;
+    for (let x = 0; x &lt; X; x++){
+      const xx = (x + 0.5) / X;
+      let n = 0;
+      for (const it of items)
+        if (tm &gt;= it.start &amp;&amp; tm &lt; it.end &amp;&amp; xx &gt;= it.left &amp;&amp; xx &lt; it.left + it.width) n++;
+      if (n &gt; 1) clashes++;
+    }
+  }
+}</pre>
+      <p>Obviously correct, and <code>O(T · X · n)</code> per schedule — thousands of times slower
+      than the pairwise form. It runs on a bounded handful of cases as a check <em>on the oracle</em>,
+      never inside the fuzz. A reference implementation you cannot afford to run everywhere is still
+      worth writing; it just has to be aimed at the checker rather than at the code under test.</p>
+
+      <h3 class="text-xl font-bold">5. What the tests pin</h3>
+      <pre>// the column count is exactly the busiest instant, on every schedule
+assert(layout(ev).columns === maxConcurrency(ev));
+
+// nothing overlaps, ever
+assert(overlapReport(layout(ev).items).collisions === 0);
+
+// every box is inside the lane
+assert(items.every(i =&gt; i.left &gt;= 0 &amp;&amp; i.left + i.width &lt;= 1));
+
+// and the broken versions really are broken, on the same inputs
+assert(pairwiseClustering.collisionCases &gt; 0);
+assert(arrayOrder.extraColumnCases &gt; 0);
+assert(arrayOrder.collisionCases === 0);        // <- the point of the whole page</pre>
+
+      <h3 class="text-xl font-bold">6. The assertion that matters most is the last one</h3>
+      <p>A wrong version that <em>fails</em> the obvious test is not dangerous; it never ships.
+      Asserting that the array-order and closed-interval variants produce <strong>zero</strong>
+      collisions is asserting that the obvious test cannot find them — which is the reason to
+      measure column counts and widths at all. If that assertion ever starts failing, the harness has
+      drifted, not the bug.</p>
+
+      <h3 class="text-xl font-bold">🎉 DesignFromZero Day 67 shipped.</h3>
+      <p class="text-slate-600">The layout that looks right and the layout that is right are not the
+      same layout, and only one of them is measured.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Day-view event layout. Interval-graph colouring: cluster, colour, expand. No DOM in this
+// block - left/width come out as fractions of the lane, which is what makes the fuzz possible.
+
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1) >>> 0;
+    t = (t ^ (t + Math.imul(t ^ (t >>> 7), t | 61))) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const DAY_START = 8 * 60, DAY_END = 19 * 60;
+
+// Events are half-open [start, end). 10:00-11:00 and 11:00-12:00 do NOT overlap.
+const overlapsTime  = (a, b) => a.start < b.end && b.start < a.end;
+// The bug: closed intervals. Strictly more conservative, so it can never collide - it just
+// puts a day of back-to-back meetings into two columns and halves the width of everything.
+const overlapsTouch = (a, b) => a.start <= b.end && b.start <= a.end;
+
+// ORACLE (a). The busiest instant of the day, from a sweep over endpoints. Interval graphs are
+// perfect, so this is EXACTLY the minimum number of columns - not a bound. Shares no code with
+// the layout. The tie-break puts ends (-1) before starts (+1) so back-to-back reads as 1.
+function maxConcurrency(events){
+  const pts = [];
+  for (let i = 0; i < events.length; i++){
+    pts.push({ t: events[i].start, d: 1 });
+    pts.push({ t: events[i].end,   d: -1 });
+  }
+  pts.sort(function(p, q){ return p.t - q.t || p.d - q.d; });
+  let cur = 0, mx = 0;
+  for (let i = 0; i < pts.length; i++){ cur += pts[i].d; if (cur > mx) mx = cur; }
+  return mx;
+}
+
+// Maximal runs connected by overlap. Joins on the RUNNING MAXIMUM end, not the previous end.
+function clusters(sorted, touch){
+  const out = []; let cur = [], maxEnd = -Infinity;
+  for (let i = 0; i < sorted.length; i++){
+    const e = sorted[i];
+    const joins = cur.length > 0 && (touch ? e.start <= maxEnd : e.start < maxEnd);
+    if (!joins && cur.length){ out.push(cur); cur = []; maxEnd = -Infinity; }
+    cur.push(e); if (e.end > maxEnd) maxEnd = e.end;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+// The bug: compare against the PREVIOUS event's end. One long event stops holding its own
+// cluster together, the events after the first short one get a cluster of their own and full
+// width, and they are drawn on top of the long one.
+function clustersPairwise(sorted){
+  const out = []; let cur = [], prevEnd = -Infinity;
+  for (let i = 0; i < sorted.length; i++){
+    const e = sorted[i];
+    const joins = cur.length > 0 && e.start < prevEnd;
+    if (!joins && cur.length){ out.push(cur); cur = []; }
+    cur.push(e); prevEnd = e.end;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+// Greedy first-fit colouring. Optimal iff `order` is start time - and the conflict test looks at
+// the WHOLE column rather than a cached last-end, so the ordering question stays in one line.
+function assignColumns(cluster, order, touch){
+  const es = cluster.slice();
+  if (order === "start")        es.sort(function(a,b){ return a.start - b.start || b.end - a.end; });
+  else if (order === "longest") es.sort(function(a,b){ return (b.end-b.start)-(a.end-a.start) || a.start-b.start; });
+  else if (order === "input")   es.sort(function(a,b){ return a.id - b.id; });
+  const hit = touch ? overlapsTouch : overlapsTime;
+  const cols = [];
+  for (let i = 0; i < es.length; i++){
+    const e = es[i]; let c = 0;
+    for (; c < cols.length; c++){
+      let clash = false;
+      for (let k = 0; k < cols[c].length; k++) if (hit(cols[c][k], e)){ clash = true; break; }
+      if (!clash) break;
+    }
+    if (c === cols.length) cols.push([]);
+    cols[c].push(e); e.col = c;
+  }
+  return cols.length;
+}
+
+// Expand rightwards until a column holds something we overlap in time. Whole-event property:
+// one blocking minute anywhere in the event stops the expansion for all of it.
+function expandSpan(e, cluster, ncols, touch){
+  const hit = touch ? overlapsTouch : overlapsTime;
+  let span = 1;
+  for (let c = e.col + 1; c < ncols; c++){
+    let blocked = false;
+    for (let i = 0; i < cluster.length; i++){
+      const o = cluster[i];
+      if (o !== e && o.col === c && hit(o, e)){ blocked = true; break; }
+    }
+    if (blocked) break;
+    span++;
+  }
+  return span;
+}
+
+function layout(events, opts){
+  opts = opts || {};
+  const order    = opts.order    || "start";
+  const grouping = opts.grouping || "runningMax";
+  const expand   = opts.expand   || "checked";
+  const touch    = !!opts.touch;
+  const es = events.map(function(e){
+    return { id:e.id, title:e.title, start:e.start, end:e.end, col:0, span:1, left:0, width:1 };
+  });
+  const sorted = es.slice().sort(function(a,b){ return a.start - b.start || b.end - a.end; });
+  const groups = grouping === "pairwise" ? clustersPairwise(sorted) : clusters(sorted, touch);
+  let columns = 0;
+  for (let g = 0; g < groups.length; g++){
+    const cl = groups[g];
+    const n = assignColumns(cl, order, touch);
+    if (n > columns) columns = n;
+    for (let i = 0; i < cl.length; i++){
+      const e = cl[i];
+      e.span  = expand === "none"   ? 1
+              : expand === "greedy" ? (n - e.col)     // the bug: no collision check
+              : expandSpan(e, cl, n, touch);
+      e.left  = e.col / n;
+      e.width = e.span / n;
+    }
+  }
+  es.sort(function(a,b){ return a.id - b.id; });
+  return { items: es, columns: columns, clusters: groups.length };
+}
+
+const VARIANTS = [
+  { key:"correct",  label:"correct",                          opts:{} },
+  { key:"noexpand", label:"no expansion (1/n for everyone)",   opts:{ expand:"none" } },
+  { key:"touch",    label:"closed intervals (10:00 touches 10:00)", opts:{ touch:true } },
+  { key:"input",    label:"columns in array order",            opts:{ order:"input" } },
+  { key:"longest",  label:"longest event first",               opts:{ order:"longest" } },
+  { key:"pairwise", label:"cluster against the previous end",  opts:{ grouping:"pairwise" } },
+  { key:"greedy",   label:"expand without checking",           opts:{ expand:"greedy" } }
+];
+
+// ORACLE (b). The layout never asks whether two rectangles touch - non-collision is a
+// CONSEQUENCE of the column assignment - so asking it here is a real test, not a restatement.
+function overlapReport(items){
+  let checks = 0, timePairs = 0, collisions = 0, worst = 0;
+  const bad = {};
+  for (let i = 0; i < items.length; i++){
+    for (let j = i + 1; j < items.length; j++){
+      const a = items[i], b = items[j];
+      checks++;
+      if (a.start < b.end && b.start < a.end){
+        timePairs++;
+        const ox = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
+        if (ox > 1e-9){ collisions++; bad[a.id] = 1; bad[b.id] = 1; if (ox > worst) worst = ox; }
+      }
+    }
+  }
+  return { checks: checks, timePairs: timePairs, collisions: collisions, worst: worst, ids: bad };
+}
+
+function boundsViolations(items){
+  let bad = 0;
+  for (let i = 0; i < items.length; i++){
+    const it = items[i];
+    if (it.left < -1e-9 || it.left + it.width > 1 + 1e-9 || it.width <= 0) bad++;
+  }
+  return bad;
+}
+
+// ORACLE (c). Paint the day into (minute-slot x lane-slot) cells and count cells claimed twice.
+// Cell CENTRES are sampled so rounding cannot invent a collision. O(T*X*n) per schedule, which
+// is thousands of times slower than the pairwise form - so it is a bounded check ON the oracle,
+// never a step inside the fuzz.
+function occupancyCollisions(items, T, X, dayStart, dayEnd){
+  T = T || 240; X = X || 80;
+  dayStart = dayStart === undefined ? DAY_START : dayStart;
+  dayEnd   = dayEnd   === undefined ? DAY_END   : dayEnd;
+  let clashes = 0;
+  for (let t = 0; t < T; t++){
+    const tm = dayStart + (t + 0.5) * (dayEnd - dayStart) / T;
+    for (let x = 0; x < X; x++){
+      const xx = (x + 0.5) / X;
+      let n = 0;
+      for (let i = 0; i < items.length; i++){
+        const it = items[i];
+        if (tm >= it.start && tm < it.end && xx >= it.left && xx < it.left + it.width) n++;
+      }
+      if (n > 1) clashes++;
+    }
+  }
+  return clashes;
+}
+
+const TITLES = ["Standup", "1:1", "Design review", "Interview", "Sprint planning", "Retro",
+                "All-hands", "Customer call", "Pairing", "Deploy window", "Lunch", "Roadmap",
+                "Bug triage", "Onboarding", "Postmortem", "Demo"];
+
+function makeDay(n, seed, mode){
+  const rnd = mulberry32(seed);
+  const out = [];
+  if (mode === "backToBack"){
+    let t = 9 * 60;
+    for (let i = 0; i < n; i++){ out.push({ id:i, title:TITLES[i % TITLES.length], start:t, end:t + 30 }); t += 30; }
+    return out;
+  }
+  for (let i = 0; i < n; i++){
+    const dur  = mode === "long" ? 60 + Math.floor(rnd() * 5) * 45 : 15 + Math.floor(rnd() * 8) * 15;
+    const span = Math.max(1, Math.floor((DAY_END - DAY_START - dur) / 15));
+    const start = DAY_START + Math.floor(rnd() * span) * 15;
+    out.push({ id:i, title:TITLES[i % TITLES.length], start:start, end:start + dur });
+  }
+  return out;
+}
+
+// Every variant over the SAME schedules. Two columns matter: whether boxes collide (what a
+// reviewer looks for) and whether the column count beat the sweep line (what they will not see).
+function fuzzLayouts(trials, seed){
+  const rnd = mulberry32(seed);
+  const stats = {};
+  for (let i = 0; i < VARIANTS.length; i++)
+    stats[VARIANTS[i].key] = { collisionCases:0, collisionPairs:0, worstX:0, extraColCases:0,
+                               maxExtra:0, cols:0, widthSum:0, widthN:0, oob:0 };
+  let asserts = 0, optCols = 0;
+  for (let t = 0; t < trials; t++){
+    const count = 3 + Math.floor(rnd() * 14);
+    const mode  = rnd() < 0.3 ? "long" : "mixed";
+    const ev    = makeDay(count, (seed * 7919 + t * 104729) >>> 0, mode);
+    const opt   = maxConcurrency(ev);
+    optCols += opt;
+    for (let v = 0; v < VARIANTS.length; v++){
+      const L = layout(ev, VARIANTS[v].opts);
+      const rep = overlapReport(L.items);
+      const oob = boundsViolations(L.items);
+      asserts += rep.checks + L.items.length + 1;      // pairs + bounds + column count
+      const s = stats[VARIANTS[v].key];
+      if (rep.collisions){
+        s.collisionCases++; s.collisionPairs += rep.collisions;
+        if (rep.worst > s.worstX) s.worstX = rep.worst;
+      }
+      if (L.columns > opt){
+        s.extraColCases++;
+        const d = L.columns - opt; if (d > s.maxExtra) s.maxExtra = d;
+      }
+      s.cols += L.columns; s.oob += oob;
+      for (let i = 0; i < L.items.length; i++){ s.widthSum += L.items[i].width; s.widthN++; }
+    }
+  }
+  return { trials: trials, asserts: asserts, optCols: optCols, stats: stats };
+}
+
+// Four meetings, never more than two at once. Found by searching random schedules for the
+// smallest one where array order costs a column.
+const COUNTEREXAMPLE = [
+  { id:0, title:"Roadmap",  start:810, end:900 },
+  { id:1, title:"1:1",      start:765, end:825 },
+  { id:2, title:"Standup",  start:675, end:735 },
+  { id:3, title:"Interview",start:705, end:780 }
+];
+
+function orderStudy(events){
+  const orders = ["start", "input", "longest"];
+  const out = { optimal: maxConcurrency(events), rows: [] };
+  for (let i = 0; i < orders.length; i++){
+    const L = layout(events, { order: orders[i] });
+    out.rows.push({ order: orders[i], columns: L.columns,
+                    collisions: overlapReport(L.items).collisions,
+                    meanWidth: L.items.reduce(function(s,e){ return s + e.width; }, 0) / L.items.length });
+  }
+  return out;
+}
+
+function backToBackReport(k){
+  const ev = makeDay(k, 1, "backToBack");
+  const a = layout(ev, {}), b = layout(ev, { touch:true });
+  return { events:k,
+           halfOpenCols:a.columns, halfOpenWidth:a.items[0].width,
+           halfOpenCollisions: overlapReport(a.items).collisions,
+           closedCols:b.columns,  closedWidth:b.items[0].width,
+           closedCollisions: overlapReport(b.items).collisions,
+           concurrency: maxConcurrency(ev) };
+}
+
+// How much does expansion actually buy? Reported two ways on purpose: the share of events it
+// touches at all, and how much wider those specific events become.
+function expansionStudy(trials, seed){
+  const rnd = mulberry32(seed);
+  let widened = 0, total = 0, gain = 0, sumOn = 0, sumOff = 0;
+  for (let t = 0; t < trials; t++){
+    const ev = makeDay(3 + Math.floor(rnd() * 14), (seed * 31 + t * 7919) >>> 0,
+                       rnd() < 0.3 ? "long" : "mixed");
+    const A = layout(ev, {}), B = layout(ev, { expand:"none" });
+    for (let i = 0; i < A.items.length; i++){
+      total++; sumOn += A.items[i].width; sumOff += B.items[i].width;
+      if (A.items[i].width > B.items[i].width + 1e-12){ widened++; gain += A.items[i].width / B.items[i].width; }
+    }
+  }
+  return { events: total, widened: widened, share: widened / total,
+           meanGain: widened ? gain / widened : 0,
+           meanOn: sumOn / total, meanOff: sumOff / total };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators, not toLocaleString - "4,955,286" should not become "49,55,286" on an
+// en-IN browser when the page quotes the same figure everywhere else.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const PX = 660 / (DAY_END - DAY_START);
+const hhmm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+
+let events = makeDay(9, 181, "mixed");
+let seedN = 181, drag = null;
+
+$("variant").innerHTML = VARIANTS.map(function(v, i){
+  return "<option value='" + i + "'>" + v.label + "</option>";
+}).join("");
+
+(function drawGrid(){
+  let g = "";
+  for (let h = 8; h <= 19; h++){
+    const y = (h * 60 - DAY_START) * PX;
+    g += "<div class='hourlab' style='top:" + y + "px'>" + String(h).padStart(2, "0") + ":00</div>";
+  }
+  $("gutter").innerHTML = g;
+  let l = "";
+  for (let h = 8; h <= 19; h++)
+    l += "<div class='hourline' style='top:" + ((h * 60 - DAY_START) * PX) + "px'></div>";
+  $("lane").insertAdjacentHTML("afterbegin", l);
+})();
+
+function currentOpts(){ return VARIANTS[+$("variant").value].opts; }
+
+function paint(){
+  const res = layout(events, currentOpts());
+  const rep = overlapReport(res.items);
+  $("lane").querySelectorAll(".ev").forEach(function(el){ el.remove(); });
+  res.items.forEach(function(it){
+    const el = document.createElement("div");
+    el.className = "ev" + (rep.ids[it.id] ? " clash" : "");
+    el.dataset.id = it.id;
+    // a 30-minute box is 25px tall - two stacked lines do not fit, so short events go on one.
+    // A minimum height would be the real-world fix and it has to be applied AFTER layout, never
+    // before, or short events start colliding for real.
+    const h = Math.max(15, (it.end - it.start) * PX - 2);
+    el.style.top    = ((it.start - DAY_START) * PX) + "px";
+    el.style.height = h + "px";
+    el.style.left   = (it.left * 100) + "%";
+    el.style.width  = "calc(" + (it.width * 100) + "% - 3px)";
+    el.innerHTML = (h < 34
+      ? "<div class='t'>" + it.title + " <span class='h'>" + hhmm(it.start) + "&ndash;" + hhmm(it.end) + "</span></div>"
+      : "<div class='t'>" + it.title + "</div><div class='h'>" + hhmm(it.start) + "&ndash;" + hhmm(it.end) + "</div>")
+      + "<div class='grip'></div>";
+    if (h < 34) el.style.padding = "1px 6px";
+    $("lane").appendChild(el);
+  });
+
+  const opt = maxConcurrency(events);
+  const meanW = res.items.reduce(function(s, e){ return s + e.width; }, 0) / res.items.length;
+  $("live").innerHTML =
+    row("events", events.length) +
+    row("clusters", res.clusters) +
+    row("columns used", res.columns + (res.columns === opt ? "" : " ⚠")) +
+    row("most at once (sweep line)", opt) +
+    row("optimal?", res.columns === opt ? "<span class='ok'>yes</span>"
+        : "<span class='warn'>" + (res.columns - opt) + " extra</span>") +
+    row("mean width", (meanW * 100).toFixed(1) + "%") +
+    row("overlapping pairs", rep.collisions
+        ? "<span class='bad'>" + rep.collisions + "</span>" : "<span class='ok'>0</span>") +
+    row("cells claimed twice (probe)",
+        occupancyCollisions(res.items, 240, 80, DAY_START, DAY_END));
+}
+function row(k, v){ return "<tr><td>" + k + "</td><td>" + v + "</td></tr>"; }
+
+$("variant").addEventListener("change", paint);
+$("preset").addEventListener("change", function(){
+  events = makeDay($("preset").value === "backToBack" ? 8 : 9, seedN, $("preset").value); paint();
+});
+$("reroll").addEventListener("click", function(){
+  seedN = (seedN * 1103515245 + 12345) >>> 0;
+  events = makeDay($("preset").value === "backToBack" ? 8 : 4 + (seedN % 10), seedN, $("preset").value);
+  paint();
+});
+
+$("lane").addEventListener("pointerdown", function(e){
+  const el = e.target.closest(".ev"); if (!el) return;
+  const ev = events.filter(function(x){ return x.id === +el.dataset.id; })[0];
+  drag = { ev: ev, y0: e.clientY, start: ev.start, end: ev.end,
+           mode: e.target.classList.contains("grip") ? "resize" : "move" };
+  $("lane").setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+$("lane").addEventListener("pointermove", function(e){
+  if (!drag) return;
+  const dm = Math.round((e.clientY - drag.y0) / PX / 15) * 15;
+  if (drag.mode === "move"){
+    const len = drag.end - drag.start;
+    drag.ev.start = Math.max(DAY_START, Math.min(DAY_END - len, drag.start + dm));
+    drag.ev.end   = drag.ev.start + len;
+  } else {
+    drag.ev.end = Math.max(drag.start + 15, Math.min(DAY_END, drag.end + dm));
+  }
+  paint();
+});
+["pointerup", "pointercancel"].forEach(function(t){
+  $("lane").addEventListener(t, function(){ drag = null; });
+});
+
+// ---------------------------------------------------------------- measured panels
+const FZ = fuzzLayouts(12000, 4242);
+const EX = expansionStudy(4000, 99);
+
+$("fuzz").innerHTML = VARIANTS.map(function(v){
+  const s = FZ.stats[v.key];
+  const collOk = s.collisionCases === 0, colOk = s.extraColCases === 0;
+  return "<tr><td>" + (v.key === "correct" ? "<strong>correct</strong>" : v.label) + "</td>" +
+    "<td class='" + (collOk ? "ok" : "bad") + "'>" + fmt(s.collisionCases) + "</td>" +
+    "<td class='" + (collOk ? "ok" : "bad") + "'>" + fmt(s.collisionPairs) + "</td>" +
+    "<td class='" + (colOk ? "ok" : "warn") + "'>" + fmt(s.extraColCases) + "</td>" +
+    "<td>" + (s.maxExtra ? "+" + s.maxExtra + " cols" : "&mdash;") + "</td>" +
+    "<td>" + (100 * s.widthSum / s.widthN).toFixed(1) + "%</td></tr>";
+}).join("");
+
+$("assertline").innerHTML = "<strong>" + fmt(FZ.asserts) + "</strong> assertions " +
+  "checked on load across " + fmt(FZ.trials) + " schedules &times; " + VARIANTS.length +
+  " implementations &mdash; every pair of events, every box's bounds, and every column count " +
+  "against the sweep line. Expansion widens <strong>" + (100 * EX.share).toFixed(1) +
+  "%</strong> of events, and those get <strong>" + EX.meanGain.toFixed(1) + "&times;</strong> wider.";
+
+(function(){
+  const st = orderStudy(COUNTEREXAMPLE);
+  let txt = COUNTEREXAMPLE.slice().sort(function(a,b){ return a.start - b.start; })
+    .map(function(e){ return "  " + hhmm(e.start) + "-" + hhmm(e.end) + "   " + e.title; }).join("\n");
+  txt += "\n\nmost at once (sweep line): " + st.optimal + "\n\n";
+  txt += "order            columns   overlaps   mean width\n";
+  st.rows.forEach(function(r){
+    const name = r.order === "start" ? "by start time" : r.order === "input" ? "array order" : "longest first";
+    txt += "  " + name.padEnd(15) + String(r.columns).padStart(5) +
+           String(r.collisions).padStart(11) + (100 * r.meanWidth).toFixed(1).padStart(12) + "%\n";
+  });
+  const wStart = st.rows[0].meanWidth, wIn = st.rows[1].meanWidth;
+  const inItems = layout(COUNTEREXAMPLE, { order:"input" }).items;
+  const minW = Math.min.apply(null, inItems.map(function(i){ return i.width; }));
+  const nMin = inItems.filter(function(i){ return Math.abs(i.width - minW) < 1e-9; }).length;
+  txt += "\nall three are collision-free. array order is " +
+         (100 * (1 - wIn / wStart)).toFixed(1) + "% narrower on average, and\n" + nMin +
+         " of its " + inItems.length + " boxes get " + (100 * minW).toFixed(1) +
+         "% of the lane where start order gives every box " + (100 * wStart).toFixed(1) + "%.";
+  $("ce").textContent = txt;
+})();
+
+$("b2b").innerHTML = [2, 4, 6, 8].map(function(k){
+  const r = backToBackReport(k);
+  return "<tr><td>" + k + "</td>" +
+    "<td class='ok'>" + r.halfOpenCols + "</td><td>" + (r.halfOpenWidth * 100).toFixed(0) + "%</td>" +
+    "<td class='warn'>" + r.closedCols + "</td><td>" + (r.closedWidth * 100).toFixed(0) + "%</td></tr>";
+}).join("");
+
+paint();
+</script>
+</body>
+</html>
