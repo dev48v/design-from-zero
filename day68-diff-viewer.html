@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 68 — Diff viewer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  textarea.src { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:11.5px;
+                 line-height:1.45; width:100%; height:190px; border:1px solid #e2e8f0;
+                 border-radius:8px; padding:8px 10px; resize:vertical; white-space:pre; }
+  #view { border:1px solid #e2e8f0; border-radius:10px; overflow:auto; background:#fff; max-height:520px; }
+  .dv { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:12px; line-height:1.55; }
+  .dl { display:flex; white-space:pre; }
+  .dl .ln { flex:0 0 34px; text-align:right; padding-right:7px; color:#cbd5e1;
+            font-size:10.5px; user-select:none; border-right:1px solid #f1f5f9; }
+  .dl .mk { flex:0 0 15px; text-align:center; font-weight:800; }
+  .dl .tx { flex:1 1 auto; padding-right:10px; overflow-wrap:anywhere; white-space:pre-wrap; }
+  .dl.del { background:#fef2f2; color:#7f1d1d; }
+  .dl.ins { background:#f0fdf4; color:#14532d; }
+  .dl.del .ln, .dl.ins .ln { color:#a8a29e; }
+  .dl mark.d { background:#fecaca; color:#7f1d1d; border-radius:2px; }
+  .dl mark.i { background:#bbf7d0; color:#14532d; border-radius:2px; }
+  .hh { background:#eef2ff; color:#4338ca; font-weight:800; padding:2px 0;
+        border-top:1px solid #e0e7ff; border-bottom:1px solid #e0e7ff; }
+  .hh .tx { padding-left:2px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid #e2e8f0; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 68</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      🔀 Diff viewer — red lines, green lines, and <code>@@</code> headers. Underneath it is a
+      <strong>shortest-path search</strong>: Myers walks the edit graph one edit-count at a time,
+      and the first path to reach the far corner <em>is</em> the minimal script — minimality comes
+      from the search order, never from a check afterwards. Which matters, because the one property
+      every diff test asserts — <strong>apply the patch to the old file and get the new file
+      back</strong> — is satisfied by every wrong version here, including one that deletes the whole
+      file and types it out again. That diff applies cleanly on <strong>100%</strong> of cases and
+      is <strong>10.9&times;</strong> longer than it needs to be. Round-trip cannot see minimality;
+      minimality needs its own oracle. Two of them here: a <strong>closed-form</strong> minimum on
+      files with no repeated line, and a full LCS table on source code — and the two heuristics that
+      score a perfect <strong>0.0%</strong> on the first go wrong on <strong>37&ndash;43%</strong>
+      of the second. <strong>7,074,354 assertions</strong> on load. Pure vanilla JavaScript, one
+      file, offline.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">🔀 TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto space-y-5">
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-sm text-slate-600 mb-3">
+          <strong>Edit either file</strong> and the diff recomputes on every keystroke. Switch the
+          algorithm and watch the number of red and green lines change while the patch keeps
+          applying perfectly — <em>applies cleanly</em> is a green light on almost every row in the
+          table below.
+        </p>
+        <div class="flex gap-3 flex-wrap items-center mb-3 text-sm">
+          <label>algorithm <select id="variant" class="border rounded px-2 py-1 text-sm"></select></label>
+          <label>grouping <select id="rule" class="border rounded px-2 py-1 text-sm"></select></label>
+          <label>context <select id="ctx" class="border rounded px-2 py-1 text-sm">
+            <option>0</option><option>1</option><option>2</option>
+            <option selected>3</option><option>5</option></select></label>
+          <label>example <select id="preset" class="border rounded px-2 py-1 text-sm">
+            <option value="distant">two distant changes</option>
+            <option value="swap">an operand swap</option>
+            <option value="insert">one line inserted</option>
+            <option value="anchor">a function removed</option>
+            <option value="near">two changes 4 lines apart</option>
+          </select></label>
+          <label class="flex items-center gap-1"><input type="checkbox" id="words" checked /> word-level</label>
+        </div>
+        <div class="grid md:grid-cols-2 gap-3 mb-4">
+          <div><p class="text-xs font-bold tracking-wider text-slate-500 mb-1">BEFORE</p>
+            <textarea id="ta" class="src" spellcheck="false"></textarea></div>
+          <div><p class="text-xs font-bold tracking-wider text-slate-500 mb-1">AFTER</p>
+            <textarea id="tb" class="src" spellcheck="false"></textarea></div>
+        </div>
+
+        <div class="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-5">
+          <div id="view"><div class="dv" id="dv"></div></div>
+          <div>
+            <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">THIS PAIR, MEASURED</p>
+            <table class="num w-full"><tbody id="live"></tbody></table>
+            <p class="text-xs text-slate-500 mt-4">
+              <strong>applies cleanly</strong> is the test everyone writes. <strong>minimum</strong>
+              comes from a full LCS table that shares no line of code with any of the algorithms.
+              When <em>edits</em> is above it the diff is merely noisy; when it is <em>below</em> it,
+              something impossible has happened and the equality test is broken.
+            </p>
+            <p id="assertline" class="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          SEVEN IMPLEMENTATIONS, 6,000 PAIRS WITH NO REPEATED LINE</p>
+        <p class="text-sm text-slate-600 mb-3">
+          Every line in these files is distinct, which means the minimum edit distance has a
+          <strong>closed form</strong> — deletions plus insertions, no search — so 6,000 large pairs
+          cost nothing to check. <em>Applies cleanly</em> is what a diff test asserts;
+          <em>above the minimum</em> is the defect it cannot see.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>algorithm</th><th>applies cleanly</th><th>above the minimum</th>
+            <th>mean extra edits</th><th>worst</th><th>lines shown as changed</th></tr></thead>
+          <tbody id="fuzzA"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          Five of the seven apply cleanly on every single pair, and two of those five rewrite most
+          of the file to do it. The last column is what a reviewer actually pays: the null diff puts
+          <strong>10.9&times;</strong> as many lines in front of them as the minimal one, with no
+          error anywhere and a patch that applies on the first try.
+        </p>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          THE SAME SEVEN, 4,000 PAIRS OF SOURCE CODE</p>
+        <p class="text-sm text-slate-600 mb-3">
+          Real files repeat themselves — a <code>}</code> every few lines, a blank line between
+          functions. The closed form does not survive that, so each of these pairs pays for a full
+          <code>O(n&middot;m)</code> LCS table, which is why this pass is deliberately bounded to
+          short files. It is also the only pass where the two heuristics that looked flawless above
+          start to lose.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>algorithm</th><th>applies cleanly</th><th>above the minimum</th>
+            <th>below the minimum</th><th>mean extra edits</th><th>lines shown as changed</th></tr></thead>
+          <tbody id="fuzzB"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          <em>Scan ahead</em> and <em>unique-line anchors</em> went from <span class="ok">0.0%</span>
+          wrong to <strong>37.1%</strong> and <strong>42.6%</strong> — same code, same oracle, the
+          only thing that changed is that lines now repeat. And the hash version is the one row
+          where <em>below the minimum</em> is not blank: reporting fewer edits than the proven
+          minimum is impossible for any correct diff, and it is the cheapest signature there is
+          that two different lines are being treated as the same line.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-5">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">TEN LINES, ONE SWAPPED OPERAND</p>
+          <p class="text-sm text-slate-600 mb-3">
+            <code>a + b</code> becomes <code>b + a</code> on line 2. One line changed, so the
+            minimum is one deletion and one insertion.
+          </p>
+          <pre id="artSwap" style="margin:0"></pre>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">TWELVE LINES, ONE INSERTED</p>
+          <p class="text-sm text-slate-600 mb-3">
+            A single line added near the top. The two algorithms that got the swap exactly right
+            are the two that blow up here — and the reverse.
+          </p>
+          <pre id="artIns" style="margin:0"></pre>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          THE GROUPING OFF-BY-ONE THAT RENDERS THE SAME PAGE</p>
+        <p class="text-sm text-slate-600 mb-3">
+          Two changes with exactly <strong>2&times;context</strong> unchanged lines between them.
+          Merge them into one hunk or split them into two and the reader sees
+          <em>character-for-character the same lines in the same order</em> — no line duplicated, no
+          line missing, no gap. The only difference on the page is one extra <code>@@</code> header.
+        </p>
+        <pre id="boundary" style="margin:0"></pre>
+        <table class="num w-full mt-4">
+          <thead><tr><th>grouping rule</th><th>hunks</th><th>duplicated lines</th>
+            <th>changes dropped</th><th>context lines</th><th>renders identically to correct</th></tr></thead>
+          <tbody id="hunkTable"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          Over 4,000 documents the off-by-one produced a different number of hunks on
+          <strong>29.7%</strong> of them and a <strong>bit-identical rendered output on 100.0%</strong>
+          — same lines, same order, same count, and the same <strong>115,234</strong> context
+          lines — so every assertion you can write about what appears on screen passes. Move the
+          boundary one step further, to splitting whenever the gap exceeds <em>one</em> context, and
+          it becomes loud: the hunks overlap and print the same lines twice, <strong>5,975</strong>
+          times across the same 4,000 documents. But not on exhibit A — and that is the correction
+          this page needed. At a gap of <em>exactly</em> 2&times;context every splitting rule lands its
+          hunks adjacent, so the loud bug is invisible there too. It only shows in the narrow band
+          between one context and two, which is exhibit B.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">A diff is a shortest path, not a comparison</h2>
+
+      <p>Lay the old file down one axis and the new file down the other. You start at the top-left
+      corner and must reach the bottom-right. Moving right consumes a line of the old file — that is
+      a <strong>deletion</strong>. Moving down consumes a line of the new file — an
+      <strong>insertion</strong>. And wherever the two lines match you may move diagonally
+      <em>for free</em>.</p>
+
+      <p>The best diff is the cheapest path across that grid, and because diagonal moves are free
+      the cost of a path is exactly its number of edits. So "what changed" is a shortest-path
+      question, and the answer is not a matter of taste.</p>
+
+      <h3 class="text-xl font-bold">1. Myers: search by edit count, not by position</h3>
+
+      <p>The trick in Myers' algorithm is what it iterates over. Instead of filling an
+      <code>n&times;m</code> table it asks, in order: <em>can I get there in 0 edits? in 1? in
+      2?</em> — and for each budget <code>d</code> it only records, per diagonal, the furthest point
+      reachable. The first budget that reaches the corner is the minimum, and there is nothing to
+      verify afterwards.</p>
+
+      <pre>for (let d = 0; d &lt;= N + M; d++){
+  for (let k = -d; k &lt;= d; k += 2){          // k = x - y, the diagonal
+    let x = (k === -d || (k !== d &amp;&amp; v[k-1] &lt; v[k+1])) ? v[k+1] : v[k-1] + 1;
+    let y = x - k;
+    while (x &lt; N &amp;&amp; y &lt; M &amp;&amp; a[x] === b[y]) { x++; y++; }   // the snake: free moves
+    v[k] = x;
+    if (x &gt;= N &amp;&amp; y &gt;= M) return backtrack(trace, d);        // first arrival = minimum
+  }
+}</pre>
+
+      <p>That inner <code>while</code> — the "snake" — is where all the work happens: it runs the
+      free diagonal as far as it goes. The cost is <code>O((N+M)&middot;D)</code> in the number of
+      edits <code>D</code>, which is why a real diff of a 4,000-line file with a three-line change is
+      instant while a full LCS table would be sixteen million cells.</p>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">Minimality here is <strong>structural</strong>. It is not asserted, not
+        checked, not approximated — it is a consequence of visiting edit counts in increasing order.
+        Which is exactly why a subtly rearranged version of this loop still returns <em>a</em> valid
+        edit script, and nothing downstream notices.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">2. The property everybody tests, and what it misses</h3>
+
+      <p>Every diff test in the world is some version of this:</p>
+
+      <pre>assert(applyPatch(oldFile, diff(oldFile, newFile)) === newFile);</pre>
+
+      <p>It is a real property and it catches real bugs. It is also satisfied by this:</p>
+
+      <pre>function diff(a, b){
+  return [...a.map(deleteLine), ...b.map(insertLine)];   // "everything changed"
+}</pre>
+
+      <p>Delete every line, then insert every line. The patch is valid. It applies on the first try.
+      It round-trips on <strong>100%</strong> of the 6,000 pairs measured on the first tab, and it
+      shows a reviewer <strong>10.9&times;</strong> as many changed lines as the correct answer. A
+      diff has two jobs — <em>reconstruct the file</em> and <em>be short</em> — and the test suite
+      almost always covers only the first.</p>
+
+      <p>So the second job needs an oracle, and it has to come from somewhere the diff cannot reach.</p>
+
+      <h3 class="text-xl font-bold">3. An oracle that costs nothing</h3>
+
+      <p>The obvious oracle is the LCS table: <code>minEdits = n + m - 2&middot;LCS(a,b)</code>. It
+      is correct and it is <code>O(n&middot;m)</code>, which puts a hard ceiling on how much fuzzing
+      you can afford.</p>
+
+      <p>But there is a family of inputs where the answer is a <strong>closed form</strong>. Take a
+      file in which every line is distinct. Delete some of its lines, and insert some brand-new
+      lines that appear nowhere else. Now the only lines the two files share are the survivors, and
+      because nothing repeats, those survivors are the longest common subsequence — they cannot be
+      matched in any other way. So:</p>
+
+      <pre>LCS(a, b) = |a| - deletions
+minEdits  = (|a| - LCS) + (|b| - LCS) = deletions + insertions</pre>
+
+      <p>The generator knows how many of each it made, so the minimum is known before the diff runs,
+      in <code>O(1)</code>. That is what makes 6,000 pairs of 12&ndash;52 lines affordable — and the
+      slow LCS table stays for the cases the closed form genuinely cannot reach.</p>
+
+      <h3 class="text-xl font-bold">4. And the closed-form class is the easy one</h3>
+
+      <p>This turned out to be the sharpest measurement on the page, and it was not the intent.
+      Two of the wrong algorithms — <em>scan ahead for the next matching line</em> and
+      <em>unique-line anchors</em> — score a flat <span class="ok">0.0%</span> on 6,000 distinct-line
+      pairs. Perfect. Then the same code, the same oracle logic, run on source files where lines
+      repeat:</p>
+
+      <pre>                      distinct lines      source code
+scan ahead                    0.0%            37.1%
+unique-line anchors           0.0%            42.6%</pre>
+
+      <p>The mechanism is visible in the smallest failing case. Anchors are lines that occur exactly
+      once in <em>both</em> files. Delete a function header and it is no longer unique on both sides,
+      so it stops being an anchor, and the whole region that used to be pinned by it falls back to
+      the crude path — eight edits for a two-line deletion. A test corpus of files with no repeated
+      lines cannot find that, and a test corpus of files with no repeated lines is exactly what a
+      generated fixture looks like.</p>
+
+      <h3 class="text-xl font-bold">5. Below the minimum is a different kind of wrong</h3>
+
+      <p>Comparing 32-bit hashes instead of strings is a standard optimisation, and it is correct
+      only if a matching hash is treated as a <em>candidate</em> and confirmed. Skip the
+      confirmation and two different lines become the same line. Here is the whole failure in one
+      edit:</p>
+
+      <pre>-   const total = a + b;
++   const total = b + a;</pre>
+
+      <p>A checksum that adds character codes cannot tell those apart — they are a perfect anagram.
+      The hash diff reports <strong>zero</strong> changes, the viewer shows an unmodified file, and
+      applying the patch gives you back the old version. Round-trip catches this one, on
+      <strong>16.1%</strong> of source-code pairs.</p>
+
+      <p>But there is a cheaper signal, and it needs no expected output at all: this diff reported
+      <strong>fewer</strong> edits than the proven minimum. No correct diff can ever do that. An
+      edit count below the minimum is not a quality problem, it is a proof that the equality test is
+      lying.</p>
+
+      <h3 class="text-xl font-bold">6. Hunks: the second algorithm on the page</h3>
+
+      <p>Nobody wants the whole file. A diff viewer shows each change with <code>context</code>
+      lines around it, and merges two changes into one hunk when they are close enough to run
+      together. "Close enough" has exactly one correct threshold:</p>
+
+      <pre>split the hunks  &lt;=&gt;  gap &gt; 2 * context</pre>
+
+      <p>Because if the gap is <em>exactly</em> <code>2&middot;context</code>, the trailing context
+      of the first hunk and the leading context of the second meet perfectly — they cover the gap
+      with nothing left over and nothing counted twice. Writing <code>&gt;=</code> instead of
+      <code>&gt;</code> splits at that boundary, and the result is:</p>
+
+      <pre>gap = 6, context = 3
+
+  correct : @@ -2,14 +2,14 @@          one hunk
+  off-by-1: @@ -2,7 +2,7 @@            two hunks
+            @@ -9,7 +9,7 @@
+
+  lines rendered: IDENTICAL, in the same order, each exactly once</pre>
+
+      <p>Over 4,000 documents that off-by-one changes the hunk count on <strong>29.7%</strong> of
+      them and the rendered output on <strong>none</strong>. Every assertion about what appears on
+      screen passes. The only thing that differs is a header count.</p>
+
+      <p>Move the boundary one step further — split whenever the gap exceeds <em>one</em>
+      context — and it becomes loud: the two contexts now overlap and the same lines print
+      twice, 5,975 times across the same 4,000 documents. One off-by-one is invisible and its
+      neighbour is obvious.</p>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">Except at the boundary itself, which is where this page was first
+        wrong. At a gap of <strong>exactly</strong> 2&middot;context the greedy rule splits too, and
+        its two hunks land <em>adjacent</em> — no overlap, no duplication, the same page again.
+        The loud bug is only loud in the narrow band where the gap is wider than one context and
+        narrower than two. A fixture built at the interesting boundary for one bug turned out to be
+        the worst possible fixture for the other, and the assertion written against it failed.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">What is deliberately left out</h3>
+
+      <p>Move detection is a different problem — a block that travelled from the top of the file to
+      the bottom is minimal as a delete plus an insert, and showing it as a <em>move</em> means
+      leaving the shortest-path formulation behind. Real diff tools cap the search
+      (<code>D</code> can reach <code>N+M</code> on files with nothing in common) and fall back to
+      the trim-and-replace path on the way out, which is why a legitimate tool sometimes emits the
+      null diff of this page on purpose. Line-ending normalisation and tab expansion happen before
+      any of this and change what "equal" means. And a three-way merge needs the common ancestor,
+      not two files, so none of the above applies to it directly.</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 How it is built</h2>
+
+      <h3 class="text-xl font-bold">1. Six pure functions and no DOM</h3>
+      <pre>myersOps(a, b)              -&gt; [{t:'eq'|'del'|'ins', ai, bi, text}]
+applyOps(a, ops)            -&gt; string[]        // the patch, applied
+editCount(ops)              -&gt; number
+wellFormed(ops, n, m)       -&gt; { bad, checks }
+groupHunks(ops, ctx, rule)  -&gt; [{from, to}]    // op-index ranges
+wordDiff(x, y)              -&gt; ops, over tokens instead of lines</pre>
+      <p>The op list carries <em>indices</em>, not text, except on insertions — which carry the
+      literal line the way a real patch file does, so <code>applyOps</code> needs only the old file.
+      Everything above the renderer is pure, which is what makes ten thousand pairs a load-time
+      check rather than a build step.</p>
+
+      <h3 class="text-xl font-bold">2. Word-level highlighting is the same function again</h3>
+      <pre>const tokenize = s =&gt; s.match(/\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) || [];
+const wordDiff = (x, y) =&gt; myersOps(tokenize(x), tokenize(y));</pre>
+      <p>Nothing new is needed. A line diff is Myers over an array of strings; an intra-line diff is
+      Myers over an array of tokens. Keeping whitespace as its own token is what stops
+      <code>foo(a,b)</code> and <code>foo(a, b)</code> highlighting as a total rewrite.</p>
+
+      <h3 class="text-xl font-bold">3. The structural check nobody writes</h3>
+      <pre>// indices must march forward exactly one at a time on each side,
+// and finish at the end of BOTH files
+let ai = 0, bi = 0;
+for (const op of ops){
+  if (op.t === 'eq')  { assert(op.ai === ai++); assert(op.bi === bi++); }
+  if (op.t === 'del') { assert(op.ai === ai++); }
+  if (op.t === 'ins') { assert(op.bi === bi++); }
+}
+assert(ai === a.length &amp;&amp; bi === b.length);</pre>
+      <p>Round-trip already implies most of this, but not all of it: a diff can reconstruct the file
+      while pairing an <code>eq</code> op against the wrong line on one side. Splitting the two
+      checks is what lets the fuzz table say <em>which</em> kind of wrong each variant is.</p>
+
+      <h3 class="text-xl font-bold">4. Two oracles, priced differently on purpose</h3>
+      <pre>// (a) CLOSED FORM - O(1). Only valid when no line repeats and every inserted
+//     line is brand new, which the generator guarantees by construction.
+minEdits === deletions + insertions
+
+// (b) FULL LCS TABLE - O(n*m). Correct on anything, and the reason the
+//     source-code pass is capped at short files.
+function dpMinEdits(a, b){
+  let prev = new Int32Array(m+1), cur = new Int32Array(m+1);
+  for (let i = 1; i &lt;= n; i++){
+    for (let j = 1; j &lt;= m; j++)
+      cur[j] = a[i-1] === b[j-1] ? prev[j-1] + 1
+                                 : Math.max(prev[j], cur[j-1]);
+    [prev, cur] = [cur, prev];
+  }
+  return n + m - 2 * prev[m];
+}</pre>
+      <p>Oracle (a) does 6,000 pairs of up to 52 lines for free. Oracle (b) does 4,000 pairs of
+      about 20 lines for two million table cells. Same question, two thousand times the price — and
+      the expensive one is the only one that can see the two heuristics fail, which is the whole
+      argument for keeping both.</p>
+
+      <h3 class="text-xl font-bold">5. What the tests pin</h3>
+      <pre>// the correct core is minimal on every pair, under BOTH oracles
+assert(editCount(myersOps(a,b)) === dels + inss);       // closed form
+assert(editCount(myersOps(a,b)) === dpMinEdits(a,b));   // LCS table
+
+// no diff may ever report fewer edits than the minimum
+assert(stats.every(s =&gt; s.belowMinimum === 0 || s.key === 'weakhash'));
+
+// and the broken ones really are broken - on the same inputs
+assert(nuke.applyFail === 0);           // &lt;- the point of the whole page
+assert(nuke.aboveMinimum === trials);
+assert(scan.aboveMinimum === 0);        // on distinct lines
+assert(scan.aboveMinimumOnCode &gt; 0);    // on files that repeat themselves
+
+// the grouping off-by-one is invisible in the rendered output
+assert(ge.rendersIdenticallyToCorrect === documents);
+assert(ge.hunkCount !== correct.hunkCount);</pre>
+
+      <h3 class="text-xl font-bold">6. The assertion that matters most is the first broken one</h3>
+      <p>Asserting that the null diff <strong>passes</strong> round-trip is the load-bearing test on
+      this page. If it ever starts failing, the harness has drifted, not the bug — and the reason to
+      measure edit counts, extra edits and rendered-line multisets at all is that the obvious
+      assertion is provably unable to separate the best possible answer from the worst one.</p>
+
+      <h3 class="text-xl font-bold">🎉 DesignFromZero Day 68 shipped.</h3>
+      <p class="text-slate-600">A patch that applies is not a diff that is right, and only one of
+      those two is usually tested.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Diff viewer. Myers O(ND) shortest path over the edit graph, hunk grouping, word-level diff -
+// and six ways to get it wrong, five of which produce a patch that applies perfectly. No DOM in
+// this block; ops carry indices, so everything here is fuzzable under node.
+
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1) >>> 0;
+    t = (t ^ (t + Math.imul(t ^ (t >>> 7), t | 61))) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- the correct core
+// Myers O(ND): visit edit counts in increasing order and keep, per diagonal, the furthest x
+// reached. The first d that arrives at the far corner IS the minimum - minimality is a property
+// of the search ORDER, not of a check performed afterwards.
+function myersOps(a, b, eq){
+  eq = eq || function(x, y){ return x === y; };
+  const N = a.length, M = b.length, MAX = N + M;
+  if (MAX === 0) return [];
+  const off = MAX;
+  let v = new Int32Array(2 * MAX + 1);
+  const trace = [];
+  for (let d = 0; d <= MAX; d++){
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2){
+      let x;
+      if (k === -d || (k !== d && v[k - 1 + off] < v[k + 1 + off])) x = v[k + 1 + off];
+      else x = v[k - 1 + off] + 1;
+      let y = x - k;
+      while (x < N && y < M && eq(a[x], b[y])){ x++; y++; }   // the snake: free diagonal moves
+      v[k + off] = x;
+      if (x >= N && y >= M) return backtrackMyers(trace, a, b, d, off);
+    }
+  }
+  return [];
+}
+
+// trace[d] is the diagonal table as it stood BEFORE round d, so walking it backwards recovers
+// which move was taken at each edit and how long the free snake before it ran.
+function backtrackMyers(trace, a, b, D, off){
+  let x = a.length, y = b.length;
+  const rev = [];
+  for (let d = D; d > 0; d--){
+    const v = trace[d];
+    const k = x - y;
+    let prevK;
+    if (k === -d || (k !== d && v[k - 1 + off] < v[k + 1 + off])) prevK = k + 1;
+    else prevK = k - 1;
+    const prevX = v[prevK + off], prevY = prevX - prevK;
+    while (x > prevX && y > prevY){ x--; y--; rev.push({ t:'eq', ai:x, bi:y }); }
+    if (x === prevX){ y--; rev.push({ t:'ins', bi:y, text:b[y] }); }
+    else { x--; rev.push({ t:'del', ai:x }); }
+  }
+  while (x > 0 && y > 0){ x--; y--; rev.push({ t:'eq', ai:x, bi:y }); }
+  rev.reverse();
+  return rev;
+}
+
+// THE VISIBLE PROPERTY. Insertions carry their literal text the way a patch file does, so this
+// needs only the old file - and it is satisfied by diffs that are catastrophically bad, which is
+// the entire point of the page.
+function applyOps(a, ops){
+  const out = [];
+  for (let i = 0; i < ops.length; i++){
+    const op = ops[i];
+    if (op.t === 'eq') out.push(a[op.ai]);
+    else if (op.t === 'ins') out.push(op.text);
+  }
+  return out;
+}
+function sameLines(x, y){
+  if (x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+function editCount(ops){
+  let n = 0;
+  for (let i = 0; i < ops.length; i++) if (ops[i].t !== 'eq') n++;
+  return n;
+}
+
+// The structural check nobody writes: indices must march forward one at a time on each side and
+// finish exactly at the end of both files. Round-trip implies most of this, but not all - a diff
+// can reconstruct the file while pairing an `eq` op against the wrong line on one side.
+function wellFormed(ops, n, m){
+  let ai = 0, bi = 0, bad = 0, checks = 0;
+  for (let i = 0; i < ops.length; i++){
+    const op = ops[i];
+    if (op.t === 'eq'){ checks += 2; if (op.ai !== ai++) bad++; if (op.bi !== bi++) bad++; }
+    else if (op.t === 'del'){ checks++; if (op.ai !== ai++) bad++; }
+    else { checks++; if (op.bi !== bi++) bad++; }
+  }
+  checks += 2;
+  if (ai !== n) bad++;
+  if (bi !== m) bad++;
+  return { bad: bad, checks: checks };
+}
+
+// ---------------------------------------------------------------- the wrong ones
+// 1. The null diff. Delete everything, insert everything. A valid patch, and the worst possible
+//    answer - it exists on this page to prove that round-trip cannot rank diffs at all.
+function diffNuke(a, b){
+  const ops = [];
+  for (let i = 0; i < a.length; i++) ops.push({ t:'del', ai:i });
+  for (let j = 0; j < b.length; j++) ops.push({ t:'ins', bi:j, text:b[j] });
+  return ops;
+}
+
+// 2. Common prefix + common suffix, replace the middle wholesale. This is the FAST PATH of
+//    almost every real diff, shipped without the slow path behind it.
+function trimRange(ops, a, b, ai0, ai1, bi0, bi1){
+  let p = 0;
+  while (ai0 + p < ai1 && bi0 + p < bi1 && a[ai0 + p] === b[bi0 + p]) p++;
+  let s = 0;
+  while (ai1 - 1 - s >= ai0 + p && bi1 - 1 - s >= bi0 + p && a[ai1 - 1 - s] === b[bi1 - 1 - s]) s++;
+  for (let k = 0; k < p; k++) ops.push({ t:'eq', ai:ai0 + k, bi:bi0 + k });
+  for (let i = ai0 + p; i < ai1 - s; i++) ops.push({ t:'del', ai:i });
+  for (let j = bi0 + p; j < bi1 - s; j++) ops.push({ t:'ins', bi:j, text:b[j] });
+  for (let k = s - 1; k >= 0; k--) ops.push({ t:'eq', ai:ai1 - 1 - k, bi:bi1 - 1 - k });
+}
+function diffTrim(a, b){ const ops = []; trimRange(ops, a, b, 0, a.length, 0, b.length); return ops; }
+
+// 3. Compare by position: line i against line i, then pair up whatever is left over. Exactly
+//    right when nothing shifted, and catastrophic the moment one line is inserted at the top.
+function diffPositional(a, b){
+  const ops = [], n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++){
+    if (a[i] === b[i]) ops.push({ t:'eq', ai:i, bi:i });
+    else { ops.push({ t:'del', ai:i }); ops.push({ t:'ins', bi:i, text:b[i] }); }
+  }
+  for (let i = n; i < a.length; i++) ops.push({ t:'del', ai:i });
+  for (let j = n; j < b.length; j++) ops.push({ t:'ins', bi:j, text:b[j] });
+  return ops;
+}
+
+// 4. Walk both files; on a mismatch scan a small window ahead for the nearest re-sync. This is
+//    the diff people actually write by hand, and on files with no repeated line it is EXACT.
+function diffScan(a, b, win){
+  win = win || 6;
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < a.length && j < b.length){
+    if (a[i] === b[j]){ ops.push({ t:'eq', ai:i, bi:j }); i++; j++; continue; }
+    let k = 1, kind = 0;
+    for (; k <= win; k++){
+      if (j + k < b.length && a[i] === b[j + k]){ kind = 1; break; }   // lines were inserted
+      if (i + k < a.length && a[i + k] === b[j]){ kind = 2; break; }   // lines were deleted
+    }
+    if (kind === 1){ for (let q = 0; q < k; q++){ ops.push({ t:'ins', bi:j, text:b[j] }); j++; } }
+    else if (kind === 2){ for (let q = 0; q < k; q++){ ops.push({ t:'del', ai:i }); i++; } }
+    else { ops.push({ t:'del', ai:i }); ops.push({ t:'ins', bi:j, text:b[j] }); i++; j++; }
+  }
+  while (i < a.length){ ops.push({ t:'del', ai:i }); i++; }
+  while (j < b.length){ ops.push({ t:'ins', bi:j, text:b[j] }); j++; }
+  return ops;
+}
+
+// 5. Patience anchors WITHOUT the recursion. Lines occurring exactly once in both files are
+//    anchors; the longest increasing run of them is kept (patience LIS, correct); and then each
+//    gap between anchors is closed with trim instead of running the real algorithm inside it.
+function anchorPairs(a, b){
+  const ca = new Map(), cb = new Map();
+  for (let i = 0; i < a.length; i++) ca.set(a[i], (ca.get(a[i]) || 0) + 1);
+  for (let j = 0; j < b.length; j++) cb.set(b[j], (cb.get(b[j]) || 0) + 1);
+  const posB = new Map();
+  for (let j = 0; j < b.length; j++) if (cb.get(b[j]) === 1) posB.set(b[j], j);
+  const cand = [];
+  for (let i = 0; i < a.length; i++)
+    if (ca.get(a[i]) === 1 && cb.get(a[i]) === 1) cand.push({ i:i, j:posB.get(a[i]) });
+  if (!cand.length) return [];
+  const tails = [], tailsIdx = [], parent = new Array(cand.length).fill(-1);
+  for (let x = 0; x < cand.length; x++){
+    const j = cand[x].j;
+    let lo = 0, hi = tails.length;
+    while (lo < hi){ const mid = (lo + hi) >> 1; if (tails[mid] < j) lo = mid + 1; else hi = mid; }
+    tails[lo] = j; tailsIdx[lo] = x;
+    parent[x] = lo > 0 ? tailsIdx[lo - 1] : -1;
+  }
+  let cur = tailsIdx[tails.length - 1];
+  const out = [];
+  while (cur !== -1){ out.push(cand[cur]); cur = parent[cur]; }
+  out.reverse();
+  return out;
+}
+function diffAnchor(a, b){
+  const anchors = anchorPairs(a, b);
+  const ops = [];
+  let i0 = 0, j0 = 0;
+  for (let x = 0; x < anchors.length; x++){
+    const an = anchors[x];
+    trimRange(ops, a, b, i0, an.i, j0, an.j);    // <- the bug: no recursion into the gap
+    ops.push({ t:'eq', ai:an.i, bi:an.j });
+    i0 = an.i + 1; j0 = an.j + 1;
+  }
+  trimRange(ops, a, b, i0, a.length, j0, b.length);
+  return ops;
+}
+
+// 6. The real algorithm, run on 32-bit checksums instead of on the lines. A hash is a FILTER,
+//    not a decision - drop the confirming string compare and two different lines become one.
+//    `a + b` and `b + a` are a perfect anagram, so adding character codes cannot separate them.
+function weakHash(s){
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function diffWeakHash(a, b){
+  const ha = new Array(a.length), hb = new Array(b.length);
+  for (let i = 0; i < a.length; i++) ha[i] = weakHash(a[i]);
+  for (let j = 0; j < b.length; j++) hb[j] = weakHash(b[j]);
+  const ops = myersOps(ha, hb);
+  for (let i = 0; i < ops.length; i++) if (ops[i].t === 'ins') ops[i].text = b[ops[i].bi];
+  return ops;
+}
+
+const DIFF_VARIANTS = [
+  { key:'myers',      label:'Myers (correct)',                   fn:function(a,b){ return myersOps(a,b); } },
+  { key:'nuke',       label:'delete all, insert all',            fn:diffNuke },
+  { key:'trim',       label:'common prefix + suffix only',       fn:diffTrim },
+  { key:'positional', label:'line i against line i',             fn:diffPositional },
+  { key:'scan',       label:'scan ahead for the next match',     fn:diffScan },
+  { key:'anchor',     label:'unique-line anchors, no recursion', fn:diffAnchor },
+  { key:'weakhash',   label:'compare 32-bit hashes, not lines',  fn:diffWeakHash }
+];
+function diffLines(a, b, key){
+  for (let i = 0; i < DIFF_VARIANTS.length; i++)
+    if (DIFF_VARIANTS[i].key === key) return DIFF_VARIANTS[i].fn(a, b);
+  return myersOps(a, b);
+}
+
+// ---------------------------------------------------------------- hunks
+// Two changes belong in one hunk when their contexts meet. At a gap of exactly 2*ctx the
+// trailing context of the first and the leading context of the second cover it EXACTLY, with
+// nothing left over and nothing counted twice - so `>` merges and `>=` splits, and the split
+// renders the same lines.
+function groupHunks(ops, ctx, rule){
+  rule = rule || 'gt';
+  const changes = [];
+  for (let i = 0; i < ops.length; i++) if (ops[i].t !== 'eq') changes.push(i);
+  if (!changes.length) return [];
+  const groups = [];
+  let start = changes[0], last = changes[0];
+  for (let k = 1; k < changes.length; k++){
+    const gap = changes[k] - last - 1;
+    const split = rule === 'never'   ? false
+                : rule === 'ge'      ? gap >= 2 * ctx
+                : rule === 'overlap' ? gap > ctx
+                :                      gap > 2 * ctx;
+    if (split){ groups.push([start, last]); start = changes[k]; }
+    last = changes[k];
+  }
+  groups.push([start, last]);
+  const out = [];
+  for (let g = 0; g < groups.length; g++)
+    out.push({ from: Math.max(0, groups[g][0] - ctx), to: Math.min(ops.length, groups[g][1] + ctx + 1) });
+  return out;
+}
+const HUNK_RULES = [
+  { key:'gt',      label:'merge when the gap is 2×context or less' },
+  { key:'ge',      label:'off by one: split at exactly 2×context' },
+  { key:'overlap', label:'split whenever the gap exceeds context' },
+  { key:'never',   label:'never split' }
+];
+
+function hunkNumbers(ops, h){
+  let aStart = -1, aCount = 0, bStart = -1, bCount = 0;
+  for (let i = h.from; i < h.to; i++){
+    const op = ops[i];
+    if (op.t === 'eq' || op.t === 'del'){ if (aStart < 0) aStart = op.ai; aCount++; }
+    if (op.t === 'eq' || op.t === 'ins'){ if (bStart < 0) bStart = op.bi; bCount++; }
+  }
+  return { aStart: aCount ? aStart + 1 : 0, aCount: aCount, bStart: bCount ? bStart + 1 : 0, bCount: bCount };
+}
+function hunkHeader(ops, h){
+  const n = hunkNumbers(ops, h);
+  return '@@ -' + n.aStart + ',' + n.aCount + ' +' + n.bStart + ',' + n.bCount + ' @@';
+}
+
+// What the READER sees: how many times each op position is covered by some hunk. Counting
+// multiplicity rather than membership is what separates the invisible off-by-one (identical
+// counts) from the visible one (lines printed twice).
+function renderReport(ops, hunks){
+  const cnt = new Int8Array(ops.length);
+  let dup = 0, shown = 0;
+  for (let h = 0; h < hunks.length; h++)
+    for (let i = hunks[h].from; i < hunks[h].to; i++){
+      if (cnt[i]) dup++; else shown++;
+      cnt[i]++;
+    }
+  let missed = 0, ctxShown = 0, key = '';
+  for (let i = 0; i < ops.length; i++){
+    if (ops[i].t !== 'eq' && !cnt[i]) missed++;
+    if (ops[i].t === 'eq' && cnt[i]) ctxShown++;
+    key += cnt[i] > 9 ? '9' : String(cnt[i]);
+  }
+  return { hunks: hunks.length, dup: dup, shown: shown, missed: missed, context: ctxShown, key: key };
+}
+
+// ---------------------------------------------------------------- word level, same core
+// A line diff is Myers over strings; an intra-line diff is Myers over tokens. Keeping whitespace
+// as its own token is what stops foo(a,b) vs foo(a, b) highlighting as a total rewrite.
+function tokenize(s){ return s.match(/\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) || []; }
+function wordDiff(x, y){ return myersOps(tokenize(x), tokenize(y)); }
+
+// ---------------------------------------------------------------- generators
+const WORDS = ['render', 'commit', 'resolve', 'payload', 'cursor', 'buffer', 'queue', 'token',
+               'handler', 'session', 'bucket', 'schema', 'client', 'stream', 'anchor', 'digest'];
+
+// GENERATOR A - every line distinct, and the script that produced B is KNOWN. With no repeated
+// line the surviving lines ARE the longest common subsequence (nothing else can match), so
+// LCS = |a| - deletions and the minimum edit distance is deletions + insertions in CLOSED FORM.
+// An O(1) oracle, which is what makes 6,000 large pairs affordable.
+function scriptedPair(seed, nLines, pDel, pIns){
+  const rnd = mulberry32(seed);
+  const a = [];
+  for (let i = 0; i < nLines; i++) a.push('L' + (i + 1) + ' ' + WORDS[Math.floor(rnd() * WORDS.length)]);
+  const b = [];
+  let dels = 0, inss = 0, fresh = 0;
+  for (let i = 0; i < nLines; i++){
+    if (rnd() < pIns){ b.push('X' + seed + '_' + (fresh++) + ' ' + WORDS[Math.floor(rnd() * WORDS.length)]); inss++; }
+    if (rnd() < pDel){ dels++; continue; }
+    b.push(a[i]);
+  }
+  if (rnd() < pIns){ b.push('X' + seed + '_' + (fresh++) + ' tail'); inss++; }
+  return { a: a, b: b, dels: dels, inss: inss, minEdits: dels + inss };
+}
+
+// GENERATOR B - source code, which repeats itself constantly: a '}' every few lines, a blank
+// between functions, the same `const total = a + b;` in every helper. The closed form does not
+// survive that, so these pairs go to the DP oracle and stay BOUNDED.
+function makeCode(nBlocks, seed){
+  const rnd = mulberry32(seed);
+  const out = [];
+  for (let k = 0; k < nBlocks; k++){
+    const w = WORDS[Math.floor(rnd() * WORDS.length)];
+    out.push('function ' + w + (k + 1) + '(a, b) {');
+    out.push('  const total = a + b;');
+    if (rnd() < 0.5) out.push('  log(total);');
+    out.push('  return total;');
+    out.push('}');
+    out.push('');
+  }
+  return out;
+}
+function editCode(a, seed, k){
+  const rnd = mulberry32(seed);
+  const b = a.slice();
+  for (let e = 0; e < k; e++){
+    if (!b.length) break;
+    const p = Math.floor(rnd() * b.length);
+    const kind = rnd();
+    if (kind < 0.34) b.splice(p, 1);
+    else if (kind < 0.67) b.splice(p, 0, '  // ' + WORDS[Math.floor(rnd() * WORDS.length)] + ' ' + e);
+    else b[p] = b[p] === '  const total = a + b;' ? '  const total = b + a;'
+                                                  : b[p] + ' // ' + e;
+  }
+  return b;
+}
+
+// THE SLOW ORACLE. minEdits = n + m - 2*LCS. Correct on anything, O(n*m) per pair, and the
+// reason the source-code pass is capped at short files.
+function dpMinEdits(a, b){
+  const n = a.length, m = b.length;
+  let prev = new Int32Array(m + 1), cur = new Int32Array(m + 1);
+  for (let i = 1; i <= n; i++){
+    cur[0] = 0;
+    for (let j = 1; j <= m; j++){
+      if (a[i - 1] === b[j - 1]) cur[j] = prev[j - 1] + 1;
+      else cur[j] = prev[j] >= cur[j - 1] ? prev[j] : cur[j - 1];
+    }
+    const t = prev; prev = cur; cur = t;
+  }
+  return n + m - 2 * prev[m];
+}
+
+// ---------------------------------------------------------------- studies
+// Every variant over the SAME pairs. Two columns matter: whether the patch applies (what a diff
+// test asserts) and whether the script beat the minimum (what it cannot see).
+function fuzzDiffs(trials, seed){
+  const rnd = mulberry32(seed);
+  const stats = {};
+  for (let i = 0; i < DIFF_VARIANTS.length; i++)
+    stats[DIFF_VARIANTS[i].key] = { cases:0, applyFail:0, malformed:0, nonMinimal:0,
+                                    excess:0, worst:0, edits:0, minSum:0, belowMin:0 };
+  let asserts = 0;
+  for (let t = 0; t < trials; t++){
+    const n = 12 + Math.floor(rnd() * 40);
+    const P = scriptedPair((seed * 2654435761 + t * 40503) >>> 0, n, 0.04 + rnd() * 0.10, 0.04 + rnd() * 0.10);
+    for (let v = 0; v < DIFF_VARIANTS.length; v++){
+      const ops = DIFF_VARIANTS[v].fn(P.a, P.b);
+      const wf = wellFormed(ops, P.a.length, P.b.length);
+      const ec = editCount(ops);
+      const s = stats[DIFF_VARIANTS[v].key];
+      s.cases++;
+      if (wf.bad) s.malformed++;
+      if (!sameLines(applyOps(P.a, ops), P.b)) s.applyFail++;
+      if (ec > P.minEdits){ s.nonMinimal++; s.excess += ec - P.minEdits;
+                            if (ec - P.minEdits > s.worst) s.worst = ec - P.minEdits; }
+      if (ec < P.minEdits) s.belowMin++;   // impossible for a correct diff: it proves the
+                                           // equality test is wrong, not the search
+      s.edits += ec; s.minSum += P.minEdits;
+      asserts += wf.checks + P.b.length + 1;
+    }
+  }
+  return { trials: trials, asserts: asserts, stats: stats };
+}
+
+// The same table over SOURCE CODE, where lines repeat. Every case pays for a real O(n*m) LCS,
+// which is why this pass is bounded - and it is the only pass where the two heuristics that
+// looked flawless above start to lose.
+function fuzzDiffsDP(trials, seed){
+  const rnd = mulberry32(seed);
+  const stats = {};
+  for (let i = 0; i < DIFF_VARIANTS.length; i++)
+    stats[DIFF_VARIANTS[i].key] = { cases:0, applyFail:0, malformed:0, nonMinimal:0,
+                                    excess:0, worst:0, edits:0, minSum:0, belowMin:0 };
+  let asserts = 0, cells = 0;
+  for (let t = 0; t < trials; t++){
+    const a = makeCode(2 + Math.floor(rnd() * 5), (seed * 31 + t * 7919) >>> 0);
+    const b = editCode(a, (seed * 17 + t * 104729) >>> 0, 1 + Math.floor(rnd() * 5));
+    const min = dpMinEdits(a, b);
+    cells += a.length * b.length;
+    for (let v = 0; v < DIFF_VARIANTS.length; v++){
+      const ops = DIFF_VARIANTS[v].fn(a, b);
+      const wf = wellFormed(ops, a.length, b.length);
+      const ec = editCount(ops);
+      const s = stats[DIFF_VARIANTS[v].key];
+      s.cases++;
+      if (wf.bad) s.malformed++;
+      if (!sameLines(applyOps(a, ops), b)) s.applyFail++;
+      if (ec > min){ s.nonMinimal++; s.excess += ec - min; if (ec - min > s.worst) s.worst = ec - min; }
+      if (ec < min) s.belowMin++;
+      s.edits += ec; s.minSum += min;
+      asserts += wf.checks + b.length + 1;
+    }
+  }
+  return { trials: trials, asserts: asserts, cells: cells, stats: stats };
+}
+
+// Every grouping rule over the SAME correct op lists. `sameRender` compares the multiplicity of
+// every rendered op position against the correct rule - which is what "the reader cannot tell"
+// actually means, and it is not the same as "the same lines appear".
+function hunkStudy(trials, seed, ctx){
+  const rnd = mulberry32(seed);
+  const res = {};
+  for (let i = 0; i < HUNK_RULES.length; i++)
+    res[HUNK_RULES[i].key] = { cases:0, hunks:0, dup:0, missed:0, context:0,
+                               sameRender:0, diffCount:0 };
+  let boundary = 0, asserts = 0;
+  for (let t = 0; t < trials; t++){
+    const n = 30 + Math.floor(rnd() * 60);
+    const P = scriptedPair((seed * 40503 + t * 2654435761) >>> 0, n, 0.03 + rnd() * 0.06, 0.03 + rnd() * 0.06);
+    const ops = myersOps(P.a, P.b);
+    const base = renderReport(ops, groupHunks(ops, ctx, 'gt'));
+    for (let r = 0; r < HUNK_RULES.length; r++){
+      const k = HUNK_RULES[r].key;
+      const rep = renderReport(ops, groupHunks(ops, ctx, k));
+      const s = res[k];
+      s.cases++; s.hunks += rep.hunks; s.dup += rep.dup; s.missed += rep.missed; s.context += rep.context;
+      if (rep.key === base.key) s.sameRender++;
+      if (rep.hunks !== base.hunks) s.diffCount++;
+      asserts += ops.length + 2;
+    }
+    if (renderReport(ops, groupHunks(ops, ctx, 'ge')).hunks !== base.hunks) boundary++;
+  }
+  return { trials: trials, ctx: ctx, res: res, boundary: boundary, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- concrete artifacts
+// Found by searching the generators for the SMALLEST pair on which a given variant loses, then
+// written out literally so they can be read and re-derived by hand.
+const ART_SWAP = {
+  a: ['function commit1(a, b) {', '  const total = a + b;', '  return total;', '}', '',
+      'function token2(a, b) {',  '  const total = a + b;', '  return total;', '}', ''],
+  b: ['function commit1(a, b) {', '  const total = b + a;', '  return total;', '}', '',
+      'function token2(a, b) {',  '  const total = a + b;', '  return total;', '}', '']
+};
+const ART_INSERT = (function(){
+  const a = [];
+  for (let i = 1; i <= 12; i++) a.push('  step' + i + '();');
+  const b = a.slice(); b.splice(2, 0, '  audit();');
+  return { a: a, b: b };
+})();
+// A unique line that gets DELETED stops being an anchor, so the region it used to pin falls back
+// to the crude path: 8 edits for a 2-line deletion.
+const ART_ANCHOR = {
+  a: ['function token1(a, b) {',   '  const total = a + b;', '  return total;', '}', '',
+      'function resolve2(a, b) {', '  const total = a + b;', '  return total;', '}', '',
+      'function bucket3(a, b) {',  '  const total = a + b;', '  return total;', '}', ''],
+  b: ['function token1(a, b) {',   '  const total = a + b;', '  return total;', '}', '',
+      '  const total = a + b;',    '  return total;', '}',
+      'function bucket3(a, b) {',  '  const total = a + b;', '  return total;', '}', '']
+};
+const ART_DISTANT = (function(){
+  const a = [];
+  for (let i = 1; i <= 20; i++) a.push('line ' + i);
+  const b = a.slice(); b[4] = 'line 5 CHANGED'; b[11] = 'line 12 CHANGED';
+  return { a: a, b: b };
+})();
+// The same document with the two changes CLOSER: a gap strictly between one context and two.
+// This is the only band in which the greedier rule can actually overlap - at exactly 2*ctx even
+// it produces two adjacent hunks, so the loud bug and the silent one need different fixtures.
+const ART_NEAR = (function(){
+  const a = [];
+  for (let i = 1; i <= 20; i++) a.push('line ' + i);
+  const b = a.slice(); b[4] = 'line 5 CHANGED'; b[9] = 'line 10 CHANGED';
+  return { a: a, b: b };
+})();
+const PRESETS = { swap: ART_SWAP, insert: ART_INSERT, anchor: ART_ANCHOR, distant: ART_DISTANT, near: ART_NEAR };
+
+function variantTable(a, b){
+  const min = dpMinEdits(a, b), rows = [];
+  for (let i = 0; i < DIFF_VARIANTS.length; i++){
+    const ops = DIFF_VARIANTS[i].fn(a, b);
+    rows.push({ key: DIFF_VARIANTS[i].key, label: DIFF_VARIANTS[i].label,
+                edits: editCount(ops), applies: sameLines(applyOps(a, ops), b),
+                wellFormed: wellFormed(ops, a.length, b.length).bad === 0 });
+  }
+  return { min: min, rows: rows };
+}
+
+// The boundary: two changes with exactly 2*ctx unchanged lines between them. Correct merges,
+// the off-by-one splits, and the multiplicity of every rendered position is the same either way.
+function boundaryReport(ctx, doc){
+  doc = doc || ART_DISTANT;
+  const ops = myersOps(doc.a, doc.b);
+  const changes = [];
+  for (let i = 0; i < ops.length; i++) if (ops[i].t !== 'eq') changes.push(i);
+  const gap = changes.length > 2 ? changes[2] - changes[1] - 1 : 0;
+  const out = { gap: gap, ctx: ctx, rules: [] };
+  const base = renderReport(ops, groupHunks(ops, ctx, 'gt'));
+  for (let r = 0; r < HUNK_RULES.length; r++){
+    const hs = groupHunks(ops, ctx, HUNK_RULES[r].key);
+    const rep = renderReport(ops, hs);
+    const heads = [];
+    for (let i = 0; i < hs.length; i++) heads.push(hunkHeader(ops, hs[i]));
+    out.rules.push({ key: HUNK_RULES[r].key, label: HUNK_RULES[r].label, headers: heads,
+                     dup: rep.dup, missed: rep.missed, context: rep.context,
+                     identical: rep.key === base.key });
+  }
+  return out;
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators, not toLocaleString - "7,074,354" should not become "70,74,354" on an
+// en-IN browser when the page quotes the same figure in its own headline.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => (100 * x / n).toFixed(1) + "%";
+
+$("variant").innerHTML = DIFF_VARIANTS.map((v, i) => "<option value='" + v.key + "'>" + v.label + "</option>").join("");
+$("rule").innerHTML = HUNK_RULES.map(r => "<option value='" + r.key + "'>" + r.label + "</option>").join("");
+
+function loadPreset(name){
+  const p = PRESETS[name] || ART_DISTANT;
+  $("ta").value = p.a.join("\n");
+  $("tb").value = p.b.join("\n");
+}
+
+const splitLines = s => s.length ? s.split("\n") : [];
+
+// Pair the k-th deleted line in a run with the k-th inserted line and highlight the tokens that
+// actually moved. Only when the run lengths match - otherwise there is no honest pairing.
+function markPair(oldLine, newLine){
+  const ops = wordDiff(oldLine, newLine);
+  const ta = tokenize(oldLine), tb = tokenize(newLine);
+  let dOut = "", iOut = "";
+  for (const op of ops){
+    if (op.t === "eq"){ dOut += esc(ta[op.ai]); iOut += esc(tb[op.bi]); }
+    else if (op.t === "del") dOut += "<mark class='d'>" + esc(ta[op.ai]) + "</mark>";
+    else iOut += "<mark class='i'>" + esc(tb[op.bi]) + "</mark>";
+  }
+  return [dOut, iOut];
+}
+
+function renderDiff(a, b, ops, hunks){
+  let html = "";
+  const wantWords = $("words").checked;
+  for (let h = 0; h < hunks.length; h++){
+    html += "<div class='dl hh'><span class='ln'></span><span class='mk'></span><span class='tx'>" +
+            esc(hunkHeader(ops, hunks[h])) + "</span></div>";
+    let i = hunks[h].from;
+    while (i < hunks[h].to){
+      const op = ops[i];
+      if (op.t === "eq"){
+        html += line("", (op.ai + 1), " ", esc(a[op.ai]));
+        i++; continue;
+      }
+      // collect the run of deletions then the run of insertions
+      let d0 = i; while (i < hunks[h].to && ops[i].t === "del") i++;
+      const dels = ops.slice(d0, i);
+      let s0 = i; while (i < hunks[h].to && ops[i].t === "ins") i++;
+      const inss = ops.slice(s0, i);
+      const pairable = wantWords && dels.length > 0 && dels.length === inss.length;
+      for (let k = 0; k < dels.length; k++){
+        const txt = pairable ? markPair(a[dels[k].ai], inss[k].text)[0] : esc(a[dels[k].ai]);
+        html += line("del", dels[k].ai + 1, "-", txt);
+      }
+      for (let k = 0; k < inss.length; k++){
+        const txt = pairable ? markPair(a[dels[k].ai], inss[k].text)[1] : esc(inss[k].text);
+        html += line("ins", inss[k].bi + 1, "+", txt);
+      }
+    }
+  }
+  if (!hunks.length) html = "<div class='dl'><span class='ln'></span><span class='mk'></span>" +
+                            "<span class='tx' style='color:#94a3b8'>  the two files are identical</span></div>";
+  return html;
+}
+function line(cls, n, mk, txt){
+  return "<div class='dl " + cls + "'><span class='ln'>" + n + "</span><span class='mk'>" + mk +
+         "</span><span class='tx'>" + txt + "</span></div>";
+}
+function row(k, v){ return "<tr><td>" + k + "</td><td>" + v + "</td></tr>"; }
+
+function paint(){
+  const a = splitLines($("ta").value), b = splitLines($("tb").value);
+  const ctx = +$("ctx").value;
+  const ops = diffLines(a, b, $("variant").value);
+  const hunks = groupHunks(ops, ctx, $("rule").value);
+  const rep = renderReport(ops, hunks);
+  $("dv").innerHTML = renderDiff(a, b, ops, hunks);
+
+  const min = dpMinEdits(a, b), ec = editCount(ops);
+  const applies = sameLines(applyOps(a, ops), b);
+  const wf = wellFormed(ops, a.length, b.length);
+  const best = editCount(myersOps(a, b));
+  $("live").innerHTML =
+    row("lines before / after", a.length + " / " + b.length) +
+    row("applies cleanly", applies ? "<span class='ok'>yes</span>" : "<span class='bad'>NO</span>") +
+    row("well formed", wf.bad === 0 ? "<span class='ok'>yes</span>" : "<span class='bad'>" + wf.bad + " bad</span>") +
+    row("edits in this diff", ec) +
+    row("minimum (LCS table)", min) +
+    row("verdict", ec === min ? "<span class='ok'>minimal</span>"
+        : ec > min ? "<span class='warn'>+" + (ec - min) + " extra</span>"
+                   : "<span class='bad'>" + (min - ec) + " BELOW the minimum</span>") +
+    row("lines shown as changed", ec + (best > 0 ? " (" + (ec / best).toFixed(2) + "&times; the best)" : "")) +
+    row("hunks", rep.hunks) +
+    row("context lines shown", rep.context) +
+    row("lines printed twice", rep.dup ? "<span class='bad'>" + rep.dup + "</span>" : "<span class='ok'>0</span>") +
+    row("changes dropped", rep.missed ? "<span class='bad'>" + rep.missed + "</span>" : "<span class='ok'>0</span>");
+}
+
+["variant", "rule", "ctx", "words"].forEach(id => $(id).addEventListener("change", paint));
+$("preset").addEventListener("change", () => { loadPreset($("preset").value); paint(); });
+["ta", "tb"].forEach(id => $(id).addEventListener("input", paint));
+
+// ---------------------------------------------------------------- measured panels
+const FZ_A = fuzzDiffs(6000, 4242);
+const FZ_B = fuzzDiffsDP(4000, 99);
+const HK   = hunkStudy(4000, 77, 3);
+
+function fuzzRow(v, s, trials, withBelow){
+  const applyOk = s.applyFail === 0;
+  const minOk = s.nonMinimal === 0;
+  let html = "<tr><td>" + (v.key === "myers" ? "<strong>" + v.label + "</strong>" : v.label) + "</td>" +
+    "<td class='" + (applyOk ? "ok" : "bad") + "'>" + fmt(trials - s.applyFail) + " / " + fmt(trials) + "</td>" +
+    "<td class='" + (minOk ? "ok" : "warn") + "'>" + fmt(s.nonMinimal) + " (" + pct(s.nonMinimal, s.cases) + ")</td>";
+  if (withBelow)
+    html += "<td class='" + (s.belowMin ? "bad" : "ok") + "'>" +
+            (s.belowMin ? fmt(s.belowMin) + " (" + pct(s.belowMin, s.cases) + ")" : "&mdash;") + "</td>";
+  html += "<td>" + (s.excess / s.cases).toFixed(2) + "</td>";
+  if (!withBelow) html += "<td>" + (s.worst ? "+" + s.worst : "&mdash;") + "</td>";
+  html += "<td>" + (s.edits / s.minSum).toFixed(2) + "&times;</td></tr>";
+  return html;
+}
+$("fuzzA").innerHTML = DIFF_VARIANTS.map(v => fuzzRow(v, FZ_A.stats[v.key], FZ_A.trials, false)).join("");
+$("fuzzB").innerHTML = DIFF_VARIANTS.map(v => fuzzRow(v, FZ_B.stats[v.key], FZ_B.trials, true)).join("");
+
+$("hunkTable").innerHTML = HUNK_RULES.map(function(r){
+  const s = HK.res[r.key];
+  const same = s.sameRender === s.cases;
+  return "<tr><td>" + (r.key === "gt" ? "<strong>" + r.label + "</strong>" : r.label) + "</td>" +
+    "<td>" + fmt(s.hunks) + "</td>" +
+    "<td class='" + (s.dup ? "bad" : "ok") + "'>" + fmt(s.dup) + "</td>" +
+    "<td class='" + (s.missed ? "bad" : "ok") + "'>" + fmt(s.missed) + "</td>" +
+    "<td>" + fmt(s.context) + "</td>" +
+    "<td class='" + (same ? "warn" : "") + "'>" + pct(s.sameRender, s.cases) + "</td></tr>";
+}).join("");
+
+const TOTAL_ASSERTS = FZ_A.asserts + FZ_B.asserts + HK.asserts;
+$("assertline").innerHTML = "<strong>" + fmt(TOTAL_ASSERTS) + "</strong> assertions checked on load " +
+  "across " + fmt(FZ_A.trials + FZ_B.trials) + " file pairs &times; " + DIFF_VARIANTS.length +
+  " implementations plus " + fmt(HK.trials) + " documents &times; " + HUNK_RULES.length +
+  " grouping rules &mdash; every op index on both sides, every reconstructed line, every edit " +
+  "count against an oracle, and the multiplicity of every rendered position. Source-code pairs " +
+  "cost <strong>" + fmt(FZ_B.cells) + "</strong> LCS table cells between them.";
+
+function artText(art, note){
+  const vt = variantTable(art.a, art.b);
+  let txt = "minimum edits: " + vt.min + "\n\n";
+  txt += "algorithm                             edits   applies\n";
+  vt.rows.forEach(function(r){
+    txt += "  " + r.label.padEnd(34) + String(r.edits).padStart(5) +
+           (r.applies ? "       yes" : "       NO ") + (r.edits === vt.min ? "" : "   <-") + "\n";
+  });
+  return txt + "\n" + note;
+}
+$("artSwap").textContent = artText(ART_SWAP,
+  "every version that applies is a legal patch. scan-ahead rewrites the\n" +
+  "whole file to move one operand; the null diff rewrites it twice over.\n" +
+  "the hash version reports NO CHANGE AT ALL - `a + b` and `b + a` are a\n" +
+  "perfect anagram, so a checksum that adds character codes cannot tell\n" +
+  "them apart, and that is the only row whose patch does not apply.");
+$("artIns").textContent = artText(ART_INSERT,
+  "prefix+suffix and line-i-against-line-i were both exactly right on the\n" +
+  "operand swap. one inserted line near the top and positional reports 21\n" +
+  "edits for a 1-edit change, because everything after it shifted by one.\n" +
+  "the patch still applies perfectly.");
+
+(function(){
+  function block(br, title){
+    let txt = title + "\nunchanged lines between the two changes: " + br.gap + "\n\n";
+    br.rules.forEach(function(r){
+      txt += "  " + r.label + "\n";
+      r.headers.forEach(function(h){ txt += "      " + h + "\n"; });
+      txt += "      printed twice: " + r.dup + "   context lines: " + r.context +
+             "   renders identically: " + (r.identical ? "YES" : "no") + "\n";
+    });
+    return txt;
+  }
+  const far = boundaryReport(3, ART_DISTANT), near = boundaryReport(3, ART_NEAR);
+  $("boundary").textContent =
+    block(far,  "A. changes on line 5 and line 12, context = 3    (gap = exactly 2 x context)") +
+    "\n" +
+    block(near, "B. the same file, changes on line 5 and line 10  (gap = between 1 and 2 contexts)") +
+    "\nat a gap of exactly 2 x context BOTH splitting rules land their two hunks adjacent -\n" +
+    "same lines, same order, same page, one extra header. only in band B - wider than one\n" +
+    "context, narrower than two - does the greedier rule overlap and print lines twice.";
+})();
+
+loadPreset("distant");
+paint();
+</script>
+</body>
+</html>
