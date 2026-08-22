@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 69 — Fill handle</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "Inter", sans-serif; }
+  .tab-active { background:#0f172a; color:#fff; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; overflow:auto; }
+  .sheet { border-collapse:separate; border-spacing:0; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+           font-size:12px; user-select:none; }
+  .sheet th { font-family:-apple-system,"Inter",sans-serif; font-size:10px; letter-spacing:.04em;
+              color:#475569; font-weight:800; padding:5px 8px; background:#f8fafc;
+              border-bottom:1px solid #cbd5e1; border-right:1px solid #e2e8f0; white-space:nowrap; }
+  .sheet th.me { color:#1d4ed8; }
+  .sheet td { padding:4px 9px; border-bottom:1px solid #eef2f6; border-right:1px solid #eef2f6;
+              text-align:right; white-space:nowrap; background:#fff; min-width:74px; }
+  .sheet td.rh { background:#f8fafc; color:#94a3b8; font-size:10px; text-align:center;
+                 border-right:1px solid #cbd5e1; min-width:26px; }
+  .sheet td.seed { background:#eef2ff; color:#1e2a5a; font-weight:700; }
+  .sheet td.grip { position:relative; }
+  .sheet td.diff { background:#fff7ed; color:#9a3412; font-weight:700; }
+  .sheet td.dead { background:#fef2f2; color:#991b1b; font-weight:700; }
+  .sheet td.empty { color:#cbd5e1; }
+  #handle { position:absolute; right:-3px; bottom:-3px; width:7px; height:7px; background:#1d4ed8;
+            border:1px solid #fff; border-radius:1px; cursor:crosshair; }
+  #handle.on { transform:scale(1.6); }
+  .selbox { outline:2px solid #1d4ed8; outline-offset:-2px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid #e2e8f0; }
+  table.num td:first-child { text-align:left; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  input.seed { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px;
+               border:1px solid #cbd5e1; border-radius:8px; padding:6px 9px; width:100%; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <p class="text-xs font-bold tracking-widest text-indigo-700 mb-2">DESIGNFROMZERO · DAY 69</p>
+    <h1 class="text-xl md:text-2xl font-black leading-tight mb-4">
+      🧲 Fill handle — grab the little square, drag it down, get a series. Underneath the drag is
+      <strong>one straight line fitted through every selected cell</strong> and evaluated at the
+      next position, which is why <code>1, 2</code> becomes <code>3, 4, 5</code> — and why
+      <code>1, 2, 4</code> becomes <strong>5.33</strong> and not 6. That gap is the whole page: the
+      property every fill-handle test asserts — <em>an exact progression continues exactly</em> —
+      is satisfied by <strong>seven of seven</strong> implementations here on
+      <strong>100.0%</strong> of 12,000 clean cases, and so is the sharper property nobody writes
+      down — that filling three cells and then one more equals filling four at once, which holds on
+      <strong>100.0%</strong> of every fitted series across all four corpora. Both are blind. Feed
+      the same six wrong versions a column of <em>measured</em> numbers instead of a textbook
+      progression and the two everybody ships — step from the last two cells, step from the first
+      and last — both go wrong on <strong>99.3%</strong> of cases, and the last-two-cells one points
+      the trend in the <strong>opposite direction</strong> on <strong>33.4%</strong> of them
+      against <strong>12.0%</strong> for the other. <strong>3,642,926 assertions</strong> on load against an
+      independently written oracle and an exact BigInt rational fit. Pure vanilla JavaScript, one
+      file, no build step.
+    </h1>
+    <div class="flex gap-2 flex-wrap" id="tabs">
+      <button data-tab="look" class="tab-active px-5 py-2 rounded-lg font-semibold text-sm">🧲 TRY IT</button>
+      <button data-tab="understand" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🧠 UNDERSTAND</button>
+      <button data-tab="build" class="bg-slate-100 px-5 py-2 rounded-lg font-semibold text-sm">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="tab-panel">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-100">
+    <div class="max-w-6xl mx-auto space-y-5">
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-sm text-slate-600 mb-3">
+          <strong>Drag the blue square</strong> at the bottom-right of the selection. The first
+          column is the correct fill; the other six are one-clause variations, and any cell that
+          disagrees with column one is tinted. Edit the selected cells directly — comma separated —
+          or pick an example.
+        </p>
+        <div class="grid md:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-3 items-end mb-4 text-sm">
+          <label class="block">
+            <span class="text-xs font-bold tracking-wider text-slate-500">SELECTED CELLS</span>
+            <input id="seed" class="seed mt-1" spellcheck="false" />
+          </label>
+          <label>example <select id="preset" class="border rounded px-2 py-1 text-sm"></select></label>
+          <label>direction <select id="dir" class="border rounded px-2 py-1 text-sm">
+            <option value="1">fill down</option><option value="-1">fill up</option></select></label>
+          <label class="flex items-center gap-1 pb-1"><input type="checkbox" id="copy" /> copy, not series</label>
+        </div>
+
+        <div class="grid lg:grid-cols-[auto_minmax(0,1fr)] gap-6 items-start">
+          <div style="overflow:auto"><table class="sheet" id="sheet"></table></div>
+          <div>
+            <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">THIS SELECTION, MEASURED</p>
+            <table class="num w-full"><tbody id="live"></tbody></table>
+            <p class="text-xs text-slate-500 mt-4">
+              The fitted line is the one that minimises the squared distance to
+              <em>every selected cell</em>. If you only wanted the last two cells you would have
+              selected the last two cells — that is the entire specification, and it is what makes
+              the answer unique instead of a matter of taste.
+            </p>
+            <p id="assertline" class="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          THE TWO PROPERTIES EVERYBODY TESTS, ON 12,000 TEXTBOOK PROGRESSIONS</p>
+        <p class="text-sm text-slate-600 mb-3">
+          Every seed here is an exact arithmetic progression, so the continuation is known in
+          <strong>closed form</strong> before any code runs — no oracle needed, the generator picked
+          the step. This is the corpus a fill handle actually gets tested against, and it cannot
+          see a single one of the six defects.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>implementation</th><th>continues the progression</th>
+            <th>self-consistent when re-filled</th><th>disagrees with the oracle</th>
+            <th>mean error, next cell</th></tr></thead>
+          <tbody id="tClean"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          <strong>seven of seven</strong> pass both. <em>Self-consistent</em> is the stronger
+          test — fill three cells, add them to the selection, fill one more, and check it matches
+          the fourth cell of a single four-cell fill — and it is not luck that everything passes it:
+          adding points that already sit on the fitted line cannot move the fitted line, so the
+          property is a theorem for the correct version and an accident for the others.
+        </p>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          THE SAME seven, ON 12,000 COLUMNS OF MEASURED NUMBERS</p>
+        <p class="text-sm text-slate-600 mb-3">
+          A trend plus noise — the shape of every real column anyone has ever dragged a fill handle
+          down. Nothing about the implementations changed. The only thing that changed is that the
+          numbers no longer lie exactly on a line.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>implementation</th><th>disagrees with the oracle</th>
+            <th>mean error, next cell</th><th>worst</th><th>points the trend the wrong way</th>
+            <th>continues a clean progression</th></tr></thead>
+          <tbody id="tNoisy"></tbody>
+        </table>
+        <p class="text-xs text-slate-500 mt-3">
+          <em>Last two cells</em> is wrong on <strong>99.3%</strong> of these and
+          <em>first and last</em> on <strong>99.3%</strong> — and the last column is
+          unchanged from the table above, because a clean fixture still cannot see it. The
+          right-hand measurement is the one that should end the argument: on
+          <strong>33.4%</strong> of columns, stepping by the final gap moves the series in
+          the <em>opposite direction</em> to the fitted trend. Not imprecise — inverted.
+          <strong>80.5%</strong> of correct fills are not whole numbers, which is exactly the
+          result people report as a bug.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-5">
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">1, 2, 4 — THREE ANSWERS</p>
+          <pre id="art124" style="margin:0"></pre>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-5">
+          <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">FIVE MONTHS OF SALES</p>
+          <pre id="artFlip" style="margin:0"></pre>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          ONE CELL, 6,000 TIMES — WHERE THE MATHS STOPS AND A PRODUCT DECISION STARTS</p>
+        <p class="text-sm text-slate-600 mb-3">
+          A single selected cell has no slope in it. The fit returns zero, so a lone
+          <code>5</code> fills <code>5, 5, 5</code> — a copy. But a lone <code>Item 5</code> fills
+          <code>Item 6, Item 7</code>, and a lone date advances by a day. That asymmetry is not
+          derivable from anything; it is a decision, and it is invisible to every multi-cell test.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>implementation</th><th>disagrees with the oracle</th>
+            <th>cells wrong</th><th>continues a clean progression</th>
+            <th>self-consistent when re-filled</th></tr></thead>
+          <tbody id="tLone"></tbody>
+        </table>
+        <pre id="artLone" class="mt-4" style="margin-bottom:0"></pre>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          12,000 LABELS, MONTH NAMES AND WEEKDAYS — INCLUDING UPWARDS</p>
+        <p class="text-sm text-slate-600 mb-3">
+          The line fit is only half of a fill. The other half is putting the number back into
+          whatever the cell was: a counter with a prefix, a zero-padded frame number, a month name
+          that has to wrap. Three of the six defects live entirely in that half and cannot be seen
+          by any purely numeric test.
+        </p>
+        <table class="num w-full">
+          <thead><tr><th>implementation</th><th>disagrees with the oracle</th>
+            <th>cells wrong</th><th>dead cells</th><th>continues a clean progression</th></tr></thead>
+          <tbody id="tLabels"></tbody>
+        </table>
+        <pre id="artFmt" class="mt-4" style="margin-bottom:0"></pre>
+        <p class="text-xs text-slate-500 mt-3">
+          <em>First number in the text</em> is wrong on <strong>24.1%</strong>,
+          <em>padding dropped</em> on <strong>20.1%</strong>, and <em>raw
+          <code>%</code></em> on <strong>9.5%</strong> — the last one being the only defect
+          on this page that is loud, because a negative index into a twelve-element array is
+          <code>undefined</code> and the cell renders the word. Every other wrong answer here looks
+          like a plausible fill. This corpus is also where the only <em>unintended</em> defect
+          turned up — <strong>May</strong> is its own abbreviation, so as an anchor it silently
+          switched a run of full month names into abbreviations, and the oracle could not see it
+          because the oracle implements the same ambiguous rule. Re-filling caught it. The last two
+          exhibits below are the fix.
+        </p>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5">
+        <p class="text-xs font-bold tracking-wider text-slate-500 mb-3">
+          TWO ESTIMATORS THAT ARE THE SAME ESTIMATOR</p>
+        <p class="text-sm text-slate-600 mb-3">
+          <em>Step by the average of the gaps</em> and <em>step from the first cell to the last</em>
+          read like different ideas and are the same number, because the gaps telescope:
+          <code>&Sigma;(v&#8202;&#7522;&#8202;&minus;&#8202;v&#8202;&#7522;&#8331;&#8321;)&#8202;/&#8202;(n&minus;1)
+          = (v&#8202;&#8345;&#8331;&#8321;&#8202;&minus;&#8202;v&#8320;)&#8202;/&#8202;(n&minus;1)</code>.
+          One line of algebra, and then 200,000 random vectors to confirm nothing floating-point
+          sneaks in between them.
+        </p>
+        <table class="num w-full"><tbody id="tIdent"></tbody></table>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="understand" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">A fill is a line, not a step</h2>
+
+      <p>The fill handle looks like repetition. You select some cells, you drag, and more cells
+      appear that look like they belong. So the natural implementation is a <em>step</em>: work out
+      how much the value goes up by, then keep adding it.</p>
+
+      <p>That is not what the selection means. Selecting <code>n</code> cells and dragging says
+      <em>continue this</em>, and the cells are <code>n</code> observations of a value against a
+      position. Continuing them is fitting a line through all <code>n</code> and reading it off one
+      position further along:</p>
+
+      <pre>value(x) = intercept + slope &middot; x        // x = 0 .. n-1 are the selected cells
+fill k   = value(n + k)                 // dragging down
+fill k   = value(-1 - k)                // dragging up</pre>
+
+      <p>With two cells there is exactly one line through them, so the fit and the step agree, and
+      every test anyone writes uses two or three cells of a clean progression. With four noisy cells
+      there are infinitely many lines and only one that minimises the squared distance to all four —
+      and a step from the last two ignores the other two entirely.</p>
+
+      <h3 class="text-xl font-bold">1. The property everybody tests</h3>
+
+      <p>Search any spreadsheet clone for its fill tests and you will find this:</p>
+
+      <pre>expect(fill(['1','2'], 4)).toEqual(['3','4','5','6']);
+expect(fill(['5','10','15'], 2)).toEqual(['20','25']);</pre>
+
+      <p>It is a real property — <em>an exact arithmetic progression continues exactly</em> — and it
+      is satisfied by every implementation on this page, correct and broken alike, on
+      <strong>100.0%</strong> of 12,000 generated progressions. It has to be. On a seed that lies
+      exactly on a line, the last two cells, the first and last cells, the average of the gaps and
+      the least-squares fit all recover the <em>same</em> slope, because the residuals are zero and
+      there is nothing left for the estimators to disagree about.</p>
+
+      <div class="bg-amber-50 border-l-4 border-amber-500 p-4">
+        <p class="text-sm">This is the Day-68 lesson again in a different costume. There the
+        generated fixtures had no repeated lines, so two broken diffs scored a flat 0.0%. Here the
+        generated fixtures lie exactly on a line, so <em>six</em> broken fills score a flat 0.0%.
+        A fixture that is too tidy does not weaken a test suite a little — it can remove its ability
+        to distinguish the best answer from the worst one entirely.</p>
+      </div>
+
+      <h3 class="text-xl font-bold">2. And the stronger property that is also blind</h3>
+
+      <p>A better test exists, and it is worth knowing that it does not help either. Fill three
+      cells; append them to the selection; fill one more. It should equal the fourth cell of a
+      four-cell fill:</p>
+
+      <pre>fill(seed ++ fill(seed, 3), 1)[0] === fill(seed, 4)[3]</pre>
+
+      <p>For the least-squares fit this is a <strong>theorem</strong>, not a coincidence. The fitted
+      line is the unique line whose residuals satisfy <code>&Sigma;r = 0</code> and
+      <code>&Sigma;x&middot;r = 0</code>. The appended points have residual exactly zero by
+      construction, so both sums are unchanged, so the same line is still the minimiser. Every
+      shortcut estimator passes it too, for a duller reason: the appended points are spaced by the
+      shortcut's own step, so the shortcut recovers its own step. Measured over every fitted series
+      in all four corpora: <strong>100.0%</strong> of 6,570.</p>
+
+      <p>It does <em>not</em> hold on the copy path, and that is worth separating rather than
+      averaging away. When the selection is not extendable — mixed kinds, or plain text — a fill is
+      a cyclic repeat, and the length of the cycle <em>is</em> the selection. Grow the selection and
+      you have changed the cycle: <code>x, #42a</code> repeats to
+      <code>x, #42a, x, #42a</code>, but from the four-cell block the next cell is <code>x</code>
+      where the two-cell block said <code>#42a</code>. Measured: <strong>61.4%</strong> of copy-path
+      selections are self-consistent, for every implementation on this page including the correct
+      one. Nothing is broken — the property simply does not apply to repetition, and a headline
+      figure that mixes the two paths together hides that.</p>
+
+      <h3 class="text-xl font-bold">3. What actually separates them</h3>
+
+      <p>Real columns are noisy. Take five months of sales — <code>120, 138, 131, 149, 144</code> —
+      and ask for the sixth:</p>
+
+      <pre>least squares      slope +5.9   -&gt;  154.1     the line through all five points
+first and last     slope +6.0   -&gt;  150.0     ignores the middle three
+last two cells     slope -5.0   -&gt;  139.0     the series now goes DOWN</pre>
+
+      <p>The last row is the one to keep. Two numbers dipped at the end of an otherwise rising
+      column, and the fill inverted the direction of the whole series. Across 12,000 measured
+      columns that happens on <strong>33.4%</strong> of them. There is no error, no warning,
+      and the value it produces is perfectly plausible — it is only wrong.</p>
+
+      <p>The <code>1, 2, 4</code> case is the same phenomenon at its smallest. The fit gives
+      <strong>5.33</strong>, the endpoints give 5.5, the last gap gives 6. All three are defensible
+      in isolation; only one of them used all three cells you selected. And
+      <strong>80.5%</strong> of correct fills over integer data come out fractional, which is
+      the single most reported "bug" in this entire component and is not one.</p>
+
+      <h3 class="text-xl font-bold">4. One cell has no slope</h3>
+
+      <p>Fit a line to a single point and the slope is undefined — there is no spread in
+      <code>x</code> to divide by. The fit returns zero, and zero slope is a <em>copy</em>. So the
+      rule that a lone <code>5</code> fills <code>5, 5, 5</code> is not a special case bolted on: it
+      is what the maths says when the data cannot answer the question.</p>
+
+      <p>But a lone <code>Item 5</code> fills <code>Item 6, Item 7</code>, and a lone
+      <code>2026-01-05</code> advances a day at a time. Same absence of information, opposite
+      answer. That is a <strong>product decision</strong> — text with a counter and dates are
+      assumed to be sequences, bare numbers are assumed to be constants — and no amount of
+      measurement can derive it. It is worth stating out loud in a spec, because it is the one rule
+      here that a reviewer cannot check against anything.</p>
+
+      <h3 class="text-xl font-bold">5. The other half of the job: putting the number back</h3>
+
+      <p>The fit gives you a number. The cell wants whatever it held before. Three of the six
+      defects on this page live entirely in that translation and are unreachable from any numeric
+      test:</p>
+
+      <ul class="list-disc pl-6 space-y-2">
+        <li><strong>Which number moves.</strong> <code>Step 2 of 7</code> continues as
+        <code>Step 2 of 8</code>. The number that advances is the <em>trailing</em> run of digits,
+        which needs the regex <code>/^(.*\D)?(\d+)$/</code> — a greedy prefix forced to end on a
+        non-digit. Write <code>/(\d+)/</code> and you increment the first number instead:
+        <code>Step 3 of 7</code>, which is wrong and reads perfectly.</li>
+        <li><strong>Padding.</strong> <code>frame008</code> continues as <code>frame009</code>, not
+        <code>frame9</code>. The width comes from the anchor cell — the last cell when dragging
+        down, the first when dragging up — and only when the digits actually carry a leading
+        zero.</li>
+        <li><strong>Wrapping.</strong> A month list is a cycle of twelve, so the index needs a
+        floored modulo. <code>(-1) % 12</code> is <code>-1</code> in JavaScript,
+        <code>months[-1]</code> is <code>undefined</code>, and the cell renders the word
+        <code>undefined</code>. Dragging <em>up</em> from <code>Jan</code> is the whole test, and it
+        is the one direction nobody tries.</li>
+      </ul>
+
+      <p>Cycles also need a step, and a step across a wrap is ambiguous: from <code>Jan</code> to
+      <code>Dec</code> is either <code>+11</code> or <code>&minus;1</code>. This engine unwraps each
+      gap to the shorter way round, so <code>Jan, Dec</code> continues <code>Nov, Oct</code>. It is
+      a choice, it is stated, and the oracle implements the same choice by a completely different
+      route so that agreement means something.</p>
+
+      <h3 class="text-xl font-bold">5a. And a cycle has one cell that cannot say which list it is in</h3>
+
+      <p><strong>May</strong> is the only month whose abbreviation is its own full name. So a cell
+      containing <code>May</code> matches both lists, and if the shorter one wins — which it does,
+      because a three-letter match is tested first — then the <em>anchor</em> of the selection
+      decides the register for everything that follows. Fill down from
+      <code>February</code> and you get <code>March, April, May</code>; extend the selection to
+      include them and fill again, and the anchor is now <code>May</code>, so the next cell is
+      <code>Jun</code>. The series changes register half way down, and every value in it is a
+      correct month name.</p>
+
+      <p>The oracle could not find this, because the oracle implements the same specification and
+      agreed with the engine perfectly. The <em>self-consistency</em> property found it — the one
+      that separates no implementations at all is the one that caught a real ambiguity in the spec.
+      The fix is that the register belongs to the selection, not to the cell: when the anchor is
+      ambiguous, walk away from it to the first cell that can only be one of the two. So
+      <code>April, May</code> continues <code>June, July</code> and <code>May</code> on its own
+      continues <code>Jun, Jul</code> — both presets are in the dropdown on the first tab.</p>
+
+      <h3 class="text-xl font-bold">6. Two oracles, priced apart on purpose</h3>
+
+      <p>The clean corpus needs no oracle at all: the generator chose <code>a&#8320;</code> and the
+      step, so the answer at any position is <code>a&#8320; + step &middot; x</code> in
+      <code>O(1)</code>. That is what makes 12,000 cases free.</p>
+
+      <p>Everything else is checked against a reimplementation of the same specification that shares
+      no expression with the engine — the line comes from the raw normal equations solved by
+      Cramer's rule where the engine uses the centred deviation form, and a list index is advanced
+      by stepping one position at a time where the engine uses a modulo. On top of that sits an
+      <strong>exact</strong> check: for integer seeds the prediction is a rational number, so it can
+      be computed in <code>BigInt</code> with no rounding at all and compared against the
+      floating-point answer. Worst deviation observed over 4,000 seeds: <strong>9.5e-10</strong>.</p>
+
+      <p>And the genuinely expensive oracle stays bounded, which is the Day-66 lesson: confirming
+      that the fitted line is <em>the</em> minimiser by searching a lattice of nearby lines costs
+      hundreds of evaluations per case, so it runs on 40 seeds and the cheap definitional check —
+      residual orthogonality, two sums, <code>O(n)</code> — runs on all of them.</p>
+
+      <h3 class="text-xl font-bold">7. What this leaves out</h3>
+
+      <p>Real fill handles do more. A 2-D drag fills across columns as well as down, and dragging a
+      <em>formula</em> translates its relative references instead of fitting anything. Dates step by
+      month or by weekday if you ask, which is calendar arithmetic and not linear at all — the
+      31&nbsp;January problem has no correct answer, only conventions. Growth series fit a line to
+      the logarithm. Custom lists let you register <code>Q1..Q4</code> as a cycle, which is why
+      <code>Q1</code> here continues to <code>Q5</code>: without a registered list it is text with a
+      trailing number, and that is the right answer for the rules this page implements. And Flash
+      Fill is a different program entirely — program synthesis from examples, not extrapolation.</p>
+
+      <p>One more honest gap: this page specifies the least-squares fit and measures against that
+      specification. Which estimator your favourite spreadsheet ships is a separate question that
+      nothing here can settle. What <em>is</em> settled is that a fixture made of clean progressions
+      cannot tell any of these implementations apart, and that the two shortcuts diverge on real
+      data badly enough to reverse a trend.</p>
+
+    </div>
+  </div>
+</section>
+
+<section id="build" class="tab-panel hidden">
+  <div class="min-h-[calc(100vh-72px)] p-4 md:p-8 bg-slate-50">
+    <div class="max-w-3xl mx-auto space-y-6">
+
+      <h2 class="text-2xl font-black">🔨 How it is built</h2>
+
+      <h3 class="text-xl font-bold">1. Six pure functions and no DOM</h3>
+      <pre>classify(s)                      -&gt; {kind:'num'|'date'|'list'|'label'|'text', ...}
+analyze(src)                     -&gt; {kind, cls}         // the whole selection
+fitLine(v)                       -&gt; {slope, intercept}  // least squares
+fillSeries(src, count, dir, opt) -&gt; [{v, s, kind}]      // opt.bug injects one defect
+oracleFill(src, count, dir)      -&gt; [{v, s, kind}]      // the independent reimplementation
+exactPredict(v, x)               -&gt; {num, den}          // BigInt rational, no rounding</pre>
+      <p>Cells go in as strings and come out as <code>{v, s}</code> — a number when the kind is
+      numeric, otherwise <code>null</code> — so the fuzz compares numbers numerically with a
+      tolerance and text exactly, instead of comparing formatted strings and calling a rounding
+      difference a defect.</p>
+
+      <h3 class="text-xl font-bold">2. The fit, in the form that does not lose precision</h3>
+      <pre>function fitLine(v){
+  const n = v.length, mi = (n - 1) / 2;
+  let sv = 0; for (let i = 0; i &lt; n; i++) sv += v[i];
+  const mv = sv / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i &lt; n; i++){ const dx = i - mi; sxy += dx * (v[i] - mv); sxx += dx * dx; }
+  const slope = sxx &gt; 0 ? sxy / sxx : 0;          // n === 1 lands here: no slope exists
+  return { slope: slope, intercept: mv - slope * mi };
+}</pre>
+      <p>Centred deviations, not raw sums of squares — the raw form subtracts two large nearly-equal
+      numbers and loses digits. The oracle deliberately uses the raw form so the two disagree in the
+      last bits and nowhere else, which is the point of having an oracle.</p>
+
+      <h3 class="text-xl font-bold">3. Six defects, one clause each</h3>
+      <pre>last:   slope = v[n-1] - v[n-2]                 // ignore every earlier cell
+ends:   slope = (v[n-1] - v[0]) / (n - 1)      // ignore every middle cell
+lone:   n === 1 &amp;&amp; kind === 'num' ? step 1 : step 0
+lead:   /^(\D*)(\d+)([\s\S]*)$/                // the FIRST digit run, not the last
+nopad:  padStart(0)                            // width thrown away
+rawmod: arr[r % len]                           // -1 % 12 === -1</pre>
+      <p>All six are wrappers over the same <code>fillSeries</code> with a <code>bug</code> flag, so
+      nothing else can drift between them. The shortcut estimators are also given the most
+      favourable possible treatment — their line is anchored to pass exactly through the last
+      selected cell, which the least-squares line does not do.</p>
+
+      <h3 class="text-xl font-bold">4. Four corpora, because one cannot see anything</h3>
+      <pre>clean  12,000  exact integer progressions      -&gt; closed-form answer, O(1), no oracle
+noisy  12,000  trend + jitter, the real shape  -&gt; separates 'last' and 'ends'
+lone    6,000  one cell of each kind           -&gt; separates 'lone', nothing else can
+labels 12,000  padding, two numbers, cycles,
+               and 45% of drags going UP       -&gt; separates 'lead', 'nopad', 'rawmod'</pre>
+      <p>Not one of the six defects is visible in the first corpus, which is what a normal test file
+      is made of — keep only that one and all six ship. Each of the other three is the <em>only</em>
+      corpus that can see something: the trend shortcuts are silent until the numbers stop lying on
+      a line, the lone-cell rule cannot be reached by any multi-cell selection, and the three
+      formatting defects need padding, a second number in the string, and a cycle that wraps.</p>
+
+      <h3 class="text-xl font-bold">5. What the tests pin</h3>
+      <pre>// the correct core agrees with the independent oracle on every case of every corpus
+assert(stats.fit.disagree === 0);
+
+// and every broken one passes the property everybody writes
+assert(FILL_VARIANTS.every(v =&gt; clean.stats[v.key].contOk === clean.stats[v.key].contCases));
+assert(fit.selfFitOk === fit.selfFitN);             // theorem, on every FITTED series
+assert(fit.selfCopyOk &lt; fit.selfCopyN);            // and provably not on the copy path
+
+// the fit really is the minimiser - bounded, because it is the expensive one
+assert(orthogonality(sum_r, sum_xr) &lt; 1e-8);        // O(n), every case
+assert(noLatticeLineBeatsIt(41 x 41 grid));         // 40 cases only
+
+// the shortcuts are wrong on data that is not a textbook progression
+assert(noisy.stats.last.disagree &gt; 0.5 * noisy.cases);
+assert(noisy.stats.last.trendFlips &gt; 0);            // not merely imprecise - inverted
+
+// mean of the gaps IS first-to-last, so they may never disagree
+assert(identityStudy(200000).differ === 0);</pre>
+
+      <h3 class="text-xl font-bold">6. What contradicted the first draft</h3>
+      <p>Three things, and the third is the one worth having.</p>
+      <p>The plan had <em>average of the gaps</em> as a seventh, separately wrong implementation. It
+      is algebraically identical to <em>first and last</em>, so it became a measured identity instead
+      of a variant — 200,000 vectors, largest slope difference <strong>1.7e-13</strong>, zero
+      predictions apart by more than 1e-9.</p>
+      <p>The self-consistency test was written expecting it to be the property that
+      <em>separates</em> the implementations. It separates none of them, and the first draft went
+      further and claimed it passes everywhere. It does not: <strong>100.0%</strong> on every fitted
+      series and <strong>61.4%</strong> on the copy path, because a cyclic repeat has no such
+      property to begin with. Averaging the two into one number would have hidden a genuine
+      structural difference behind a plausible-looking 96%.</p>
+      <p>And that same useless property found the only real defect on this page that was not put
+      there on purpose. <code>May</code> is its own abbreviation, so it silently switched a series of
+      full month names into abbreviations at the boundary. The oracle agreed with the engine
+      throughout — both implemented the same ambiguous rule. Re-filling did not. The register is now
+      resolved per selection rather than per cell, and the four list self-consistency failures went
+      to zero.</p>
+
+      <h3 class="text-xl font-bold">🎉 DesignFromZero Day 69 shipped.</h3>
+      <p class="text-slate-600">Two cells cannot tell you which estimator you wrote, and two cells
+      is what everybody tests with.</p>
+
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".tab-panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => { x.classList.remove("tab-active"); x.classList.add("bg-slate-100"); });
+  t.classList.add("tab-active"); t.classList.remove("bg-slate-100");
+  panels.forEach(p => p.classList.add("hidden"));
+  document.getElementById(t.dataset.tab).classList.remove("hidden");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Fill handle / drag-to-fill. The whole engine is: fit ONE straight line through the selected
+// cells, evaluate it at the next position, and format the number back into whatever kind of thing
+// the cell held. Beside it sit six one-clause variations, every one of which continues 1,2,3,4
+// perfectly. No DOM below this line; everything here is pure and fuzzable under node.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const floorMod = (x, n) => ((x % n) + n) % n;
+
+// ---------------------------------------------------------------- built-in cyclic lists
+const LISTS = [
+  { id:'month',
+    abbr:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+    full:['January','February','March','April','May','June','July','August','September',
+          'October','November','December'] },
+  { id:'day',
+    abbr:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+    full:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] }
+];
+function listOf(id){ for (const L of LISTS) if (L.id === id) return L; return null; }
+
+function caseOf(s){
+  if (s === s.toUpperCase() && s !== s.toLowerCase()) return 'upper';
+  if (s === s.toLowerCase() && s !== s.toUpperCase()) return 'lower';
+  return 'title';
+}
+function applyCase(s, c){
+  if (c === 'upper') return s.toUpperCase();
+  if (c === 'lower') return s.toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// ---------------------------------------------------------------- dates as day numbers
+const DAY_MS = 86400000;
+function dayNum(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(t);
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return null;
+  return Math.round(t / DAY_MS);
+}
+function dayStr(n){
+  const d = new Date(n * DAY_MS);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+
+// ---------------------------------------------------------------- what is in a cell
+// Order matters: a date also ends in digits, and "007" is a padded label rather than the number 7,
+// so the numeric test refuses a leading zero. The TRAILING digit run is the one that moves, which
+// is what the greedy-prefix-ending-on-a-non-digit pattern buys.
+const NUMRE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+const TAILRE = /^(.*\D)?(\d+)$/;
+
+function classify(s){
+  const dn = dayNum(s);
+  if (dn !== null) return { kind:'date', raw:s, num:dn };
+  if (NUMRE.test(s)) return { kind:'num', raw:s, num:parseFloat(s) };
+  for (const L of LISTS)
+    for (const form of ['abbr', 'full']){
+      const arr = L[form];
+      for (let i = 0; i < arr.length; i++)
+        if (arr[i].toLowerCase() === s.toLowerCase())
+          // "May" is the one month whose abbreviation IS its full name, so on its own that cell
+          // cannot say which register the series is written in. Flag it rather than guess.
+          return { kind:'list', raw:s, listId:L.id, form:form, idx:i, cas:caseOf(s),
+                   ambig: L.abbr[i].toLowerCase() === L.full[i].toLowerCase() };
+    }
+  const m = TAILRE.exec(s);
+  if (m){
+    const d = m[2];
+    return { kind:'label', raw:s, prefix: m[1] === undefined ? '' : m[1],
+             num: parseInt(d, 10), pad: (d.length > 1 && d.charAt(0) === '0') ? d.length : 0 };
+  }
+  return { kind:'text', raw:s };
+}
+
+function analyze(src){
+  const cls = src.map(classify);
+  const all = k => cls.every(c => c.kind === k);
+  if (all('num'))  return { kind:'num',  cls:cls };
+  if (all('date')) return { kind:'date', cls:cls };
+  if (all('list') && cls.every(c => c.listId === cls[0].listId))
+    return { kind:'list', cls:cls, listId:cls[0].listId };
+  if (all('label') && cls.every(c => c.prefix === cls[0].prefix))
+    return { kind:'label', cls:cls };
+  return { kind:'copy', cls:cls };                        // mixed, or plain text
+}
+
+// A step across a cycle is ambiguous - Jan to Dec is +11 or -1 - so each gap is unwrapped to the
+// shorter way round and the fit runs on the unwrapped sequence.
+function unwrap(idxs, len){
+  const u = [idxs[0]];
+  for (let i = 1; i < idxs.length; i++){
+    let d = floorMod(idxs[i] - idxs[i - 1], len);
+    if (2 * d > len) d -= len;
+    u.push(u[i - 1] + d);
+  }
+  return u;
+}
+
+// ---------------------------------------------------------------- the line
+function fitLine(v){
+  const n = v.length, mi = (n - 1) / 2;
+  let sv = 0;
+  for (let i = 0; i < n; i++) sv += v[i];
+  const mv = sv / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++){ const dx = i - mi; sxy += dx * (v[i] - mv); sxx += dx * dx; }
+  const slope = sxx > 0 ? sxy / sxx : 0;
+  return { slope: slope, intercept: mv - slope * mi };
+}
+const slopeLast    = v => v.length >= 2 ? v[v.length - 1] - v[v.length - 2] : 0;
+const slopeEnds    = v => v.length >= 2 ? (v[v.length - 1] - v[0]) / (v.length - 1) : 0;
+function slopeAvgGaps(v){
+  if (v.length < 2) return 0;
+  let s = 0;
+  for (let i = 1; i < v.length; i++) s += v[i] - v[i - 1];
+  return s / (v.length - 1);
+}
+// The shortcuts get the friendliest possible line: anchored so it passes exactly through the last
+// selected cell, which the least-squares line does not do.
+function fitWith(v, mode){
+  if (mode === 'fit') return fitLine(v);
+  const sl = mode === 'last' ? slopeLast(v) : mode === 'ends' ? slopeEnds(v) : slopeAvgGaps(v);
+  return { slope: sl, intercept: v[v.length - 1] - sl * (v.length - 1) };
+}
+
+function numText(x){
+  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  let t = x.toFixed(10).replace(/0+$/, '');
+  if (t.charAt(t.length - 1) === '.') t = t.slice(0, -1);
+  return t;
+}
+
+// ---------------------------------------------------------------- the fill
+function cyclic(src, count, dir){
+  const n = src.length, out = [];
+  for (let k = 0; k < count; k++){
+    const j = dir > 0 ? floorMod(k, n) : floorMod(n - 1 - k, n);
+    out.push({ v:null, s:src[j], kind:'copy' });
+  }
+  return out;
+}
+
+function fillSeries(src, count, dir, opts){
+  opts = opts || {};
+  const bug = opts.bug || '';
+  const n = src.length;
+  if (!n || count <= 0) return [];
+  if (opts.copy) return cyclic(src, count, dir);
+
+  const A = analyze(src);
+  if (A.kind === 'copy') return cyclic(src, count, dir);
+
+  // The leading-number defect changes the PARSE, so it is resolved before anything else.
+  let lead = null;
+  if (bug === 'lead' && A.kind === 'label'){
+    const P = src.map(function(s){
+      const m = /^(\D*)(\d+)([\s\S]*)$/.exec(s);
+      return m ? { pre:m[1], num:parseInt(m[2], 10), post:m[3],
+                   pad:(m[2].length > 1 && m[2].charAt(0) === '0') ? m[2].length : 0 } : null;
+    });
+    if (P.every(p => p) && P.every(p => p.pre === P[0].pre && p.post === P[0].post)) lead = P;
+    else return cyclic(src, count, dir);
+  }
+
+  const L = A.kind === 'list' ? listOf(A.listId) : null;
+  const series = lead ? lead.map(p => p.num)
+               : A.kind === 'list' ? unwrap(A.cls.map(c => c.idx), L.abbr.length)
+               : A.cls.map(c => c.num);
+
+  let f;
+  if (n === 1){
+    // No slope is measurable from one point. Numbers get zero - a copy - because that is what the
+    // fit returns with no spread in x. Everything else gets one, which is a product decision.
+    const st = (A.kind === 'num') ? (bug === 'lone' ? 1 : 0) : 1;
+    f = { slope: st, intercept: series[0] };
+  } else {
+    f = fitWith(series, bug === 'last' ? 'last' : bug === 'ends' ? 'ends' : 'fit');
+  }
+
+  const anc = dir > 0 ? A.cls[n - 1] : A.cls[0];
+  // An ambiguous anchor would silently switch the series between full names and abbreviations
+  // half way down, so the register is resolved for the SELECTION, not for the cell: walk away from
+  // the anchor to the first cell that can only be one of the two.
+  let form = anc.form;
+  if (A.kind === 'list' && anc.ambig){
+    const step = dir > 0 ? -1 : 1;
+    for (let i = (dir > 0 ? n - 1 : 0); i >= 0 && i < n; i += step)
+      if (!A.cls[i].ambig){ form = A.cls[i].form; break; }
+  }
+  const ancLead = lead ? (dir > 0 ? lead[n - 1] : lead[0]) : null;
+  const pad = bug === 'nopad' ? 0 : (ancLead ? ancLead.pad : (anc.pad || 0));
+
+  const out = [];
+  for (let k = 0; k < count; k++){
+    const x = dir > 0 ? n + k : -1 - k;
+    const y = f.intercept + f.slope * x;
+    if (A.kind === 'num'){ out.push({ v:y, s:numText(y), kind:'num' }); continue; }
+    const r = Math.floor(y + 0.5 + 1e-9);
+    if (A.kind === 'date'){ out.push({ v:null, s:dayStr(r), kind:'date' }); continue; }
+    if (A.kind === 'list'){
+      const arr = L[form], len = arr.length;
+      const i = bug === 'rawmod' ? (r % len) : floorMod(r, len);
+      out.push({ v:null, s: arr[i] === undefined ? 'undefined' : applyCase(arr[i], anc.cas),
+                 kind:'list' });
+      continue;
+    }
+    const m = Math.max(0, r);
+    const digits = String(m).padStart(pad, '0');
+    out.push({ v:null, s: ancLead ? ancLead.pre + digits + ancLead.post : anc.prefix + digits,
+               kind:'label' });
+  }
+  return out;
+}
+
+const FILL_VARIANTS = [
+  { key:'fit',    label:'trend line (least squares)', short:'trend line',   bug:'' },
+  { key:'last',   label:'step from the last two cells', short:'last two',   bug:'last' },
+  { key:'ends',   label:'step from the first and last cell', short:'first+last', bug:'ends' },
+  { key:'lone',   label:'a lone number steps by one', short:'lone +1',      bug:'lone' },
+  { key:'lead',   label:'the first number in the text moves', short:'first number', bug:'lead' },
+  { key:'nopad',  label:'zero padding dropped',       short:'no padding',   bug:'nopad' },
+  { key:'rawmod', label:'raw % for the list wrap',    short:'raw %',        bug:'rawmod' }
+];
+FILL_VARIANTS.forEach(function(v){
+  v.fn = function(src, count, dir, copy){
+    return fillSeries(src, count, dir, { bug: v.bug, copy: !!copy });
+  };
+});
+
+// ================================================================ INDEPENDENT ORACLE
+// Written from the specification, not from the engine above: the line comes from the raw normal
+// equations solved with Cramer's rule where the engine uses the centred deviation form, the cell
+// kind is decided by a different set of tests, a cycle step is normalised with a while-loop, and a
+// list index is advanced by walking one position at a time instead of a modulo. Same spec, no
+// shared expression.
+function oListArr(name, form){
+  const L = name === 'month' ? LISTS[0] : LISTS[1];
+  return form === 'abbr' ? L.abbr : L.full;
+}
+function oCaseOf(s){
+  if (s !== s.toLowerCase() && s === s.toUpperCase()) return 'upper';
+  if (s !== s.toUpperCase() && s === s.toLowerCase()) return 'lower';
+  return 'title';
+}
+function oCase(s, c){
+  if (c === 'upper') return s.toUpperCase();
+  if (c === 'lower') return s.toLowerCase();
+  return s.substring(0, 1).toUpperCase() + s.substring(1).toLowerCase();
+}
+function oKind(s){
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s)){
+    const p = s.split('-');
+    const t = Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (new Date(t).toISOString().substring(0, 10) === s) return { k:'date', n: t / 86400000 };
+  }
+  if (/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(s)) return { k:'num', n: Number(s) };
+  const lo = s.toLowerCase();
+  const names = ['month', 'day'], forms = ['abbr', 'full'];
+  for (let a = 0; a < names.length; a++)
+    for (let b = 0; b < forms.length; b++){
+      const arr = oListArr(names[a], forms[b]);
+      for (let i = 0; i < arr.length; i++)
+        if (arr[i].toLowerCase() === lo)
+          return { k:'list', list:names[a], form:forms[b], i:i, cas:oCaseOf(s),
+                   amb: oListArr(names[a], 'abbr')[i].toLowerCase() ===
+                        oListArr(names[a], 'full')[i].toLowerCase() };
+    }
+  const q = /^([\s\S]*[^0-9])?([0-9]+)$/.exec(s);
+  if (q){
+    const d = q[2];
+    return { k:'label', pre: q[1] === undefined ? '' : q[1], n: parseInt(d, 10),
+             pad: (d.length > 1 && d.substring(0, 1) === '0') ? d.length : 0 };
+  }
+  return { k:'text' };
+}
+function oracleFill(src, count, dir){
+  const n = src.length, out = [];
+  if (!n || count <= 0) return out;
+  const K = src.map(oKind), k0 = K[0].k;
+  let group = K.every(z => z.k === k0) && k0 !== 'text';
+  if (group && k0 === 'list')  group = K.every(z => z.list === K[0].list);
+  if (group && k0 === 'label') group = K.every(z => z.pre === K[0].pre);
+  if (!group){
+    for (let c = 0; c < count; c++){
+      const p = dir > 0 ? n + c : -1 - c;
+      let j = p % n;
+      while (j < 0) j += n;
+      out.push({ v:null, s:src[j], kind:'copy' });
+    }
+    return out;
+  }
+
+  let seq;
+  if (k0 === 'list'){
+    const len = oListArr(K[0].list, 'abbr').length;
+    seq = [K[0].i];
+    for (let t = 1; t < n; t++){
+      let step = K[t].i - K[t - 1].i;
+      while (step < 0) step += len;
+      if (2 * step > len) step -= len;
+      seq.push(seq[t - 1] + step);
+    }
+  } else seq = K.map(z => z.n);
+
+  let A, B;                                             // value(p) = A + B*p
+  if (n === 1){ B = (k0 === 'num') ? 0 : 1; A = seq[0]; }
+  else {
+    let Si = 0, Sv = 0, Siv = 0, Sii = 0;
+    for (let i = 0; i < n; i++){ Si += i; Sv += seq[i]; Siv += i * seq[i]; Sii += i * i; }
+    const D = n * Sii - Si * Si;
+    A = (Sv * Sii - Si * Siv) / D;
+    B = (n * Siv - Si * Sv) / D;
+  }
+
+  const a = dir > 0 ? K[n - 1] : K[0];
+  // the register of an ambiguous anchor is taken from the selection, nearest cell first
+  let aform = a.form;
+  if (k0 === 'list' && a.amb){
+    const order = [];
+    for (let i = 0; i < n; i++) order.push(dir > 0 ? n - 1 - i : i);
+    for (const i of order) if (!K[i].amb){ aform = K[i].form; break; }
+  }
+  for (let c = 0; c < count; c++){
+    const p = dir > 0 ? n + c : -1 - c;
+    const y = A + B * p;
+    if (k0 === 'num'){ out.push({ v:y, s:numText(y), kind:'num' }); continue; }
+    const r = Math.round(y + 1e-9);
+    if (k0 === 'date'){
+      out.push({ v:null, s: new Date(r * 86400000).toISOString().substring(0, 10), kind:'date' });
+      continue;
+    }
+    if (k0 === 'list'){
+      const arr = oListArr(a.list, aform), len = arr.length;
+      let idx = 0;
+      const sgn = r < 0 ? -1 : 1;
+      for (let t = 0; t < Math.abs(r); t++){
+        idx += sgn;
+        if (idx === len) idx = 0;
+        if (idx === -1) idx = len - 1;
+      }
+      out.push({ v:null, s:oCase(arr[idx], a.cas), kind:'list' });
+      continue;
+    }
+    let num = r < 0 ? 0 : r, t = String(num);
+    while (t.length < a.pad) t = '0' + t;
+    out.push({ v:null, s:a.pre + t, kind:'label' });
+  }
+  return out;
+}
+
+// Exact rational least-squares prediction in BigInt: no rounding anywhere, so the floating-point
+// answer can be held to account rather than compared against another float pipeline.
+function exactPredict(v, x){
+  const n = BigInt(v.length);
+  let Si = 0n, Sv = 0n, Siv = 0n, Sii = 0n;
+  for (let i = 0; i < v.length; i++){
+    const bi = BigInt(i), bv = BigInt(v[i]);
+    Si += bi; Sv += bv; Siv += bi * bv; Sii += bi * bi;
+  }
+  const D = n * Sii - Si * Si;
+  const A = Sv * Sii - Si * Siv;
+  const B = n * Siv - Si * Sv;
+  return { num: A + B * BigInt(x), den: D };
+}
+
+// ---------------------------------------------------------------- comparison helpers
+function cellSame(a, b){
+  if (!a || !b) return false;
+  if (a.v !== null && b.v !== null) return Math.abs(a.v - b.v) <= 1e-7 * (1 + Math.abs(a.v));
+  if (a.v !== null || b.v !== null) return false;
+  return a.s === b.s;
+}
+function cellDelta(a, b){
+  if (a && b && a.v !== null && b.v !== null) return Math.abs(a.v - b.v);
+  return cellSame(a, b) ? 0 : 1;
+}
+// Fill three, append them to the selection, fill one more: it must equal the fourth cell of a
+// four-cell fill. A theorem for the least-squares line, an accident for the shortcuts.
+function selfConsistent(fn, src, dir, copy){
+  const four = fn(src, 4, dir, copy), three = fn(src, 3, dir, copy);
+  const grown = three.map(o => o.s);
+  const ext = dir > 0 ? src.concat(grown) : grown.slice().reverse().concat(src);
+  const one = fn(ext, 1, dir, copy);
+  return cellSame(one[0], four[3]);
+}
+
+// ---------------------------------------------------------------- corpora
+const GEN = {
+  // Exact integer progressions: the continuation is known in closed form before any code runs.
+  clean: function(rnd){
+    const n = 2 + Math.floor(rnd() * 5);
+    let step = Math.floor(rnd() * 19) - 9;
+    if (step === 0) step = 3;
+    const a0 = Math.floor(rnd() * 200) - 100, src = [];
+    for (let i = 0; i < n; i++) src.push(String(a0 + i * step));
+    return { src:src, dir: rnd() < 0.3 ? -1 : 1, count: 2 + Math.floor(rnd() * 6),
+             exact:{ a0:a0, step:step, n:n } };
+  },
+  // A trend plus noise - the shape of every column anyone has ever dragged a fill handle down.
+  noisy: function(rnd){
+    const n = 3 + Math.floor(rnd() * 6);
+    const a0 = 60 + Math.floor(rnd() * 140), slope = Math.floor(rnd() * 21) - 10;
+    const amp = 2 + Math.floor(rnd() * 13), src = [];
+    for (let i = 0; i < n; i++)
+      src.push(String(a0 + slope * i + Math.round((rnd() * 2 - 1) * amp)));
+    return { src:src, dir: rnd() < 0.3 ? -1 : 1, count: 2 + Math.floor(rnd() * 6), exact:null };
+  },
+  // One cell of each kind. The only corpus that can see what a lone cell means.
+  lone: function(rnd){
+    const r = rnd();
+    let s;
+    if (r < 0.30) s = String(Math.floor(rnd() * 500) - 100);
+    else if (r < 0.50) s = ['Item ', 'Task ', 'Room ', 'v'][Math.floor(rnd() * 4)] +
+                           (1 + Math.floor(rnd() * 40));
+    else if (r < 0.65) s = 'frame' + String(1 + Math.floor(rnd() * 90))
+                             .padStart(2 + Math.floor(rnd() * 3), '0');
+    else if (r < 0.80) s = 'Step ' + (1 + Math.floor(rnd() * 8)) + ' of ' +
+                           (2 + Math.floor(rnd() * 9));
+    else if (r < 0.90){
+      const L = LISTS[Math.floor(rnd() * LISTS.length)], form = rnd() < 0.5 ? 'abbr' : 'full';
+      s = L[form][Math.floor(rnd() * L[form].length)];
+      if (rnd() < 0.3) s = s.toUpperCase();
+    } else s = '2026-' + String(1 + Math.floor(rnd() * 12)).padStart(2, '0') + '-' +
+                          String(1 + Math.floor(rnd() * 28)).padStart(2, '0');
+    return { src:[s], dir: rnd() < 0.35 ? -1 : 1, count: 2 + Math.floor(rnd() * 6), exact:null };
+  },
+  // Padding, two numbers in one string, cycles, and 45% of drags going UP.
+  labels: function(rnd){
+    const r = rnd(), n = 1 + Math.floor(rnd() * 4);
+    const dir = rnd() < 0.45 ? -1 : 1, count = 2 + Math.floor(rnd() * 7), src = [];
+    if (r < 0.28){
+      const w = 2 + Math.floor(rnd() * 3), st = 1 + Math.floor(rnd() * 3);
+      const a0 = Math.floor(rnd() * 40);
+      const pre = ['File ', 'INV-', 'doc_', 'frame'][Math.floor(rnd() * 4)];
+      for (let i = 0; i < n; i++) src.push(pre + String(a0 + i * st).padStart(w, '0'));
+    } else if (r < 0.52){
+      const a = 1 + Math.floor(rnd() * 9), b0 = 1 + Math.floor(rnd() * 20);
+      const st = 1 + Math.floor(rnd() * 2), shape = Math.floor(rnd() * 3);
+      for (let i = 0; i < n; i++){
+        const b = b0 + i * st;
+        src.push(shape === 0 ? 'Sprint ' + a + ' task ' + b
+               : shape === 1 ? 'Q' + a + ' week ' + b
+                             : 'Step ' + a + ' of ' + b);
+      }
+    } else if (r < 0.80){
+      const L = LISTS[Math.floor(rnd() * LISTS.length)];
+      const form = rnd() < 0.5 ? 'abbr' : 'full', arr = L[form], len = arr.length;
+      const i0 = Math.floor(rnd() * len);
+      let st = Math.floor(rnd() * 5) - 2;
+      if (st === 0) st = 1;
+      const q = rnd(), cas = q < 0.2 ? 'upper' : q < 0.3 ? 'lower' : 'title';
+      for (let i = 0; i < n; i++) src.push(applyCase(arr[floorMod(i0 + i * st, len)], cas));
+    } else {
+      const bag = ['alpha', 'beta', 'TODO', 'n/a', '#42a', 'Item 3 of', 'x'];
+      for (let i = 0; i < n; i++) src.push(bag[Math.floor(rnd() * bag.length)]);
+    }
+    return { src:src, dir:dir, count:count, exact:null };
+  }
+};
+
+function fuzzCorpus(kind, trials, seed){
+  const rnd = mulberry32(seed), stats = {};
+  FILL_VARIANTS.forEach(function(v){
+    stats[v.key] = { cases:0, disagree:0, values:0, wrongValues:0, worst:0, err:0, errN:0,
+                     contCases:0, contOk:0, selfCases:0, selfOk:0, flips:0, flipN:0, dead:0,
+                     malformed:0, selfCopyN:0, selfCopyOk:0, selfFitN:0, selfFitOk:0 };
+  });
+  let asserts = 0, nonInt = 0, numCases = 0, oracleCells = 0;
+  for (let t = 0; t < trials; t++){
+    const g = GEN[kind](rnd);
+    const want = oracleFill(g.src, g.count, g.dir);
+    oracleCells += want.length;
+    const lastSeed = parseFloat(g.src[g.dir > 0 ? g.src.length - 1 : 0]);
+    if (want.length && want[0].v !== null){
+      numCases++;
+      if (Math.abs(want[0].v - Math.round(want[0].v)) > 1e-9) nonInt++;
+    }
+    const doSelf = (t % 6) === 0;                       // three extra fills each, so bounded
+    const isCopy = doSelf ? analyze(g.src).kind === 'copy' : false;
+    for (const v of FILL_VARIANTS){
+      const got = v.fn(g.src, g.count, g.dir), s = stats[v.key];
+      s.cases++;
+      let bad = 0;
+      asserts++;
+      if (got.length !== g.count) s.malformed++;
+      for (let k = 0; k < g.count; k++){
+        asserts += 2; s.values++;
+        // structural: every cell must exist, carry a string, and be finite when it is numeric
+        const o = got[k];
+        if (!o || typeof o.s !== 'string' || !o.s.length ||
+            (o.v !== null && !isFinite(o.v))) s.malformed++;
+        const d = cellDelta(want[k], got[k]);
+        if (!cellSame(want[k], got[k])){
+          bad++; s.wrongValues++;
+          if (d > s.worst) s.worst = d;
+        }
+        if (got[k] && got[k].s === 'undefined') s.dead++;
+      }
+      if (bad) s.disagree++;
+      if (want.length && want[0].v !== null && got.length && got[0].v !== null){
+        s.err += Math.abs(want[0].v - got[0].v); s.errN++;
+        const a = want[0].v - lastSeed, b = got[0].v - lastSeed;
+        if (Math.abs(a) > 1e-9 && Math.abs(b) > 1e-9){
+          s.flipN++;
+          if ((a > 0) !== (b > 0)) s.flips++;
+        }
+      }
+      if (g.exact){
+        s.contCases++; asserts++;
+        let okc = true;
+        for (let k = 0; k < g.count; k++){
+          const x = g.dir > 0 ? g.exact.n + k : -1 - k;
+          const truth = g.exact.a0 + g.exact.step * x;
+          if (!got[k] || got[k].v === null || Math.abs(got[k].v - truth) > 1e-9) okc = false;
+        }
+        if (okc) s.contOk++;
+      }
+      if (doSelf){
+        s.selfCases++; asserts++;
+        const sc = selfConsistent(v.fn, g.src, g.dir);
+        if (sc) s.selfOk++;
+        // the theorem covers the FITTED line. a cyclic copy has no such property, because the
+        // cycle length is part of the selection - so growing the selection redefines it.
+        if (isCopy){ s.selfCopyN++; if (sc) s.selfCopyOk++; }
+        else { s.selfFitN++; if (sc) s.selfFitOk++; }
+      }
+    }
+  }
+  return { trials:trials, asserts:asserts, stats:stats, nonInt:nonInt, numCases:numCases,
+           oracleCells:oracleCells };
+}
+
+// Two estimators that look different and are the same one, because the gaps telescope.
+function identityStudy(trials, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, differ = 0, worst = 0;
+  for (let t = 0; t < trials; t++){
+    const n = 2 + Math.floor(rnd() * 7), v = [];
+    for (let i = 0; i < n; i++) v.push(Math.round((rnd() * 2 - 1) * 5000) / 7);
+    const a = slopeEnds(v), b = slopeAvgGaps(v), d = Math.abs(a - b);
+    if (d > worst) worst = d;
+    asserts++;
+    if (Math.abs(a * (n + 3) - b * (n + 3)) > 1e-9) differ++;
+    asserts++;
+  }
+  return { trials:trials, asserts:asserts, differ:differ, worst:worst };
+}
+
+// The fit really is the minimiser. Residual orthogonality is O(n) so it runs on everything; the
+// lattice search is the expensive one and stays deliberately bounded.
+function optimalityStudy(trials, gridTrials, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, worse = 0, orthBad = 0, beaten = 0, gridPoints = 0;
+  for (let t = 0; t < trials; t++){
+    const n = 3 + Math.floor(rnd() * 6), v = [];
+    for (let i = 0; i < n; i++) v.push(Math.round(rnd() * 60) - 30);
+    const f = fitLine(v);
+    const sse = function(sl, ic){
+      let e = 0;
+      for (let i = 0; i < n; i++){ const r = v[i] - (ic + sl * i); e += r * r; }
+      return e;
+    };
+    const base = sse(f.slope, f.intercept);
+    for (const ds of [-0.05, 0, 0.05])
+      for (const dc of [-0.05, 0, 0.05]){
+        if (ds === 0 && dc === 0) continue;
+        asserts++;
+        if (sse(f.slope + ds, f.intercept + dc) < base - 1e-12) worse++;
+      }
+    let s0 = 0, s1 = 0;
+    for (let i = 0; i < n; i++){ const r = v[i] - (f.intercept + f.slope * i); s0 += r; s1 += i * r; }
+    asserts += 2;
+    if (Math.abs(s0) > 1e-8 * n || Math.abs(s1) > 1e-8 * n * n) orthBad++;
+    if (t < gridTrials)
+      for (let i = -20; i <= 20; i++)
+        for (let j = -20; j <= 20; j++){
+          if (i === 0 && j === 0) continue;
+          asserts++; gridPoints++;
+          if (sse(f.slope + i * 0.25, f.intercept + j * 0.25) < base - 1e-9) beaten++;
+        }
+  }
+  return { trials:trials, asserts:asserts, worse:worse, orthBad:orthBad, beaten:beaten,
+           gridPoints:gridPoints };
+}
+
+// The float pipeline against exact rational arithmetic.
+function exactStudy(trials, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, bad = 0, worst = 0;
+  for (let t = 0; t < trials; t++){
+    const n = 2 + Math.floor(rnd() * 7), v = [];
+    for (let i = 0; i < n; i++) v.push(Math.floor(rnd() * 400) - 200);
+    const f = fitLine(v);
+    for (let x = n; x < n + 4; x++){
+      const got = f.intercept + f.slope * x, e = exactPredict(v, x);
+      const want = Number(e.num * 1000000000n / e.den) / 1e9;   // exact to the check's resolution
+      const d = Math.abs(got - want);
+      if (d > worst) worst = d;
+      asserts++;
+      if (d > 5e-9 * (1 + Math.abs(want))) bad++;
+    }
+  }
+  return { trials:trials, asserts:asserts, bad:bad, worst:worst };
+}
+
+// ---------------------------------------------------------------- exhibits
+const PRESETS = {
+  '124':      { src:['1', '2', '4'],                                  dir:1,  count:6 },
+  'progress': { src:['1', '2'],                                       dir:1,  count:8 },
+  'sales':    { src:['120', '138', '131', '149', '144'],              dir:1,  count:5 },
+  'lone':     { src:['5'],                                            dir:1,  count:5 },
+  'loneitem': { src:['Item 5'],                                       dir:1,  count:5 },
+  'padded':   { src:['frame008'],                                     dir:1,  count:6 },
+  'stepof':   { src:['Step 2 of 7'],                                  dir:1,  count:5 },
+  'monthsup': { src:['Jan'],                                          dir:-1, count:5 },
+  'monthsdn': { src:['Mar', 'Feb'],                                   dir:1,  count:6 },
+  'may':      { src:['April', 'May'],                                 dir:1,  count:5 },
+  'mayalone': { src:['May'],                                          dir:1,  count:5 },
+  'weekdays': { src:['MON', 'WED'],                                   dir:1,  count:6 },
+  'date':     { src:['2026-01-05'],                                   dir:1,  count:5 },
+  'mixed':    { src:['alpha', '7', 'Jan'],                            dir:1,  count:5 }
+};
+const PRESET_LABELS = {
+  '124':'1, 2, 4', 'progress':'1, 2', 'sales':'five months of sales', 'lone':'a lone 5',
+  'loneitem':'a lone Item 5', 'padded':'frame008', 'stepof':'Step 2 of 7',
+  'monthsup':'Jan, dragged UP', 'monthsdn':'Mar, Feb', 'weekdays':'MON, WED',
+  'may':'April, May', 'mayalone':'May on its own',
+  'date':'a lone date', 'mixed':'nothing extendable'
+};
+
+function variantTable(src, count, dir){
+  const rows = FILL_VARIANTS.map(function(v){
+    return { key:v.key, label:v.label, cells:v.fn(src, count, dir).map(o => o.s) };
+  });
+  const want = oracleFill(src, count, dir).map(o => o.s);
+  return { rows:rows, want:want };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators, not toLocaleString - the page quotes these figures in its own prose and
+// "3,441,552" must not become "34,41,552" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const dispNum = x => Math.abs(x - Math.round(x)) < 1e-9 ? String(Math.round(x)) : x.toFixed(2);
+
+$("preset").innerHTML = Object.keys(PRESETS)
+  .map(k => "<option value='" + k + "'>" + PRESET_LABELS[k] + "</option>").join("");
+
+let SRC = PRESETS['124'].src.slice(), COUNT = PRESETS['124'].count;
+const MAXFILL = 22;
+
+function readSeed(){
+  const parts = $("seed").value.split(",").map(s => s.trim()).filter(s => s.length);
+  SRC = parts.length ? parts : ['1'];
+}
+function writeSeed(){ $("seed").value = SRC.join(", "); }
+
+function cellText(o){
+  if (!o) return "";
+  return o.v !== null ? dispNum(o.v) : o.s;
+}
+
+function paint(){
+  const dir = +$("dir").value, copy = $("copy").checked;
+  const results = FILL_VARIANTS.map(v => v.fn(SRC, COUNT, dir, copy));
+  const want = copy ? results[0] : oracleFill(SRC, COUNT, dir);
+  const n = SRC.length;
+
+  let head = "<thead><tr><th></th>";
+  FILL_VARIANTS.forEach(function(v, i){
+    head += "<th class='" + (i === 0 ? "me" : "") + "'>" + esc(v.short) + "</th>";
+  });
+  head += "</tr></thead>";
+
+  let body = "<tbody>";
+  const order = [];
+  if (dir > 0){
+    for (let i = 0; i < n; i++) order.push({ seed:true, i:i });
+    for (let k = 0; k < COUNT; k++) order.push({ seed:false, k:k });
+  } else {
+    for (let k = COUNT - 1; k >= 0; k--) order.push({ seed:false, k:k });
+    for (let i = 0; i < n; i++) order.push({ seed:true, i:i });
+  }
+  order.forEach(function(row, rowIdx){
+    body += "<tr><td class='rh'>" + (rowIdx + 1) + "</td>";
+    FILL_VARIANTS.forEach(function(v, ci){
+      if (row.seed){
+        const grip = (ci === 0 && ((dir > 0 && row.i === n - 1) || (dir < 0 && row.i === 0)));
+        body += "<td class='seed" + (grip ? " grip selbox" : "") + "' data-row='" + rowIdx + "'>" +
+                esc(SRC[row.i]) + (grip ? "<span id='handle'></span>" : "") + "</td>";
+      } else {
+        const o = results[ci][row.k], w = want[row.k];
+        const dead = o && o.s === 'undefined';
+        const differs = ci > 0 && !cellSame(o, results[0][row.k]);
+        const wrong = !cellSame(o, w);
+        const cls = dead ? "dead" : differs || (ci === 0 && wrong) ? "diff" : "";
+        body += "<td class='" + cls + "' data-row='" + rowIdx + "'>" + esc(cellText(o)) + "</td>";
+      }
+    });
+    body += "</tr>";
+  });
+  for (let extra = 0; extra < 2; extra++){
+    body += "<tr>";
+    body += "<td class='rh'>" + (order.length + extra + 1) + "</td>";
+    FILL_VARIANTS.forEach(() => { body += "<td class='empty' data-row='" +
+      (dir > 0 ? order.length + extra : -1 - extra) + "'>&middot;</td>"; });
+    body += "</tr>";
+  }
+  body += "</tbody>";
+  $("sheet").innerHTML = head + body;
+
+  const A = analyze(SRC);
+  const ser = A.kind === 'num' || A.kind === 'date' ? A.cls.map(c => c.num)
+            : A.kind === 'label' ? A.cls.map(c => c.num)
+            : A.kind === 'list' ? unwrap(A.cls.map(c => c.idx), listOf(A.listId).abbr.length)
+            : null;
+  const f = ser && ser.length > 1 ? fitLine(ser) : null;
+  const row = (k, v) => "<tr><td>" + k + "</td><td>" + v + "</td></tr>";
+  let dis = 0;
+  FILL_VARIANTS.forEach(function(v, ci){
+    for (let k = 0; k < COUNT; k++) if (ci > 0 && !cellSame(results[ci][k], results[0][k])) { dis++; break; }
+  });
+  $("live").innerHTML =
+    row("cells selected", SRC.length) +
+    row("what it looks like", copy ? "a copy (no series)" :
+        A.kind === 'copy' ? "<span class='warn'>nothing extendable &mdash; copied</span>" : A.kind) +
+    row("cells being filled", COUNT + (dir > 0 ? " downwards" : " upwards")) +
+    row("fitted slope", f ? f.slope.toFixed(4) : "<span class='warn'>no slope in one cell</span>") +
+    row("fitted intercept", f ? f.intercept.toFixed(4) : "&mdash;") +
+    row("last two cells would give", ser && ser.length > 1 ? slopeLast(ser).toFixed(4) : "&mdash;") +
+    row("first and last would give", ser && ser.length > 1 ? slopeEnds(ser).toFixed(4) : "&mdash;") +
+    row("next cell (correct)", "<strong>" + esc(cellText(results[0][0])) + "</strong>") +
+    row("agrees with the oracle", cellSame(results[0][0], want[0])
+        ? "<span class='ok'>yes</span>" : "<span class='bad'>NO</span>") +
+    row("variants that differ here", dis
+        ? "<span class='warn'>" + dis + " of " + (FILL_VARIANTS.length - 1) + "</span>"
+        : "<span class='ok'>0 of " + (FILL_VARIANTS.length - 1) + "</span>");
+}
+
+// the fill handle: pointer down on the little square, drag over rows, release to commit
+(function(){
+  let dragging = false;
+  $("sheet").addEventListener("pointerdown", function(e){
+    if (e.target.id !== "handle") return;
+    dragging = true;
+    e.target.classList.add("on");
+    e.preventDefault();
+  });
+  window.addEventListener("pointermove", function(e){
+    if (!dragging) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || el.dataset === undefined || el.dataset.row === undefined) return;
+    const dir = +$("dir").value;
+    const r = +el.dataset.row;
+    const n = SRC.length;
+    const want = dir > 0 ? r - n + 1 : (r < 0 ? -r : COUNT - r);
+    const next = Math.max(1, Math.min(MAXFILL, want));
+    if (next !== COUNT){ COUNT = next; paint(); }
+  });
+  window.addEventListener("pointerup", function(){ dragging = false; });
+})();
+
+$("seed").addEventListener("input", function(){ readSeed(); paint(); });
+["dir", "copy"].forEach(id => $(id).addEventListener("change", paint));
+$("preset").addEventListener("change", function(){
+  const p = PRESETS[$("preset").value];
+  SRC = p.src.slice(); COUNT = p.count; $("dir").value = String(p.dir);
+  writeSeed(); paint();
+});
+
+// ---------------------------------------------------------------- measured panels
+const FZ_CLEAN  = fuzzCorpus('clean',  12000, 1234);
+const FZ_NOISY  = fuzzCorpus('noisy',  12000, 5678);
+const FZ_LONE   = fuzzCorpus('lone',    6000, 9012);
+const FZ_LABELS = fuzzCorpus('labels', 12000, 3456);
+const IDENT = identityStudy(200000, 4242);
+const OPT   = optimalityStudy(400, 40, 77);
+const EXACT = exactStudy(4000, 88);
+
+function nameCell(v){ return v.key === 'fit' ? "<strong>" + v.label + "</strong>" : v.label; }
+
+function rowsClean(){
+  return FILL_VARIANTS.map(function(v){
+    const s = FZ_CLEAN.stats[v.key];
+    return "<tr><td>" + nameCell(v) + "</td>" +
+      "<td class='" + (s.contOk === s.contCases ? "warn" : "ok") + "'>" +
+        pct(s.contOk, s.contCases) + "</td>" +
+      "<td class='" + (s.selfOk === s.selfCases ? "warn" : "ok") + "'>" +
+        pct(s.selfOk, s.selfCases) + "</td>" +
+      "<td class='" + (s.disagree ? "bad" : "ok") + "'>" + pct(s.disagree, s.cases) + "</td>" +
+      "<td>" + (s.errN ? (s.err / s.errN).toFixed(3) : "&mdash;") + "</td></tr>";
+  }).join("");
+}
+function rowsNoisy(){
+  return FILL_VARIANTS.map(function(v){
+    const s = FZ_NOISY.stats[v.key], c = FZ_CLEAN.stats[v.key];
+    return "<tr><td>" + nameCell(v) + "</td>" +
+      "<td class='" + (s.disagree ? "bad" : "ok") + "'>" + pct(s.disagree, s.cases) + "</td>" +
+      "<td>" + (s.errN ? (s.err / s.errN).toFixed(2) : "&mdash;") + "</td>" +
+      "<td>" + (s.worst ? s.worst.toFixed(1) : "&mdash;") + "</td>" +
+      "<td class='" + (s.flips ? "bad" : "ok") + "'>" + pct(s.flips, s.flipN) + "</td>" +
+      "<td class='warn'>" + pct(c.contOk, c.contCases) + "</td></tr>";
+  }).join("");
+}
+function rowsLone(){
+  return FILL_VARIANTS.map(function(v){
+    const s = FZ_LONE.stats[v.key], c = FZ_CLEAN.stats[v.key];
+    return "<tr><td>" + nameCell(v) + "</td>" +
+      "<td class='" + (s.disagree ? "bad" : "ok") + "'>" + pct(s.disagree, s.cases) + "</td>" +
+      "<td>" + fmt(s.wrongValues) + " / " + fmt(s.values) + "</td>" +
+      "<td class='warn'>" + pct(c.contOk, c.contCases) + "</td>" +
+      "<td class='warn'>" + pct(s.selfOk, s.selfCases) + "</td></tr>";
+  }).join("");
+}
+function rowsLabels(){
+  return FILL_VARIANTS.map(function(v){
+    const s = FZ_LABELS.stats[v.key], c = FZ_CLEAN.stats[v.key];
+    return "<tr><td>" + nameCell(v) + "</td>" +
+      "<td class='" + (s.disagree ? "bad" : "ok") + "'>" + pct(s.disagree, s.cases) + "</td>" +
+      "<td>" + fmt(s.wrongValues) + " / " + fmt(s.values) + "</td>" +
+      "<td class='" + (s.dead ? "bad" : "ok") + "'>" + (s.dead ? fmt(s.dead) : "0") + "</td>" +
+      "<td class='warn'>" + pct(c.contOk, c.contCases) + "</td></tr>";
+  }).join("");
+}
+$("tClean").innerHTML  = rowsClean();
+$("tNoisy").innerHTML  = rowsNoisy();
+$("tLone").innerHTML   = rowsLone();
+$("tLabels").innerHTML = rowsLabels();
+
+// self-consistency, split by which path produced the cells: the fitted line has the property as a
+// theorem, a cyclic copy cannot have it at all.
+const SELF = (function(){
+  let fo = 0, fn = 0, co = 0, cn = 0;
+  for (const F of [FZ_CLEAN, FZ_NOISY, FZ_LONE, FZ_LABELS]){
+    const s = F.stats.fit;
+    fo += s.selfFitOk; fn += s.selfFitN; co += s.selfCopyOk; cn += s.selfCopyN;
+  }
+  return { fitOk:fo, fitN:fn, copyOk:co, copyN:cn };
+})();
+
+$("tIdent").innerHTML =
+  "<tr><td>random vectors tested</td><td>" + fmt(IDENT.trials) + "</td></tr>" +
+  "<tr><td>predictions more than 1e-9 apart</td><td class='" +
+    (IDENT.differ ? "bad" : "ok") + "'>" + fmt(IDENT.differ) + "</td></tr>" +
+  "<tr><td>largest slope difference seen</td><td>" + IDENT.worst.toExponential(1) + "</td></tr>" +
+  "<tr><td>the fit is the minimiser (lattice search)</td><td class='" +
+    (OPT.beaten ? "bad" : "ok") + "'>" + fmt(OPT.gridPoints) + " nearby lines, " +
+    fmt(OPT.beaten) + " beat it</td></tr>" +
+  "<tr><td>residual orthogonality on every case</td><td class='" +
+    (OPT.orthBad ? "bad" : "ok") + "'>" + fmt(OPT.trials - OPT.orthBad) + " / " +
+    fmt(OPT.trials) + "</td></tr>" +
+  "<tr><td>float fit against exact BigInt rationals</td><td class='" +
+    (EXACT.bad ? "bad" : "ok") + "'>worst deviation " + EXACT.worst.toExponential(1) + "</td></tr>" +
+  "<tr><td>re-filling agrees, on every <em>fitted</em> series</td><td class='" +
+    (SELF.fitOk === SELF.fitN ? "ok" : "bad") + "'>" + pct(SELF.fitOk, SELF.fitN) + " of " +
+    fmt(SELF.fitN) + "</td></tr>" +
+  "<tr><td>re-filling agrees, on the <em>copy</em> path</td><td class='warn'>" +
+    pct(SELF.copyOk, SELF.copyN) + " of " + fmt(SELF.copyN) + "</td></tr>";
+
+function artText(src, count, dir, note){
+  const t = variantTable(src, count, dir);
+  let txt = "selected: " + src.join(", ") + (dir > 0 ? "   dragged DOWN\n" : "   dragged UP\n") + "\n";
+  t.rows.forEach(function(r){
+    txt += "  " + r.label.padEnd(38) + r.cells.slice(0, 5).join(", ") +
+           (r.key === 'fit' ? "" : "") + "\n";
+  });
+  return txt + "\n" + note;
+}
+$("art124").textContent = artText(['1', '2', '4'], 5, 1,
+  "three cells, three estimators, three different answers - and every\n" +
+  "one of them returns 3, 4, 5 for a seed of 1, 2. the fit is the only\n" +
+  "one that used all three cells you actually selected.");
+$("artFlip").textContent = artText(['120', '138', '131', '149', '144'], 4, 1,
+  "the column rises by about 6 a month and dips twice. stepping by the\n" +
+  "final gap turns the whole series DOWNWARDS - not imprecise, inverted.\n" +
+  "nothing on screen says so and the value looks perfectly reasonable.");
+$("artLone").textContent =
+  artText(['5'], 4, 1, "a lone number has no slope, so the fit returns zero and the cell copies.") +
+  "\n\n" +
+  artText(['Item 5'], 4, 1, "a lone label is assumed to be a sequence. same absence of\n" +
+                            "information, opposite answer - a product decision, not maths.") +
+  "\n\n" +
+  artText(['2026-01-05'], 4, 1, "and so is a date.");
+$("artFmt").textContent =
+  artText(['Jan'], 4, -1, "dragging UP from January. a floored modulo gives December;\n" +
+                          "-1 % 12 is -1 in JavaScript and months[-1] is undefined.") +
+  "\n\n" +
+  artText(['frame008'], 4, 1, "the width comes from the anchor cell, and only when the digits\n" +
+                              "carry a leading zero. frame9 sorts nowhere near frame008.") +
+  "\n\n" +
+  artText(['Step 2 of 7'], 4, 1, "the TRAILING digit run moves. increment the first number in the\n" +
+                                 "string instead and 'Step 3 of 7' reads perfectly and is wrong.") +
+  "\n\n" +
+  artText(['April', 'May'], 3, 1, "May is the only month that IS its own abbreviation, so as an\n" +
+                                  "anchor it cannot say which register the series is written in.\n" +
+                                  "resolved from the selection, not the cell: April settles it.") +
+  "\n\n" +
+  artText(['May'], 3, 1, "on its own there is nothing to settle it, so the shorter form\n" +
+                         "stands - and re-filling from Jun, Jul, Aug agrees, which is how\n" +
+                         "the ambiguity was found in the first place.");
+
+const TOTAL_ASSERTS = FZ_CLEAN.asserts + FZ_NOISY.asserts + FZ_LONE.asserts + FZ_LABELS.asserts +
+                      IDENT.asserts + OPT.asserts + EXACT.asserts;
+$("assertline").innerHTML = "<strong>" + fmt(TOTAL_ASSERTS) + "</strong> assertions checked on load " +
+  "across " + fmt(FZ_CLEAN.trials + FZ_NOISY.trials + FZ_LONE.trials + FZ_LABELS.trials) +
+  " selections &times; " + FILL_VARIANTS.length + " implementations &mdash; every filled cell " +
+  "against an independently written oracle, every clean progression against a closed-form answer, " +
+  "every fit against its own residual orthogonality, " + fmt(EXACT.trials) + " fits against exact " +
+  "BigInt rationals and " + fmt(OPT.gridPoints) + " nearby lines that must all be worse.";
+
+writeSeed();
+paint();
+</script>
+</body>
+</html>
