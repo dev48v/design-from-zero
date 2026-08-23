@@ -72,6 +72,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 67 — Day-view event layout](https://dev48.infy.uk/design/day67-event-layout.html) — `day67-event-layout.html`
 - [DesignFromZero · Day 68 — Diff viewer](https://dev48.infy.uk/design/day68-diff-viewer.html) — `day68-diff-viewer.html`
 - [DesignFromZero · Day 69 — Fill handle](https://dev48.infy.uk/design/day69-fill-handle.html) — `day69-fill-handle.html`
+- [DesignFromZero · Day 70 — Order keys](https://dev48.infy.uk/design/day70-order-keys.html) — `day70-order-keys.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

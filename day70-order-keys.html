@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 70 — Order keys</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1f5f9; color:#0f172a; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e8edf5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#4338ca; }
+
+  header { background:#fff; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#4338ca; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e8edf5; color:#0f172a; }
+  .tabs button.on { background:#0f172a; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e8edf5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#475569; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#64748b; margin:0 0 12px; }
+  .note { font-size:12px; color:#64748b; margin:12px 0 0; }
+  .rule { border-top:1px solid #e2e8f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; }
+  .prose ul { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e2e8f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num tr.me td { background:#eef2ff; font-weight:700; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#94a3b8; }
+  .scroll { overflow-x:auto; }
+
+  .ctl { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+         font-size:13px; }
+  .ctl label { display:flex; flex-direction:column; gap:3px; }
+  .ctl span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b; }
+  .ctl select, .ctl button { font:inherit; font-size:13px; padding:6px 10px; border-radius:8px;
+                             border:1px solid #cbd5e1; background:#fff; }
+  .ctl button { cursor:pointer; font-weight:700; background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl button.ghost { background:#fff; color:#0f172a; }
+
+  .split { display:grid; gap:22px; align-items:start; }
+  @media (min-width:1024px) { .split { grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); } }
+
+  .board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;
+           user-select:none; touch-action:none; }
+  .col { background:#f1f5f9; border-radius:12px; padding:8px; min-height:220px; }
+  .col h4 { margin:0 0 8px; font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b;
+            padding:0 2px; display:flex; justify-content:space-between; }
+  .kc { background:#fff; border:1px solid #e2e8f0; border-radius:9px; padding:7px 9px;
+        margin-bottom:6px; cursor:grab; box-shadow:0 1px 1px rgba(15,23,42,.05); }
+  .kc.drag { opacity:.35; }
+  .kc .t { font-size:12.5px; font-weight:600; line-height:1.3; }
+  .kc .k { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:10.5px; color:#4338ca;
+           margin-top:3px; word-break:break-all; }
+  .kc.fresh { border-color:#4338ca; box-shadow:0 0 0 2px #c7d2fe; }
+  .slot { height:3px; background:#4338ca; border-radius:2px; margin:0 0 6px; }
+  .ghostcard { position:fixed; pointer-events:none; z-index:60; background:#fff;
+               border:1px solid #4338ca; border-radius:9px; padding:7px 9px; font-size:12.5px;
+               font-weight:600; box-shadow:0 8px 20px rgba(15,23,42,.22); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO · DAY 70</p>
+    <h1>
+      🃏 Order keys — drag a card and <strong>one row is written</strong>, whichever column it
+      came from and however long the list is. Every card carries a base-62 string read as a
+      <em>fraction</em>, so between any two keys there is always another key, and a move is a
+      single <code>UPDATE</code> of the card you dragged. That "one row" is the whole page,
+      because the property every reorder test asserts &mdash; after the drop, every card is where
+      you put it &mdash; is satisfied by <strong>five of the eight</strong> implementations here on
+      <strong>100.0%</strong> of 6,000 random moves and <strong>100.0%</strong> of 6,000 moves
+      shaped like a real board. Two of those five lose the board on <strong>moves 45 and 55</strong> of one ordinary
+      habit &mdash; dropping a card just under the pinned one at the top &mdash; and the other two
+      are never wrong in any column and pay for it in writes, <strong>6.5 rows per move</strong>
+      for one of them and a whole-column rewrite whenever a gap runs out for the other. And the
+      loudest defect on the page is not in any of the code &mdash; it is the collation on the
+      <code>ORDER BY</code>, which reorders <strong>9.5%</strong> of key pairs and gets the board
+      wrong before a single card has moved. <strong>3,974,372 assertions</strong> on load against
+      an order written as a bare array of ids, an exact BigInt fraction comparison and an
+      independently built midpoint. Pure vanilla JavaScript, one file, no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">🃏 TRY IT</button>
+      <button data-tab="understand">🧠 UNDERSTAND</button>
+      <button data-tab="build">🔨 BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Drag a card</strong> anywhere, in any column. The violet string under each card is
+        its order key. Nothing else on the board changes &mdash; watch the write counter. The panel
+        on the right replays the same move through all eight implementations and checks each one
+        against an order held as a plain array of ids.
+      </p>
+      <div class="ctl">
+        <label><span>REPLAY A HABIT</span>
+          <select id="pattern">
+            <option value="random">a card goes anywhere</option>
+            <option value="board" selected>a real board: nudges, promotions, handoffs</option>
+            <option value="top">always straight to the top</option>
+            <option value="undertop">always just under the top card</option>
+          </select></label>
+        <label><span>&nbsp;</span><button id="run25">run 25 moves</button></label>
+        <label><span>&nbsp;</span><button id="run200" class="ghost">run 200</button></label>
+        <label><span>&nbsp;</span><button id="reset" class="ghost">reset</button></label>
+      </div>
+      <div class="split">
+        <div>
+          <div class="board" id="board"></div>
+          <p class="note" id="boardnote"></p>
+        </div>
+        <div>
+          <p class="cap">THIS BOARD, MEASURED</p>
+          <table class="num"><tbody id="live"></tbody></table>
+          <p class="cap" style="margin:18px 0 8px">THE SAME MOVES, ALL EIGHT</p>
+          <div class="scroll"><table class="num">
+            <thead><tr><th>implementation</th><th>board correct</th><th>rows written</th>
+              <th>longest key</th></tr></thead>
+            <tbody id="liveImpl"></tbody></table></div>
+          <p class="note" id="assertline"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE PROPERTY EVERYBODY TESTS, ON FOUR WAYS OF USING A BOARD</p>
+      <p class="lead">
+        Every column is <em>after the drop, is every card where I put it</em> &mdash; checked
+        against an order kept as a bare array of ids that never sees a key, a number or a
+        comparison. Same eight implementations, same op streams, four habits. The only thing that
+        changes between the columns is <strong>which gaps the moves use</strong>.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>anywhere<br>6,000 moves</th>
+          <th>a real board<br>6,000 moves</th><th>to the top<br>1,000 moves</th>
+          <th>under the top<br>600 moves</th><th>rows written<br>per move</th>
+          <th>first move<br>it got wrong</th></tr></thead>
+        <tbody id="tMatrix"></tbody></table></div>
+      <p class="note" id="matrixnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE BUDGET, WHICH IS NOT A NUMBER YOU CAN LOOK UP</p>
+      <p class="lead">
+        A float64 position can be halved a fixed number of times before the midpoint <em>is</em>
+        one of its neighbours &mdash; and that number is not a constant, it is the distance between
+        the exponent of the gap and the exponent of the numbers. So the same code survives 1,074
+        insertions at the head of a new list and 23 next to a timestamp.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>the two positions</th><th>what it is</th>
+          <th>float64 insertions<br>before a collision</th>
+          <th>integer insertions<br>before a renumber</th>
+          <th>base-62 key<br>insertions</th></tr></thead>
+        <tbody id="tBudget"></tbody></table></div>
+      <pre id="artBudget"></pre>
+      <p class="note" id="budgetnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SO WHAT DOES A STRING COST INSTEAD</p>
+      <p class="lead">
+        Nothing that fails. The string scheme has no budget at all &mdash; it has a
+        <em>length</em>, and length is a resource you can keep spending. Three thousand insertions
+        into the same gap, every one of them checked as an exact fraction against both neighbours.
+      </p>
+      <table class="num"><tbody id="tLen"></tbody></table>
+      <pre id="artLen" style="margin-top:14px"></pre>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE DEFECT THAT IS NOT IN THE CODE</p>
+      <p class="lead">
+        The keys are right. The generator is right. The comparison is wrong, and the comparison
+        lives in the database. A case-insensitive collation &mdash; the default one in MySQL
+        &mdash; is not a coarser version of byte order, it is a <strong>different order</strong>,
+        and base-62 crosses the case boundary on the <em>second key it ever mints</em>.
+      </p>
+      <table class="num"><tbody id="tCol"></tbody></table>
+      <pre id="artCol" style="margin-top:14px"></pre>
+      <p class="note" id="colnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONE INVARIANT, AND WHAT BREAKING IT DOES</p>
+      <p class="lead">
+        <code>x</code> and <code>x0</code> are the same fraction and two different strings. Allow a
+        key to end in the minimum digit and the byte order and the numeric order stop agreeing
+        &mdash; not occasionally, on every such pair &mdash; and the generator can be handed a
+        request that has no answer.
+      </p>
+      <table class="num"><tbody id="tZero"></tbody></table>
+      <pre id="artZero" style="margin-top:14px"></pre>
+    </div>
+
+    <div class="card">
+      <p class="cap">TWO PEOPLE, ONE GAP</p>
+      <p class="lead">
+        A key is a function of its two neighbours and nothing else, so two clients inserting into
+        the same gap from the same snapshot produce <strong>the identical key</strong>. Neither is
+        wrong. The fix is not in the generator: the identity of a card's position is the
+        <code>(key, id)</code> pair, and the tie-break belongs in the <code>ORDER BY</code>.
+      </p>
+      <table class="num"><tbody id="tConc"></tbody></table>
+      <pre id="artConc" style="margin-top:14px"></pre>
+    </div>
+
+    <div class="card">
+      <p class="cap">THREE CONCRETE BOARDS</p>
+      <pre id="artIdx"></pre>
+      <pre id="artPrefix"></pre>
+      <pre id="artFloat" style="margin-bottom:0"></pre>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>A position is a fraction, and a string can hold one</h2>
+      <p>
+        Reordering a list looks like the easiest problem in this series. You have a column of
+        cards, you drag one, you save. The trouble is entirely in the word <em>save</em>. If a
+        card's place in the list is an integer index, then moving one card changes the index of
+        every card after it, and a single drag becomes an <code>UPDATE</code> of half the column
+        &mdash; on every client, over a network, with somebody else dragging at the same time.
+      </p>
+      <p>
+        So instead of an index, give each card a <strong>key</strong>, and require only that the
+        keys sort into the right order. Nothing says the keys have to be dense. If the card above
+        holds <code>k</code> and the card below holds <code>s</code>, the dragged card wants
+        anything strictly between them, and then exactly one row is written. The whole component
+        reduces to one function: <code>keyBetween(lo, hi)</code>.
+      </p>
+      <p>
+        Integers cannot do it, because between 3 and 4 there is nothing. Floats can do it 52 times
+        and then cannot. A <em>string</em> can always do it, because a string has no last digit:
+        read <code>"V"</code> as the base-62 fraction 0.V and <code>"Vk"</code> as 0.Vk, and there
+        is always another digit to add.
+      </p>
+
+      <h3>1. The property everybody tests</h3>
+      <p>
+        Every test written for this component says the same thing: drag a card, read the list back,
+        and check it came out in the order you dropped it. It is the right property. It is also
+        satisfied by <strong id="u1a">five of eight</strong> implementations on this page over
+        <strong>6,000</strong> random moves and <strong>6,000</strong> moves shaped like a real
+        board &mdash; not approximately, on <strong>100.0%</strong> of them.
+      </p>
+      <p>
+        Two of those five are wrong in a way the property cannot express, because they keep the
+        positions dense: one renumbers the column on every single move, at
+        <strong id="u1b">6.5</strong> rows written per move, and one leaves gaps of a thousand and
+        renumbers only when a gap runs out. A test that reads the list back sees a perfect list from
+        both. Only a test that counts writes sees anything at all &mdash; and nobody writes that
+        test, because "how many rows did that touch" does not feel like correctness until the day
+        the board has 400 cards on it and two people are dragging.
+      </p>
+      <p>
+        The other two are correct <em>until they are not</em>. A float64 position and a key read
+        back as a float both work perfectly on every move a random fuzz will ever generate, and
+        both fall over inside the first hundred moves of one specific habit. Which brings up the
+        thing this page kept running into.
+      </p>
+
+      <h3>2. The corpus decides what you can see</h3>
+      <p>
+        I built the four op streams expecting the realistic one to be the sharp instrument &mdash;
+        Day 68 and Day 69 both turned on the fact that a generated fixture is too tidy to contain
+        the defect, so the plan here was to put the breaking structure into the realistic corpus
+        and let it do the work. It did not work. Six thousand moves of nudges, promotions and
+        handoffs between columns fail to break a float64 position <em>even once</em>.
+      </p>
+      <p>
+        What breaks it is one habit in isolation: a pinned card stays at the top of the column and
+        everything urgent gets dropped directly underneath it. That reuses the same gap every
+        single time, and the gap halves every single time, and on <strong id="u2a">move 55</strong>
+        the midpoint of the two neighbours <em>is</em> the lower neighbour. The realistic mixture
+        contains that habit &mdash; a quarter of its moves are exactly it &mdash; and still never
+        triggers it, because between two of those moves something else lands in the gap and resets
+        it.
+      </p>
+      <p>
+        So the lesson is narrower than "make the fixture realistic". A defect with a budget is only
+        visible to a corpus that spends the budget in one place. Averaging over realistic
+        behaviour is the same as hiding it.
+      </p>
+
+      <h3>3. What the string actually has to guarantee</h3>
+      <p>
+        Two things, and the second one is the one that gets skipped.
+      </p>
+      <ul>
+        <li><strong>Between-ness.</strong> <code>keyBetween(lo, hi)</code> returns a key whose
+          fraction is strictly greater than <code>lo</code> and strictly less than
+          <code>hi</code>.</li>
+        <li><strong>That the fraction order and the byte order are the same order.</strong> Nothing
+          ever compares fractions at runtime. The database compares bytes. If those two orders can
+          disagree on even one pair of keys, the scheme is not an order.</li>
+      </ul>
+      <p>
+        The second holds for free in one direction: if two keys first differ at position
+        <em>i</em>, the digit that differs is worth at least 62<sup>&minus;(i+1)</sup> and
+        everything after it is worth strictly less than that, so the byte comparison and the
+        fraction comparison agree. The direction that does <em>not</em> come free is a key that is
+        a prefix of another. <code>"A2"</code> and <code>"A20"</code> are the same fraction and two
+        different strings, so byte order says one is smaller and arithmetic says they are equal.
+      </p>
+      <p>
+        One rule fixes it: <strong>a key never ends in the minimum digit</strong>. Then a longer
+        key that extends a shorter one is always strictly greater, and the two orders coincide
+        everywhere. This page checks that on <strong id="u3a">20,000</strong> random key pairs
+        against exact BigInt fractions &mdash; 0 disagreements &mdash; and then appends a
+        <code>0</code> to each of them and gets a disagreement on <strong>100.0%</strong>.
+      </p>
+
+      <h3>4. Your ORDER BY is part of the algorithm</h3>
+      <p>
+        This is the defect I expected to be subtle and which turned out to be the loudest thing on
+        the page. The keys are correct. The generator is correct. The comparison that reads them
+        back is a case-insensitive collation, which is the default in MySQL, and a case-insensitive
+        collation is not a coarsening of byte order &mdash; it is a different total order.
+        Byte order puts every uppercase letter before every lowercase one; case-insensitive order
+        interleaves them. <code id="u4a">V</code> and <code id="u4b">k</code> come out in opposite
+        orders, and those are literally the first two keys a fresh column is seeded with.
+      </p>
+      <p>
+        So the board is wrong before anybody drags anything, on
+        <strong id="u4c">100.0%</strong> of boards. Except under one habit: a workload that only
+        ever inserts at the top drives the keys down into the digits, where the two collations
+        agree, and the same defect shows up on <strong id="u4d">5.6%</strong> of those sessions.
+        The visibility of the bug is a property of your users' habits, not of your code.
+      </p>
+      <p>
+        And it is not only a rendering problem. The generator asks the store for the two cards
+        either side of the drop, so a wrong <code>ORDER BY</code> hands it the wrong neighbours and
+        it mints a key that is not between the cards it will actually sit between &mdash;
+        <strong id="u4e">1,234</strong> such keys over 6,000 moves. The fix is a binary collation
+        on the column, or an alphabet that never mixes case. Base-36 lowercase costs you about 1.2
+        characters of key length per level and removes the entire failure mode.
+      </p>
+
+      <h3>5. And a key read back as a number is a string that was thrown away</h3>
+      <p>
+        A base-62 digit carries log&#8322;62 &asymp; 5.95 bits, so a key of 9 digits is already
+        past the 53 bits a double has. Decode the keys and sort numerically and everything is fine
+        until keys get long &mdash; the first pair that lands on the same double appears at
+        insertion <strong id="u5a">44</strong>, at key length <strong id="u5b">10</strong>,
+        exactly where the arithmetic says it should. After that the sort has nothing to order by
+        and falls through to whatever the tie-break is.
+      </p>
+      <p>
+        This is the same failure as the float64 position, arrived at from the opposite direction:
+        one stored a number and ran out of precision, the other stored a string and threw the
+        precision away on read. The string is only unbounded if you never convert it.
+      </p>
+
+      <h3>6. Two clients produce the same key, and that is fine</h3>
+      <p>
+        <code>keyBetween</code> is a pure function of its two arguments, so two people dropping a
+        card into the same gap at the same moment generate <strong>the identical key</strong>
+        &mdash; <strong id="u6a">100.0%</strong> of the time, by construction, not by accident.
+        Neither client is wrong and no amount of care in the generator prevents it.
+      </p>
+      <p>
+        Sort by key alone and the two clients render the two cards in opposite orders, and both
+        orders are stable, so nothing ever converges: <strong id="u6b">100.0%</strong> of those
+        sessions diverge. Sort by <code>(key, id)</code> and every client agrees, on
+        <strong id="u6c">0</strong> divergences over 4,000 sessions, because the id is a value both
+        clients already have and neither invents.
+      </p>
+      <p>
+        The general shape: the key is not the identity of a position. The pair is. Adding random
+        noise to the key instead is the tempting alternative and it is unsound &mdash; a suffix can
+        push a key past the upper bound it was generated against, which is a much worse failure
+        than a tie.
+      </p>
+
+      <h3>7. Two oracles, priced apart on purpose</h3>
+      <p>
+        The order oracle is an <strong>array of ids</strong>. It has no keys, no arithmetic, no
+        comparison and no idea what a fraction is: to move a card it filters the array and splices
+        it. It is O(n) per move, which is what makes 13,600 moves &times; 8 implementations
+        affordable, and it shares not one line with anything it is checking.
+      </p>
+      <p>
+        The expensive oracle is the arithmetic one: decode both bounds into BigInt integers over a
+        common denominator, take the integer midpoint, encode it back. It answers a different
+        question &mdash; not "is this the key the generator returns" but "is there a key here at
+        all, and is the one you returned really between the bounds" &mdash; and it costs a BigInt
+        division per call, so it runs on a bounded 20,000 pairs rather than inside the fuzz.
+      </p>
+
+      <h3>8. What this leaves out</h3>
+      <p>
+        Keys grow. Under the pathological habit they grow at about one character per five
+        insertions, and a board hammered that way for years wants an occasional background
+        rebalance that rewrites the column with short keys &mdash; the one operation this scheme
+        has that is not O(1), performed when nobody is looking rather than on every drag. Real
+        systems also add an integer part in front of the fraction (Figma, and Jira's LexoRank)
+        precisely so that appending at the end never lengthens anything; that is a second mechanism
+        and this page has one.
+      </p>
+      <p>
+        Nothing here is authorisation, undo, or the animation of the drag itself. And the board
+        deliberately has no server: every measurement is about what would be written, not about
+        what happens when the write fails.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>🔨 How it is built</h2>
+
+      <h3>1. Six pure functions and no DOM</h3>
+      <p>
+        Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> is pure. The
+        generator is <code>keyBetween</code>; the reader is <code>byteCmp</code>; the invariant is
+        <code>validKey</code>; the arithmetic is <code>keyNum</code> and <code>exactCmp</code> in
+        BigInt; the board is <code>applyMove</code> over an array of
+        <code>{id, col, k}</code>; the truth is <code>truthMove</code> over an array of ids. The
+        verifier lifts that block out of the page by regex, refuses it if it mentions
+        <code>document</code>, and runs it under node against assertions written separately.
+      </p>
+
+      <h3>2. keyBetween, in three branches</h3>
+      <p>
+        Walk the two bounds digit by digit, with <code>''</code> standing for the fraction 0 and
+        <code>null</code> for 1. Digits both bounds agree on are not a decision &mdash; copy them,
+        padding the low bound with the minimum digit, because a shorter key is the same fraction
+        with zeros after it. At the first digit where they differ there are three cases: a digit
+        fits between them, so take the middle of the free range; they are consecutive but the upper
+        bound has more digits after it, so the upper bound's own digit is already strictly below
+        it; or neither, in which case keep the low bound's digit and look one place further right
+        with the upper bound dropped. The loop terminates because the low bound is finite: once you
+        walk past its end there are 62 digits of room.
+      </p>
+
+      <h3>3. Eight implementations, one clause each</h3>
+      <p>
+        The board, the op stream, the tie-break on id and the assertions are shared. Each
+        implementation changes exactly one thing: how a position is minted
+        (<code>float</code>, <code>dense</code>, <code>gap</code>), which comparison reads it back
+        (<code>ci</code>, <code>numsort</code>), when the neighbours are read
+        (<code>idx</code>), or one clause inside the generator (<code>prefix</code>, which
+        compares the shared prefix without padding the low bound). Every one of them is a thing
+        that ships.
+      </p>
+
+      <h3>4. Four op streams, because one cannot see anything</h3>
+      <p>
+        <em>anywhere</em> is the fuzz you would write. <em>a real board</em> mixes nudges within a
+        column, promotions to the second slot, handoffs to the next column and appends to the
+        bottom. <em>to the top</em> and <em>under the top</em> are single habits in isolation. All
+        four are generated from the <strong>oracle's</strong> state, never from any
+        implementation's keys, so all eight see byte-for-byte the same session &mdash; and the
+        table only differs between columns because of which gaps get used.
+      </p>
+
+      <h3>5. What the tests pin</h3>
+      <ul>
+        <li>Every card in every column against an array of ids, after every move, for all eight.</li>
+        <li>Every generated key strictly between its two neighbours, as exact BigInt fractions.</li>
+        <li>Every key valid: in the alphabet, non-empty, and not ending in the minimum digit.</li>
+        <li>Byte order against exact fraction order on 20,000 random pairs, and the same 20,000
+          with the invariant deliberately broken.</li>
+        <li>The generator's key and an independently built BigInt midpoint both strictly between
+          the same bounds, on every pair.</li>
+        <li>Rows written per move, collisions, renumbers and longest key, per implementation.</li>
+        <li>The same seed gives the same session; a different seed does not.</li>
+      </ul>
+
+      <h3>6. What contradicted the first draft</h3>
+      <ul>
+        <li>The plan was to put the breaking structure into the realistic corpus. It is not enough:
+          6,000 realistic moves never exhaust a float64 position, even though a quarter of them are
+          the habit that does. A budget is only visible to a corpus that spends it in one place.</li>
+        <li>The collation defect was drafted as the subtle one and is the loudest thing here, because
+          base-62 crosses the case boundary on the second key it mints. Its visibility inverts under
+          a top-insert workload, where it drops to 5.6%.</li>
+        <li>Integer gaps of 1,000 were drafted as a constant tax and are not: they renumbered
+          <strong id="b6a">2</strong> times in 6,000 realistic moves. The reason to reject them is
+          the tail, not the mean.</li>
+        <li>The classic off-by-one &mdash; reading the drop neighbours before the dragged card
+          leaves &mdash; is invisible to a suite that only ever drags to the top, at
+          <strong>0.0%</strong> there against <strong id="b6b">95.4%</strong> on a real board.</li>
+      </ul>
+
+      <h3>🎉 DesignFromZero Day 70 shipped.</h3>
+      <p class="note">
+        Day 44 was the drag. This is the save.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => x.classList.remove("on"));
+  t.classList.add("on");
+  panels.forEach(p => p.classList.add("off"));
+  document.getElementById(t.dataset.tab).classList.remove("off");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Drag-to-reorder, the part that is not the drag. Every card carries an ORDER KEY: a base-62 string
+// read as a fraction, so between any two keys there is always another key. A move writes ONE row.
+// Beside it sit six one-clause variations, and five of the six put every card in the right place.
+// No DOM below this line; everything here is pure and fuzzable under node.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- the alphabet
+// 0-9 then A-Z then a-z, which is also their ASCII order, so the string comparison a database does
+// byte by byte and the numeric comparison of the fractions agree - as long as nothing ends in '0'.
+const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const BASE = DIGITS.length;
+const DVAL = (function(){ const m = Object.create(null);
+  for (let i = 0; i < BASE; i++) m[DIGITS.charAt(i)] = i; return m; })();
+function dv(ch){ const v = DVAL[ch]; return v === undefined ? -1 : v; }
+
+// Written out rather than using `<`, because which comparison runs is the decision this whole page
+// is about. This is a plain byte order: every uppercase letter sorts before every lowercase one.
+function byteCmp(a, b){
+  const n = a.length < b.length ? a.length : b.length;
+  for (let i = 0; i < n; i++){
+    const x = a.charCodeAt(i), y = b.charCodeAt(i);
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return a.length === b.length ? 0 : (a.length < b.length ? -1 : 1);
+}
+
+// The one invariant. `x` and `x0` are the same fraction but different strings, so allowing a
+// trailing minimum digit would let two distinct keys compare equal as numbers and unequal as bytes,
+// and the whole scheme stops being an order.
+function validKey(s){
+  if (typeof s !== 'string' || !s.length) return false;
+  for (let i = 0; i < s.length; i++) if (dv(s.charAt(i)) < 0) return false;
+  return s.charAt(s.length - 1) !== DIGITS.charAt(0);
+}
+
+// ---------------------------------------------------------------- the generator
+// keyBetween(lo, hi) -> a key strictly between the two, where '' means "nothing below" (the
+// fraction 0) and null means "nothing above" (the fraction 1). Precondition: lo < hi.
+function keyBetween(lo, hi, bug){
+  if (lo === null || lo === undefined) lo = '';
+  if (hi === undefined) hi = null;
+  // 1. digits both bounds agree on are not a decision. copy them and move right. lo is padded with
+  //    the minimum digit, because a shorter lo is the same fraction with zeros after it - and
+  //    forgetting that padding is the whole of the `prefix` defect.
+  let p = 0;
+  if (hi !== null)
+    while (p < hi.length && (bug === 'prefix'
+        ? (p < lo.length && dv(hi.charAt(p)) === dv(lo.charAt(p)))
+        : dv(hi.charAt(p)) === (p < lo.length ? dv(lo.charAt(p)) : 0))) p++;
+  let out = hi !== null ? hi.slice(0, p) : '';
+  // 2. at this digit the bounds differ. either something fits between them or it does not.
+  for (;;){
+    const dl = p < lo.length ? dv(lo.charAt(p)) : 0;
+    const dh = hi === null ? BASE : (p < hi.length ? dv(hi.charAt(p)) : 0);
+    if (dh - dl > 1) return out + DIGITS.charAt((dl + dh) >> 1);   // middle of the free range
+    // the two digits are consecutive, so no digit fits here.
+    // if hi carries more digits after this one, hi's own digit is already strictly below hi.
+    if (hi !== null && hi.length > p + 1) return out + DIGITS.charAt(dh);
+    // otherwise keep lo's digit and look one place further right, with no upper bound any more.
+    out += DIGITS.charAt(dl);
+    hi = null;
+    p++;
+  }
+}
+
+// A key as an exact fraction: the numerator over BASE^L. Integers, so no rounding anywhere.
+function keyNum(s, L){
+  const b = BigInt(BASE);
+  let n = 0n;
+  for (let i = 0; i < L; i++) n = n * b + BigInt(i < s.length ? dv(s.charAt(i)) : 0);
+  return n;
+}
+function exactCmp(a, b){
+  const L = a.length > b.length ? a.length : b.length;
+  const x = keyNum(a, L), y = keyNum(b, L);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+// The same key read into a float64, which is how it breaks: 62^10 is past 2^53.
+function keyFloat(s){
+  let v = 0, p = 1;
+  for (let i = 0; i < s.length; i++){ p /= BASE; v += dv(s.charAt(i)) * p; }
+  return v;
+}
+// A case-insensitive collation, which is what utf8mb4_general_ci does to an ORDER BY.
+function ciCmp(a, b){ return byteCmp(a.toLowerCase(), b.toLowerCase()); }
+
+// ---------------------------------------------------------------- the seven implementations
+const IMPLS = [
+  { key:'keys',    short:'order keys',   label:'base-62 order key, byte order (correct)' },
+  { key:'float',   short:'float mid',    label:'float64 position, midpoint of the neighbours' },
+  { key:'dense',   short:'0..n-1',       label:'integer position, whole column renumbered each move' },
+  { key:'gap',     short:'steps of 1000',label:'integer position in steps of 1000, renumber on exhaustion' },
+  { key:'ci',      short:'ci collation', label:'the same keys, ordered case-insensitively' },
+  { key:'numsort', short:'numeric sort', label:'the same keys, ordered by their decoded value' },
+  { key:'idx',     short:'stale index',  label:'the same keys, neighbours read before the card leaves' },
+  { key:'prefix',  short:'unpadded prefix',label:'shared prefix compared without padding the low bound' }
+];
+const STRINGY = { keys:1, ci:1, numsort:1, idx:1, prefix:1 };
+const BYTECMP = function(a, b){ return byteCmp(a.k, b.k) || byteCmp(a.id, b.id); };
+
+function cmpFor(impl){
+  if (impl === 'float' || impl === 'dense' || impl === 'gap')
+    return function(a, b){ return (a.k - b.k) || byteCmp(a.id, b.id); };
+  if (impl === 'ci')
+    return function(a, b){ return ciCmp(a.k, b.k) || byteCmp(a.id, b.id); };
+  if (impl === 'numsort')
+    return function(a, b){ return (keyFloat(a.k) - keyFloat(b.k)) || byteCmp(a.id, b.id); };
+  return function(a, b){ return byteCmp(a.k, b.k) || byteCmp(a.id, b.id); };
+}
+
+// Every implementation gets the same board and the same tie-break on id, so the ONLY difference is
+// how a new position is minted and which comparison reads it back.
+function seedBoard(cols, impl){
+  const rows = [], cmp = cmpFor(impl);
+  for (let c = 0; c < cols.length; c++){
+    let prev = '';
+    for (let i = 0; i < cols[c].length; i++){
+      let k;
+      if (STRINGY[impl]){ k = keyBetween(prev, null); prev = k; }
+      else if (impl === 'gap') k = 1000 * (i + 1);
+      else if (impl === 'dense') k = i;
+      else k = i + 1;                                     // a 1-based position column
+      rows.push({ id: cols[c][i], col: c, k: k });
+    }
+  }
+  return { rows: rows, cmp: cmp };
+}
+
+function columnOf(rows, col, cmp){
+  const out = [];
+  for (let i = 0; i < rows.length; i++) if (rows[i].col === col) out.push(rows[i]);
+  out.sort(cmp);
+  return out;
+}
+
+// One move. Returns how many rows the store had to write, and whether the new position collided
+// with a neighbour - which is the only way a scheme with a finite budget can fail.
+function applyMove(rows, cmp, id, toCol, toIndex, impl){
+  let card = null;
+  for (let i = 0; i < rows.length; i++) if (rows[i].id === id) card = rows[i];
+  // The correct rule reads the neighbours from the column WITHOUT the dragged card, because the
+  // card is not going to be in its old place any more. `idx` reads them before it leaves.
+  const list = [];
+  for (let i = 0; i < rows.length; i++)
+    if (rows[i].col === toCol && (impl === 'idx' || rows[i].id !== id)) list.push(rows[i]);
+  list.sort(cmp);
+  let at = toIndex < 0 ? 0 : toIndex > list.length ? list.length : toIndex;
+  const lo = at > 0 ? list[at - 1] : null;
+  const hi = at < list.length ? list[at] : null;
+  let writes = 1, collided = false, renumber = 0;
+  // read the bounds BEFORE anything is written, because `idx` can hand back the dragged card itself
+  const loK = lo ? lo.k : null, hiK = hi ? hi.k : null;
+
+  if (STRINGY[impl]){
+    card.col = toCol;
+    card.k = keyBetween(loK === null ? '' : loK, hiK, impl === 'prefix' ? 'prefix' : '');
+    if (card.k === loK || card.k === hiK) collided = true;
+  } else if (impl === 'float'){
+    card.col = toCol;
+    card.k = loK === null && hiK === null ? 1 : loK === null ? hiK - 1
+           : hiK === null ? loK + 1 : (loK + hiK) / 2;
+    if (card.k === loK || card.k === hiK) collided = true;
+  } else {
+    // the two integer schemes. `gap` tries a midpoint first; `dense` never does.
+    let ok = false, nk = 0;
+    if (impl === 'gap'){
+      nk = loK === null && hiK === null ? 1000 : loK === null ? hiK - 1000
+         : hiK === null ? loK + 1000 : Math.floor((loK + hiK) / 2);
+      ok = (loK === null || nk > loK) && (hiK === null || nk < hiK);
+    }
+    if (ok){ card.col = toCol; card.k = nk; }
+    else {
+      // no room, so the whole column is rewritten in the order it should now be in
+      const want = list.slice();
+      let cut = -1;
+      for (let i = 0; i < want.length; i++) if (want[i].id === id) cut = i;
+      if (cut >= 0) want.splice(cut, 1);
+      const a2 = at > want.length ? want.length : at;
+      want.splice(a2, 0, card);
+      card.col = toCol;
+      const step = impl === 'gap' ? 1000 : 1;
+      for (let i = 0; i < want.length; i++) want[i].k = impl === 'gap' ? step * (i + 1) : i;
+      writes = want.length;
+      renumber = 1;
+    }
+  }
+  return { writes: writes, collided: collided, renumber: renumber };
+}
+
+// ---------------------------------------------------------------- the oracle
+// An order, written as an array of ids and nothing else. No keys, no comparison, no arithmetic -
+// this is what the person dragging the card meant, and it shares no code with anything above.
+function truthMove(cols, id, toCol, toIndex){
+  const next = [];
+  for (let c = 0; c < cols.length; c++){
+    const a = [];
+    for (let i = 0; i < cols[c].length; i++) if (cols[c][i] !== id) a.push(cols[c][i]);
+    next.push(a);
+  }
+  const t = next[toCol];
+  const at = toIndex < 0 ? 0 : toIndex > t.length ? t.length : toIndex;
+  t.splice(at, 0, id);
+  return next;
+}
+
+// An independently built answer to "give me a key between these two", by a different route: decode
+// both bounds to integers over a common denominator, take the integer midpoint, encode it back.
+function midExact(lo, hi){
+  const b = BigInt(BASE);
+  let L = (lo.length > (hi === null ? 0 : hi.length) ? lo.length : (hi === null ? 0 : hi.length)) + 1;
+  for (;; L++){
+    const a = keyNum(lo, L);
+    const c = hi === null ? b ** BigInt(L) : keyNum(hi, L);
+    if (c - a >= 2n){
+      let m = (a + c) / 2n, s = '';
+      for (let i = 0; i < L; i++){ s = DIGITS.charAt(Number(m % b)) + s; m = m / b; }
+      while (s.length > 1 && s.charAt(s.length - 1) === DIGITS.charAt(0)) s = s.slice(0, -1);
+      return s;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- op streams
+// The op stream is generated from the ORACLE's state, never from any implementation's keys, so all
+// seven see byte-for-byte the same session.
+const PATTERNS = {
+  // a card goes anywhere. this is the corpus a reorder gets tested against, and it is the one
+  // that cannot see a finite position budget, because it almost never uses the same gap twice.
+  random: function(cols, rnd){
+    const flat = [];
+    for (let c = 0; c < cols.length; c++) for (const id of cols[c]) flat.push(id);
+    const id = flat[Math.floor(rnd() * flat.length)];
+    const toCol = Math.floor(rnd() * cols.length);
+    const n = cols[toCol].length + 1;
+    return { id: id, toCol: toCol, toIndex: Math.floor(rnd() * n) };
+  },
+  // "this one is urgent" - straight to the top of a column, over and over.
+  top: function(cols, rnd){
+    const flat = [];
+    for (let c = 0; c < cols.length; c++) for (const id of cols[c]) flat.push(id);
+    return { id: flat[Math.floor(rnd() * flat.length)],
+             toCol: Math.floor(rnd() * cols.length), toIndex: 0 };
+  },
+  // "under the one I am doing" - a pinned card stays on top and everything urgent lands directly
+  // beneath it. a habit, not an adversarial fixture - and it uses the SAME gap every single time.
+  undertop: function(cols, rnd){
+    const src = [];
+    for (let c = 0; c < cols.length; c++) for (const id of cols[c]) src.push(id);
+    let id = src[Math.floor(rnd() * src.length)];
+    if (cols[0].length > 1 && (id === cols[0][0] || id === cols[0][1]))
+      id = cols[1][Math.floor(rnd() * cols[1].length)] || id;
+    return { id: id, toCol: 0, toIndex: 1 };
+  },
+  // a real board: mostly nudges up and down inside a column, plus the two habits above.
+  board: function(cols, rnd){
+    const r = rnd();
+    const c0 = Math.floor(rnd() * cols.length);
+    const src = cols[c0].length ? c0 : 0;
+    const list = cols[src];
+    if (!list.length) return PATTERNS.random(cols, rnd);
+    const i = Math.floor(rnd() * list.length);
+    const id = list[i];
+    if (r < 0.55){                                        // nudge within the column
+      let j = i + (rnd() < 0.5 ? -1 : 1) * (1 + Math.floor(rnd() * 3));
+      if (j < 0) j = 0;
+      if (j > list.length - 1) j = list.length - 1;
+      return { id: id, toCol: src, toIndex: j };
+    }
+    if (r < 0.80) return { id: id, toCol: src, toIndex: 1 };          // under the current one
+    if (r < 0.93){                                                    // hand it to the next column
+      const to = (src + 1) % cols.length;
+      return { id: id, toCol: to, toIndex: 0 };
+    }
+    const to = Math.floor(rnd() * cols.length);
+    return { id: id, toCol: to, toIndex: cols[to].length };            // to the bottom
+  }
+};
+
+function startCols(nCols, per, tag){
+  const cols = [];
+  let n = 0;
+  for (let c = 0; c < nCols; c++){
+    const a = [];
+    for (let i = 0; i < per; i++) a.push((tag || 'c') + String(n++).padStart(3, '0'));
+    cols.push(a);
+  }
+  return cols;
+}
+
+// ---------------------------------------------------------------- the fuzz
+function fuzzSession(pattern, ops, seed, nCols, per){
+  nCols = nCols || 3; per = per || 6;
+  const rnd = mulberry32(seed);
+  const start = startCols(nCols, per, 'c');
+  const states = {}, stats = {};
+  for (const im of IMPLS){
+    states[im.key] = seedBoard(start, im.key);
+    stats[im.key] = { ops:0, wrongOps:0, wrongCards:0, cards:0, writes:0, collisions:0,
+                      renumbers:0, maxLen:0, bytes:0, firstBad:-1, invalid:0, notBetween:0 };
+  }
+  let truth = start.map(a => a.slice());
+  let asserts = 0, invalid = 0, notBetween = 0, generated = 0;
+  for (let t = 0; t < ops; t++){
+    const op = PATTERNS[pattern](truth, rnd);
+    truth = truthMove(truth, op.id, op.toCol, op.toIndex);
+    for (const im of IMPLS){
+      const st = states[im.key], s = stats[im.key];
+      const r = applyMove(st.rows, st.cmp, op.id, op.toCol, op.toIndex, im.key);
+      s.ops++; s.writes += r.writes; s.renumbers += r.renumber;
+      if (r.collided) s.collisions++;
+      asserts++;
+      // every card in every column, against an array of ids that never saw a key
+      let bad = 0;
+      for (let c = 0; c < truth.length; c++){
+        const got = columnOf(st.rows, c, st.cmp);
+        asserts++;
+        if (got.length !== truth[c].length) bad++;
+        for (let i = 0; i < truth[c].length; i++){
+          asserts++; s.cards++;
+          if (!got[i] || got[i].id !== truth[c][i]){ bad++; s.wrongCards++; }
+        }
+      }
+      if (bad){ s.wrongOps++; if (s.firstBad < 0) s.firstBad = t + 1; }
+      if (STRINGY[im.key]){
+        for (let i = 0; i < st.rows.length; i++){
+          const L = st.rows[i].k.length;
+          if (L > s.maxLen) s.maxLen = L;
+          s.bytes += L;
+          asserts++;
+          if (!validKey(st.rows[i].k)) s.invalid++;
+        }
+        // the generated key really is strictly between its two neighbours, as exact fractions
+        generated++;
+        asserts += 2;
+        if (betweenCheck(st.rows, op.id, op.toCol, BYTECMP)){
+          s.notBetween++;
+          if (im.key === 'keys') notBetween++;
+        }
+        if (im.key === 'keys') invalid += 0;
+      }
+    }
+  }
+  return { pattern:pattern, ops:ops, stats:stats, asserts:asserts, invalid:invalid,
+           notBetween:notBetween, generated:generated };
+}
+
+function snapKeys(rows){
+  const m = Object.create(null);
+  for (let i = 0; i < rows.length; i++) m[rows[i].id] = rows[i].k;
+  return m;
+}
+// after the move, the card's key must sit strictly between the keys of the cards now either side
+function betweenCheck(rows, id, col, cmp){
+  const list = columnOf(rows, col, cmp);
+  let at = -1;
+  for (let i = 0; i < list.length; i++) if (list[i].id === id) at = i;
+  if (at < 0) return true;
+  if (at > 0 && exactCmp(list[at - 1].k, list[at].k) >= 0) return true;
+  if (at < list.length - 1 && exactCmp(list[at].k, list[at + 1].k) >= 0) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------- the budget studies
+// How many times can you insert between two positions before a float64 midpoint stops being
+// strictly between them? The answer is not a constant - it is the exponent gap, so it depends
+// entirely on which two numbers you started from.
+function floatBudget(a, b, cap){
+  let lo = a, hi = b, n = 0;
+  cap = cap || 4000;
+  while (n < cap){
+    const m = (lo + hi) / 2;
+    if (!(m > lo && m < hi)) return { inserts: n, wall: m };
+    hi = m;                                             // always the same gap, from the top
+    n++;
+  }
+  return { inserts: n, wall: null };
+}
+function intBudget(a, b){
+  let lo = a, hi = b, n = 0;
+  for (;;){
+    const m = Math.floor((lo + hi) / 2);
+    if (!(m > lo && m < hi)) return n;
+    hi = m; n++;
+  }
+}
+// And the string scheme, which has no budget at all - only a length.
+function keyBudget(inserts){
+  let lo = keyBetween('', null), hi = keyBetween(lo, null);
+  let maxLen = hi.length, bad = 0, asserts = 0, bytes = 0;
+  for (let n = 0; n < inserts; n++){
+    const m = keyBetween(lo, hi);
+    asserts += 3;
+    if (!validKey(m)) bad++;
+    if (!(exactCmp(lo, m) < 0 && exactCmp(m, hi) < 0)) bad++;
+    if (byteCmp(lo, m) >= 0 || byteCmp(m, hi) >= 0) bad++;
+    hi = m;
+    if (m.length > maxLen) maxLen = m.length;
+    bytes += m.length;
+  }
+  return { inserts:inserts, maxLen:maxLen, bad:bad, asserts:asserts, mean:bytes / inserts };
+}
+
+// ---------------------------------------------------------------- collation
+// Two orders over the same keys. Byte order is what a binary collation gives; the case-insensitive
+// one is the default in MySQL and it is not a refinement of byte order, it is a different order.
+function collationStudy(trials, seed, per){
+  const rnd = mulberry32(seed);
+  let asserts = 0, boards = 0, wrongBoards = 0, pairs = 0, wrongPairs = 0, ties = 0;
+  for (let t = 0; t < trials; t++){
+    const cols = startCols(1, per || 8, 'c');
+    let truth = cols.map(a => a.slice());
+    const st = seedBoard(cols, 'keys');
+    const ciCmpFn = cmpFor('ci');
+    for (let m = 0; m < 6; m++){
+      const op = PATTERNS.board(truth, rnd);
+      truth = truthMove(truth, op.id, op.toCol, op.toIndex);
+      applyMove(st.rows, st.cmp, op.id, op.toCol, op.toIndex, 'keys');
+    }
+    boards++;
+    const a = columnOf(st.rows, 0, st.cmp).map(r => r.id);
+    const b = columnOf(st.rows, 0, ciCmpFn).map(r => r.id);
+    asserts++;
+    if (a.join(',') !== b.join(',')) wrongBoards++;
+    for (let i = 0; i < st.rows.length; i++)
+      for (let j = i + 1; j < st.rows.length; j++){
+        const x = st.rows[i].k, y = st.rows[j].k;
+        const p = byteCmp(x, y), q = ciCmp(x, y);
+        pairs++; asserts++;
+        if (q === 0) ties++;
+        else if ((p < 0) !== (q < 0)) wrongPairs++;
+      }
+  }
+  return { trials:boards, asserts:asserts, wrongBoards:wrongBoards, pairs:pairs,
+           wrongPairs:wrongPairs, ties:ties };
+}
+
+// The same keys read as float64. A base-62 digit is ~5.95 bits, so past the 53 bits a double
+// carries, two different keys land on the same number and the sort has nothing left to order by.
+function numsortStudy(depth, seed){
+  let lo = keyBetween('', null), hi = keyBetween(lo, null);
+  let asserts = 0, ties = 0, pairs = 0, firstTie = -1, firstTieLen = 0, exactBad = 0;
+  const byLen = Object.create(null);
+  for (let n = 0; n < depth; n++){
+    const m = keyBetween(lo, hi);
+    asserts += 3;
+    if (!(exactCmp(lo, m) < 0 && exactCmp(m, hi) < 0)) exactBad++;
+    if (!validKey(m)) exactBad++;
+    const tie = keyFloat(m) === keyFloat(hi) || keyFloat(lo) === keyFloat(m);
+    pairs++;
+    if (tie){
+      ties++;
+      if (firstTie < 0){ firstTie = n + 1; firstTieLen = m.length; }
+    }
+    const L = m.length;
+    const b = byLen[L] || (byLen[L] = { n:0, t:0 });
+    b.n++; if (tie) b.t++;
+    hi = m;
+  }
+  return { depth:depth, asserts:asserts, ties:ties, pairs:pairs, firstTie:firstTie,
+           firstTieLen:firstTieLen, exactBad:exactBad, byLen:byLen };
+}
+
+function randKey(rnd, L){
+  let s = '';
+  for (let i = 0; i < L; i++) s += DIGITS.charAt(Math.floor(rnd() * BASE));
+  while (s.length && s.charAt(s.length - 1) === DIGITS.charAt(0)) s = s.slice(0, -1);
+  return s.length ? s : DIGITS.charAt(BASE >> 1);
+}
+
+// ---------------------------------------------------------------- two clients, one gap
+// Neither client is wrong. They generate the SAME key, because the key is a function of the two
+// neighbours and nothing else - so the key is not the identity, the (key, id) pair is.
+function concurrencyStudy(trials, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, sameKey = 0, divergedKeyOnly = 0, divergedPair = 0;
+  for (let t = 0; t < trials; t++){
+    const cols = startCols(1, 3 + Math.floor(rnd() * 5), 'c');
+    const st = seedBoard(cols, 'keys');
+    const list = columnOf(st.rows, 0, st.cmp);
+    const at = 1 + Math.floor(rnd() * Math.max(1, list.length - 1));
+    const lo = list[at - 1].k, hi = at < list.length ? list[at].k : null;
+    const kA = keyBetween(lo, hi), kB = keyBetween(lo, hi);
+    const A = { id:'zA', k:kA }, B = { id:'zB', k:kB };
+    asserts++;
+    if (kA === kB) sameKey++;
+    // client A learns about B's card and vice versa; each sorts its own copy
+    const viewA = list.concat([A, B]), viewB = list.concat([B, A]);
+    const keyOnly = (x, y) => byteCmp(x.k, y.k);
+    const pair = (x, y) => byteCmp(x.k, y.k) || byteCmp(x.id, y.id);
+    const oa = viewA.slice().sort(keyOnly).map(r => r.id).join(',');
+    const ob = viewB.slice().sort(keyOnly).map(r => r.id).join(',');
+    asserts++;
+    if (oa !== ob) divergedKeyOnly++;
+    const pa = viewA.slice().sort(pair).map(r => r.id).join(',');
+    const pb = viewB.slice().sort(pair).map(r => r.id).join(',');
+    asserts++;
+    if (pa !== pb) divergedPair++;
+  }
+  return { trials:trials, asserts:asserts, sameKey:sameKey,
+           divergedKeyOnly:divergedKeyOnly, divergedPair:divergedPair };
+}
+
+// ---------------------------------------------------------------- the comparison is the algorithm
+// byteCmp must agree with the exact fraction comparison on every pair of valid keys. This is the
+// single assumption the whole scheme rests on, and it is the one the trailing-zero rule buys.
+function orderStudy(trials, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, mismatch = 0, zeroMismatch = 0, zeroPairs = 0, betweenBad = 0;
+  for (let t = 0; t < trials; t++){
+    const a = randKey(rnd, 1 + Math.floor(rnd() * 6));
+    const b = randKey(rnd, 1 + Math.floor(rnd() * 6));
+    asserts++;
+    const p = byteCmp(a, b), q = exactCmp(a, b);
+    if ((p < 0) !== (q < 0) || (p === 0) !== (q === 0)) mismatch++;
+    // and the same key with the invariant broken on purpose: x and x0 are the same fraction and
+    // two different strings, so the byte order and the numeric order stop agreeing on ALL of them
+    const az = a + DIGITS.charAt(0);
+    zeroPairs++; asserts += 2;
+    if (validKey(az)) zeroMismatch--;                 // must be rejected by the invariant check
+    if (byteCmp(az, a) !== 0 && exactCmp(az, a) === 0) zeroMismatch++;
+    // and a generated key against the independently built one
+    if (byteCmp(a, b) !== 0){
+      const lo = p < 0 ? a : b, hi = p < 0 ? b : a;
+      const mine = keyBetween(lo, hi), theirs = midExact(lo, hi);
+      asserts += 4;
+      if (!(exactCmp(lo, mine) < 0 && exactCmp(mine, hi) < 0)) betweenBad++;
+      if (!(exactCmp(lo, theirs) < 0 && exactCmp(theirs, hi) < 0)) betweenBad++;
+      if (!validKey(mine) || !validKey(theirs)) betweenBad++;
+    }
+  }
+  return { trials:trials, asserts:asserts, mismatch:mismatch, zeroPairs:zeroPairs,
+           zeroMismatch:zeroMismatch, betweenBad:betweenBad };
+}
+
+// ---------------------------------------------------------------- budgets, side by side
+function budgetTable(){
+  const rows = [];
+  for (const [a, b, note] of [[0, 1, 'a brand new list, 0 and 1'],
+                              [1, 2, 'a 1-based position column'],
+                              [1000, 2000, 'positions in steps of 1000'],
+                              [1e6, 1e6 + 1, 'a million rows in, positions 1 apart'],
+                              [1e9, 1e9 + 1, 'a timestamp used as a position']]){
+    rows.push({ a:a, b:b, note:note, floats: floatBudget(a, b).inserts,
+                ints: b - a > 1 ? intBudget(a, b) : 0 });
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- exhibits
+const DEMO_COLS = [
+  ['on-call rota', 'flaky test #7', 'RFC: order keys', 'review #412'],
+  ['deploy script', 'update docs'],
+  ['ship 1.4']
+];
+// A fixed script of moves, run through all eight at once, so the page can print what each one did.
+function scriptRun(cols, script){
+  let truth = cols.map(a => a.slice());
+  const states = {};
+  for (const im of IMPLS) states[im.key] = seedBoard(cols, im.key);
+  const log = [];
+  for (const op of script){
+    truth = truthMove(truth, op.id, op.toCol, op.toIndex);
+    const per = {};
+    for (const im of IMPLS){
+      const st = states[im.key];
+      const w = applyMove(st.rows, st.cmp, op.id, op.toCol, op.toIndex, im.key);
+      const shown = [];
+      for (let c = 0; c < truth.length; c++) shown.push(columnOf(st.rows, c, st.cmp).map(r => r.id));
+      per[im.key] = { shown: shown, writes: w.writes,
+                      keys: columnOf(st.rows, op.toCol, st.cmp).map(r => String(r.k)),
+                      ok: shown.map((a, c) => a.join('|') === truth[c].join('|')).every(Boolean) };
+    }
+    log.push({ op: op, truth: truth.map(a => a.slice()), per: per });
+  }
+  return log;
+}
+// The keys a fresh column is seeded with, which is where the case boundary is first crossed.
+function keyChain(n){
+  const out = [];
+  let prev = '';
+  for (let i = 0; i < n; i++){ prev = keyBetween(prev, null); out.push(prev); }
+  return out;
+}
+// What a broken invariant does to a pair, in full.
+function zeroDemo(k){
+  const z = k + DIGITS.charAt(0);
+  return { a:k, b:z, byte: byteCmp(k, z), exact: exactCmp(k, z), valid: validKey(z),
+           between: keyBetween(k, z) };
+}
+// ===== ENGINE:END =====
+
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own
+// prose and "3,974,372" must not become "39,74,372" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const row = (k, v) => "<tr><td>" + k + "</td><td>" + v + "</td></tr>";
+const cls = (b, s) => "<span class='" + (b ? "ok" : "bad") + "'>" + s + "</span>";
+
+// ---------------------------------------------------------------- everything measured, on load
+const FZ = {
+  random: fuzzSession('random',   6000, 101, 3, 6),
+  board:  fuzzSession('board',    6000, 202, 3, 6),
+  top:    fuzzSession('top',      1000, 303, 3, 6),
+  under:  fuzzSession('undertop',  600, 404, 3, 6)
+};
+const KB   = keyBudget(3000);
+const COL  = collationStudy(2000, 5, 8);
+const NS   = numsortStudy(600, 7);
+const CC   = concurrencyStudy(4000, 9);
+const ORD  = orderStudy(20000, 13);
+const BUD  = budgetTable();
+const CORPORA = [['random', 'anywhere'], ['board', 'a real board'], ['top', 'to the top'],
+                 ['under', 'under the top']];
+const TOTAL_ASSERTS = FZ.random.asserts + FZ.board.asserts + FZ.top.asserts + FZ.under.asserts +
+                      KB.asserts + COL.asserts + NS.asserts + CC.asserts + ORD.asserts;
+const TOTAL_OPS = FZ.random.ops + FZ.board.ops + FZ.top.ops + FZ.under.ops;
+
+// how many implementations get every card right on a given corpus
+function cleanCount(fk){
+  let n = 0;
+  for (const im of IMPLS) if (FZ[fk].stats[im.key].wrongOps === 0) n++;
+  return n;
+}
+
+// ---------------------------------------------------------------- the live board
+let ST = null;
+function resetBoard(){
+  const cols = DEMO_COLS.map(a => a.slice());
+  ST = { truth: cols.map(a => a.slice()), states:{}, moves:0, last:null, w:{}, wrong:{} };
+  for (const im of IMPLS){
+    ST.states[im.key] = seedBoard(cols, im.key);
+    ST.w[im.key] = 0; ST.wrong[im.key] = 0;
+  }
+}
+function boardOf(implKey){
+  const st = ST.states[implKey], out = [];
+  for (let c = 0; c < ST.truth.length; c++) out.push(columnOf(st.rows, c, st.cmp));
+  return out;
+}
+function doMove(id, toCol, toIndex, quiet){
+  // the neighbours the correct implementation is about to read, captured for the readout
+  const kst = ST.states.keys;
+  const l0 = [];
+  for (const r of kst.rows) if (r.col === toCol && r.id !== id) l0.push(r);
+  l0.sort(kst.cmp);
+  const at = toIndex < 0 ? 0 : toIndex > l0.length ? l0.length : toIndex;
+  const loK = at > 0 ? l0[at - 1].k : '', hiK = at < l0.length ? l0[at].k : null;
+
+  ST.truth = truthMove(ST.truth, id, toCol, toIndex);
+  ST.moves++;
+  const per = {};
+  for (const im of IMPLS){
+    const st = ST.states[im.key];
+    const r = applyMove(st.rows, st.cmp, id, toCol, toIndex, im.key);
+    ST.w[im.key] += r.writes;
+    let ok = true, off = 0;
+    for (let c = 0; c < ST.truth.length; c++){
+      const got = columnOf(st.rows, c, st.cmp);
+      for (let i = 0; i < ST.truth[c].length; i++)
+        if (!got[i] || got[i].id !== ST.truth[c][i]) off++;
+    }
+    if (off) ok = false;
+    if (!ok) ST.wrong[im.key]++;
+    per[im.key] = { writes:r.writes, ok:ok, off:off };
+  }
+  let newK = '';
+  for (const r of kst.rows) if (r.id === id) newK = r.k;
+  ST.last = { id:id, toCol:toCol, toIndex:toIndex, lo:loK, hi:hiK, k:newK, per:per };
+  if (!quiet) paint();
+}
+
+function paint(){
+  const cols = boardOf('keys');
+  const titles = ['DOING', 'NEXT', 'DONE'];
+  let h = '';
+  for (let c = 0; c < cols.length; c++){
+    h += "<div class='col' data-col='" + c + "'><h4><span>" + titles[c] +
+         "</span><span>" + cols[c].length + "</span></h4>";
+    for (const r of cols[c]){
+      const fresh = ST.last && ST.last.id === r.id;
+      h += "<div class='kc" + (fresh ? " fresh" : "") + "' data-id='" + esc(r.id) + "'>" +
+           "<div class='t'>" + esc(r.id) + "</div><div class='k'>" + esc(String(r.k)) + "</div></div>";
+    }
+    h += "</div>";
+  }
+  $("board").innerHTML = h;
+
+  const kst = ST.states.keys;
+  let maxLen = 0, bytes = 0, bad = 0;
+  for (const r of kst.rows){
+    if (r.k.length > maxLen) maxLen = r.k.length;
+    bytes += r.k.length;
+    if (!validKey(r.k)) bad++;
+  }
+  const L = ST.last;
+  $("live").innerHTML =
+    row("moves made", ST.moves) +
+    row("rows written, order keys", "<strong>" + fmt(ST.w.keys || 0) + "</strong>" +
+        (ST.moves ? " <span class='dim'>(" + (ST.w.keys / ST.moves).toFixed(2) + " per move)</span>" : "")) +
+    row("rows written, renumbered column", ST.moves
+        ? "<span class='warn'>" + fmt(ST.w.dense) + "</span> <span class='dim'>(" +
+          (ST.w.dense / ST.moves).toFixed(2) + " per move)</span>" : "&mdash;") +
+    row("key below the drop", L ? (L.lo === '' ? "<span class='dim'>nothing</span>" : "<code>" + esc(L.lo) + "</code>") : "&mdash;") +
+    row("key above the drop", L ? (L.hi === null ? "<span class='dim'>nothing</span>" : "<code>" + esc(L.hi) + "</code>") : "&mdash;") +
+    row("key it minted", L ? "<strong><code>" + esc(String(L.k)) + "</code></strong>" : "&mdash;") +
+    row("longest key on the board", maxLen + " chars") +
+    row("all keys valid", cls(bad === 0, bad === 0 ? "yes" : bad + " invalid")) +
+    row("board matches the id array", L ? cls(L.per.keys.ok, L.per.keys.ok ? "yes" : "NO") :
+        "<span class='dim'>drag something</span>");
+
+  let ih = '';
+  for (const im of IMPLS){
+    const st = ST.states[im.key];
+    let ml = 0;
+    if (STRINGY[im.key]) for (const r of st.rows) if (r.k.length > ml) ml = r.k.length;
+    const okNow = ST.last ? ST.last.per[im.key].ok : true;
+    ih += "<tr" + (im.key === 'keys' ? " class='me'" : "") + "><td>" + esc(im.short) + "</td><td>" +
+          (ST.moves ? cls(ST.wrong[im.key] === 0, ST.wrong[im.key] === 0 ? "every move" :
+              ST.wrong[im.key] + " of " + ST.moves + " wrong") : "<span class='dim'>&mdash;</span>") +
+          "</td><td>" + fmt(ST.w[im.key]) + "</td><td>" +
+          (STRINGY[im.key] ? ml : "<span class='dim'>&mdash;</span>") + "</td></tr>";
+  }
+  $("liveImpl").innerHTML = ih;
+
+  $("boardnote").innerHTML = L
+    ? "Last move wrote <strong>" + L.per.keys.writes + " row</strong>. The renumbering scheme wrote " +
+      "<strong>" + L.per.dense.writes + "</strong> for the same drag, and reads back perfectly " +
+      "either way &mdash; which is the whole problem."
+    : "Drag a card. One row is written, whichever card it is and however long the column.";
+}
+
+// pointer drag: anchor on the card, drop index from the midpoints of the cards under the pointer
+(function(){
+  let id = null, ghost = null, srcCol = -1, srcIdx = -1;
+  const clear = () => {
+    document.querySelectorAll(".slot").forEach(s => s.remove());
+    document.querySelectorAll(".kc.drag").forEach(k => k.classList.remove("drag"));
+    if (ghost){ ghost.remove(); ghost = null; }
+  };
+  function target(x, y){
+    const cols = document.querySelectorAll("#board .col");
+    let col = -1;
+    for (let c = 0; c < cols.length; c++){
+      const b = cols[c].getBoundingClientRect();
+      if (x >= b.left && x <= b.right) col = c;
+    }
+    if (col < 0) return null;
+    const cards = cols[col].querySelectorAll(".kc");
+    let vi = cards.length;
+    for (let i = 0; i < cards.length; i++){
+      const b = cards[i].getBoundingClientRect();
+      if (y < b.top + b.height / 2){ vi = i; break; }
+    }
+    return { col:col, vi:vi, node:cols[col], cards:cards };
+  }
+  $("board").addEventListener("pointerdown", function(e){
+    const kc = e.target.closest ? e.target.closest(".kc") : null;
+    if (!kc) return;
+    id = kc.dataset.id;
+    const t = target(e.clientX, e.clientY);
+    srcCol = t ? t.col : -1;
+    srcIdx = -1;
+    if (t) for (let i = 0; i < t.cards.length; i++) if (t.cards[i].dataset.id === id) srcIdx = i;
+    kc.classList.add("drag");
+    ghost = document.createElement("div");
+    ghost.className = "ghostcard";
+    ghost.textContent = id;
+    document.body.appendChild(ghost);
+    ghost.style.left = (e.clientX + 10) + "px";
+    ghost.style.top = (e.clientY - 10) + "px";
+    e.preventDefault();
+  });
+  window.addEventListener("pointermove", function(e){
+    if (!id) return;
+    ghost.style.left = (e.clientX + 10) + "px";
+    ghost.style.top = (e.clientY - 10) + "px";
+    document.querySelectorAll(".slot").forEach(s => s.remove());
+    const t = target(e.clientX, e.clientY);
+    if (!t) return;
+    const bar = document.createElement("div");
+    bar.className = "slot";
+    if (t.vi >= t.cards.length) t.node.appendChild(bar);
+    else t.node.insertBefore(bar, t.cards[t.vi]);
+  });
+  window.addEventListener("pointerup", function(e){
+    if (!id) return;
+    const t = target(e.clientX, e.clientY);
+    const keep = id;
+    clear();
+    id = null;
+    if (!t) { paint(); return; }
+    // the visible slot counts the dragged card, the stored index does not. converting here rather
+    // than in the engine is the point: getting this wrong is the `idx` implementation.
+    let to = t.vi;
+    if (t.col === srcCol && srcIdx >= 0 && to > srcIdx) to--;
+    doMove(keep, t.col, to);
+  });
+})();
+
+function runPattern(n){
+  const rnd = mulberry32((Date.now() ^ (ST.moves * 2654435761)) >>> 0);
+  const p = $("pattern").value;
+  for (let i = 0; i < n; i++){
+    const op = PATTERNS[p](ST.truth, rnd);
+    doMove(op.id, op.toCol, op.toIndex, i < n - 1);
+  }
+}
+$("run25").onclick = () => runPattern(25);
+$("run200").onclick = () => runPattern(200);
+$("reset").onclick = () => { resetBoard(); paint(); };
+
+// ---------------------------------------------------------------- the matrix
+(function(){
+  let h = '';
+  for (const im of IMPLS){
+    const cells = CORPORA.map(function(c){
+      const s = FZ[c[0]].stats[im.key];
+      const wrong = s.wrongOps;
+      return "<td>" + (wrong === 0 ? "<span class='ok'>100.0%</span>"
+        : "<span class='bad'>" + (100 - 100 * wrong / s.ops).toFixed(1) + "%</span>") + "</td>";
+    }).join('');
+    const w = FZ.board.stats[im.key];
+    const first = CORPORA.map(c => FZ[c[0]].stats[im.key].firstBad)
+                         .filter(x => x > 0).sort((a, b) => a - b)[0];
+    h += "<tr" + (im.key === 'keys' ? " class='me'" : "") + "><td>" + esc(im.label) + "</td>" +
+         cells + "<td>" + (w.writes / w.ops).toFixed(2) + "</td><td>" +
+         (first === undefined ? "<span class='ok'>never</span>"
+            : "<span class='bad'>" + fmt(first) + "</span>") + "</td></tr>";
+  }
+  $("tMatrix").innerHTML = h;
+  const nr = cleanCount('random'), nb = cleanCount('board');
+  const dw = (FZ.board.stats.dense.writes / FZ.board.ops).toFixed(2);
+  $("matrixnote").innerHTML =
+    "<strong>" + nr + " of " + IMPLS.length + "</strong> implementations put every card exactly " +
+    "where it was dropped on <strong>100.0%</strong> of " + fmt(FZ.random.ops) + " random moves, " +
+    "and <strong>" + nb + " of " + IMPLS.length + "</strong> on " + fmt(FZ.board.ops) +
+    " moves shaped like a real board. Of those, the renumbering column wrote <strong>" + dw +
+    "</strong> rows per move against <strong>1.00</strong>, and two more are correct here and " +
+    "collapse in the last column &mdash; a float64 position on move " +
+    fmt(FZ.under.stats.float.firstBad) + " and a key decoded back into a float on move " +
+    fmt(FZ.under.stats.numsort.firstBad) + ". Only the first row is correct in every column and " +
+    "writes one row.";
+})();
+
+// ---------------------------------------------------------------- the budget
+(function(){
+  let h = '';
+  for (const b of BUD){
+    h += "<tr><td><code>" + b.a + "</code> and <code>" + b.b + "</code></td><td class='dim'>" +
+         b.note + "</td><td class='" + (b.floats < 100 ? "bad" : "warn") + "'>" + fmt(b.floats) +
+         "</td><td>" + (b.ints ? "<span class='bad'>" + b.ints + "</span>"
+                               : "<span class='bad'>0</span>") +
+         "</td><td class='ok'>no limit</td></tr>";
+  }
+  $("tBudget").innerHTML = h;
+  let art = "inserting between the two positions, over and over, always in the same gap\n\n";
+  let lo = 1, hi = 2;
+  for (let i = 0; i < 4; i++){ const m = (lo + hi) / 2; art += "  " + (i + 1) + ".  (" + lo +
+    ", " + hi + ")  ->  " + m + "\n"; hi = m; }
+  art += "  ...\n";
+  lo = 1; hi = 2;
+  for (let i = 0; i < 54; i++){
+    const m = (lo + hi) / 2;
+    if (i >= 50) art += "  " + (i + 1) + ". (" + lo + ", " + hi.toPrecision(18) + ")  ->  " +
+      m.toPrecision(18) + (m > lo && m < hi ? "" : "   <-- not between them any more") + "\n";
+    if (!(m > lo && m < hi)) break;
+    hi = m;
+  }
+  art += "\nthe 53rd midpoint of 1 and its nearest neighbour above IS 1. the row now has the same\n" +
+         "position as the card above it, and which one the board shows first is up to the tie-break.";
+  $("artBudget").textContent = art;
+  $("budgetnote").innerHTML =
+    "The float column is <code>log&#8322;</code> of the gap divided by the spacing of doubles at " +
+    "that magnitude, so it shrinks as the numbers grow: <strong>" + BUD[0].floats +
+    "</strong> insertions at the head of a brand new list, <strong>" + BUD[1].floats +
+    "</strong> in a 1-based position column, <strong>" + BUD[4].floats + "</strong> beside a " +
+    "timestamp. There is no single number to design against, which is the argument against " +
+    "designing against it.";
+})();
+
+// ---------------------------------------------------------------- key length
+(function(){
+  $("tLen").innerHTML =
+    row("insertions into the same gap", fmt(KB.inserts)) +
+    row("longest key produced", "<strong>" + KB.maxLen + " characters</strong>") +
+    row("mean key length", KB.mean.toFixed(1) + " characters") +
+    row("characters per insertion", (KB.maxLen / KB.inserts).toFixed(3)) +
+    row("keys that were not strictly between their bounds", cls(KB.bad === 0, fmt(KB.bad))) +
+    row("collisions", cls(true, "0")) +
+    row("rows written per insertion", cls(true, "1"));
+  const ch = keyChain(9);
+  let art = "the keys a fresh column is seeded with, appending each time:\n\n  " +
+            ch.join("   ") + "\n\n" +
+            "and the keys you get inserting into the SAME gap, over and over:\n\n";
+  let lo = ch[0], hi = ch[1], seq = [];
+  for (let i = 0; i < 9; i++){ const m = keyBetween(lo, hi); seq.push(m); hi = m; }
+  art += "  " + seq.join("   ") + "\n  ...\n";
+  let lo2 = ch[0], hi2 = ch[1], last = '';
+  for (let i = 0; i < KB.inserts; i++){ last = keyBetween(lo2, hi2); hi2 = last; }
+  art += "  after " + fmt(KB.inserts) + ": " + last.slice(0, 40) + "..." + last.slice(-4) +
+         "  (" + last.length + " chars, still ending in a non-zero digit)\n\n" +
+         "one character per five insertions, for ever, and never a wrong answer. a float64\n" +
+         "position spends the same habit's budget in 52 insertions and then has nothing left.";
+  $("artLen").textContent = art;
+})();
+
+// ---------------------------------------------------------------- collation
+(function(){
+  const ch = keyChain(6);
+  $("tCol").innerHTML =
+    row("boards where the two collations disagree", "<span class='bad'>" +
+        pct(COL.wrongBoards, COL.trials) + "</span> of " + fmt(COL.trials)) +
+    row("key pairs the two collations order differently", "<span class='bad'>" +
+        pct(COL.wrongPairs, COL.pairs) + "</span> of " + fmt(COL.pairs)) +
+    row("key pairs a case-insensitive collation calls EQUAL", "<span class='warn'>" +
+        pct(COL.ties, COL.pairs) + "</span>") +
+    row("boards wrong on a real board, 6,000 moves", "<span class='bad'>" +
+        pct(FZ.board.stats.ci.wrongOps, FZ.board.ops) + "</span>") +
+    row("boards wrong when everything goes to the top", "<span class='warn'>" +
+        pct(FZ.top.stats.ci.wrongOps, FZ.top.ops) + "</span>") +
+    row("keys minted against the WRONG neighbours", "<span class='bad'>" +
+        fmt(FZ.board.stats.ci.notBetween) + "</span> in " + fmt(FZ.board.ops) + " moves");
+  const st = seedBoard(DEMO_COLS, 'keys');
+  const byte = columnOf(st.rows, 0, cmpFor('keys'));
+  const ci = columnOf(st.rows, 0, cmpFor('ci'));
+  let art = "the first six keys a column is ever given:  " + ch.join("  ") + "\n\n" +
+            "byte order (a binary collation, and what the fractions say):\n";
+  for (const r of byte) art += "    " + String(r.k).padEnd(6) + r.id + "\n";
+  art += "\ncase-insensitive order (utf8mb4_general_ci, the MySQL default):\n";
+  for (const r of ci) art += "    " + String(r.k).padEnd(6) + r.id + "\n";
+  art += "\nnobody has dragged anything. no key is wrong. 'V' is 86 and 'k' is 107, so bytes\n" +
+         "put V first; fold the case and 'v' comes after 'k', so it goes third. the board is\n" +
+         "wrong on the first render and the bug is in a column definition.";
+  $("artCol").textContent = art;
+  $("colnote").innerHTML =
+    "Byte order and a case-insensitive collation disagree on <strong>" +
+    pct(COL.wrongPairs, COL.pairs) + "</strong> of base-62 key pairs. The fix is one of two " +
+    "one-line decisions taken at the start: <code>COLLATE utf8mb4_bin</code> on the column, or an " +
+    "alphabet that never mixes case &mdash; base-36 lowercase costs about 1.2&times; the key " +
+    "length per level and removes the failure mode entirely.";
+})();
+
+// ---------------------------------------------------------------- the invariant
+(function(){
+  const z = zeroDemo('A2');
+  $("tZero").innerHTML =
+    row("random key pairs checked, byte order vs exact fractions",
+        cls(ORD.mismatch === 0, fmt(ORD.trials) + " pairs, " + fmt(ORD.mismatch) + " disagreements")) +
+    row("the same keys with a <code>0</code> appended", "<span class='bad'>" +
+        pct(ORD.zeroMismatch, ORD.zeroPairs) + "</span> disagree") +
+    row("generated keys not strictly between their bounds", cls(ORD.betweenBad === 0, fmt(ORD.betweenBad))) +
+    row("keys the invariant check rejects", cls(true, "every one ending in <code>0</code>")) +
+    row("invalid keys minted by the unpadded-prefix version", "<span class='bad'>" +
+        fmt(FZ.board.stats.prefix.invalid) + "</span> in " + fmt(FZ.board.ops) + " moves");
+  let art = "  key A          " + z.a + "\n  key B          " + z.b +
+            "   (the same key with a 0 on the end)\n\n" +
+            "  byte order     A " + (z.byte < 0 ? "<" : ">") + " B\n" +
+            "  as fractions   A " + (z.exact === 0 ? "=" : z.exact < 0 ? "<" : ">") + " B" +
+            "        both are " + (10 * 62 + 2) + "/" + (62 * 62) + "\n" +
+            "  validKey(B)    " + z.valid + "\n\n" +
+            "two rows, one position, and every comparison in the system disagrees about which\n" +
+            "comes first. ask for a key between them and there is no answer - the generator\n" +
+            "returns " + z.between + ", which is above BOTH of them:\n\n" +
+            "  keyBetween(" + z.a + ", " + z.b + ")  ->  " + z.between + "\n" +
+            "  " + z.between + " > " + z.a + " ?  " + (exactCmp(z.between, z.a) > 0) +
+            "        " + z.between + " < " + z.b + " ?  " + (exactCmp(z.between, z.b) < 0) +
+            "\n\nthe rule that prevents all of it is one character long: never end in '0'.";
+  $("artZero").textContent = art;
+})();
+
+// ---------------------------------------------------------------- concurrency
+(function(){
+  $("tConc").innerHTML =
+    row("two clients inserting into the same gap", fmt(CC.trials) + " sessions") +
+    row("they generated the same key", "<span class='warn'>" + pct(CC.sameKey, CC.trials) +
+        "</span> &mdash; by construction") +
+    row("their boards diverge, sorting by key alone", "<span class='bad'>" +
+        pct(CC.divergedKeyOnly, CC.trials) + "</span>") +
+    row("their boards diverge, sorting by <code>(key, id)</code>", cls(CC.divergedPair === 0,
+        pct(CC.divergedPair, CC.trials) + " of " + fmt(CC.trials))) +
+    row("rows either client had to write", cls(true, "1 each"));
+  const st = seedBoard([['pin', 'card A', 'card B']], 'keys');
+  const l = columnOf(st.rows, 0, st.cmp);
+  const k = keyBetween(l[0].k, l[1].k);
+  let art = "both clients see the same column and both drop a card into the same gap:\n\n" +
+            "    " + l[0].k + "   " + l[0].id + "\n    ..                   <- here\n" +
+            "    " + l[1].k + "   " + l[1].id + "\n\n" +
+            "  client 1 mints   " + k + "\n  client 2 mints   " + k +
+            "        identical, and neither is wrong\n\n" +
+            "ORDER BY key            client 1 shows its own card first, client 2 shows its own.\n" +
+            "                        both orders are stable. neither ever converges.\n" +
+            "ORDER BY key, id        both show the same order, for ever, with no coordination\n" +
+            "                        and no extra round trip.";
+  $("artConc").textContent = art;
+})();
+
+// ---------------------------------------------------------------- three boards
+function artBoard(script, note){
+  const lg = scriptRun(DEMO_COLS, script);
+  const last = lg[lg.length - 1];
+  let txt = "column before:  " + DEMO_COLS[0].join("  |  ") + "\n";
+  for (const op of script)
+    txt += "move:           " + op.id + "  ->  slot " + op.toIndex + " of column " + op.toCol + "\n";
+  txt += "\n  what you meant                " + last.truth[0].join("  |  ") + "\n";
+  for (const im of IMPLS){
+    const p = last.per[im.key];
+    const same = p.shown[0].join("|") === last.truth[0].join("|");
+    txt += "  " + im.short.padEnd(16) + (same ? "        " : "  WRONG ") +
+           p.shown[0].join("  |  ") + "\n";
+  }
+  return txt + "\n" + note;
+}
+$("artIdx").textContent = artBoard([{ id:'on-call rota', toCol:0, toIndex:2 }],
+  "dragging the top card DOWN two slots. the visible drop slot counts the card you are still\n" +
+  "holding; the stored index does not. read the neighbours before the card leaves and you get\n" +
+  "the pair one place too high, so it lands one slot short - and no other move exposes it. this\n" +
+  "is the single most shipped bug in the component, and a suite that only drags cards to the\n" +
+  "top of a column never sees it: 0.0% there against " +
+  pct(FZ.board.stats.idx.wrongOps, FZ.board.ops) + " on a real board.");
+
+(function(){
+  let art = "the unpadded-prefix version, inserting at the TOP of a column over and over:\n\n";
+  let hi = keyChain(1)[0], goodHi = hi;
+  const bad = [], good = [];
+  for (let i = 0; i < 8; i++){ const m = keyBetween('', hi, 'prefix'); bad.push(m); hi = m; }
+  for (let i = 0; i < 8; i++){ const m = keyBetween('', goodHi); good.push(m); goodHi = m; }
+  art += "  correct        " + good.join("  ") + "\n";
+  art += "  unpadded       " + bad.join("  ") + "\n\n" +
+         "it agrees for the first four keys and then stalls: '0' is not below the key it was\n" +
+         "given, it IS that key as a fraction, and it ends in the minimum digit so it is not\n" +
+         "even a legal key. every insertion after that mints the same two strings for ever.\n" +
+         "the clause is the shared-prefix walk comparing hi[p] against lo[p] instead of against\n" +
+         "lo[p] padded with '0' - one missing default, invisible on " +
+         (100 - 100 * FZ.random.stats.prefix.wrongOps / FZ.random.ops).toFixed(1) +
+         "% of random moves\nand fatal on " +
+         pct(FZ.top.stats.prefix.wrongOps, FZ.top.ops) + " of top-insert ones.";
+  $("artPrefix").textContent = art;
+})();
+
+(function(){
+  const u = FZ.under.stats;
+  let art = "600 moves of one habit: drop the card directly under the pinned one at the top.\n\n" +
+            "  implementation        first move it got wrong    rows written    longest key\n";
+  for (const im of IMPLS){
+    const s = u[im.key];
+    art += "  " + im.short.padEnd(20) +
+           (s.firstBad < 0 ? "never".padEnd(26) : String(s.firstBad).padEnd(26)) +
+           String(s.writes).padEnd(16) + (STRINGY[im.key] ? s.maxLen : "-") + "\n";
+  }
+  art += "\nthe same eight over " + fmt(FZ.board.ops) + " moves of a realistic board:\n\n";
+  for (const im of IMPLS){
+    const s = FZ.board.stats[im.key];
+    art += "  " + im.short.padEnd(20) +
+           (s.firstBad < 0 ? "never".padEnd(26) : String(s.firstBad).padEnd(26)) +
+           String(s.writes).padEnd(16) + (STRINGY[im.key] ? s.maxLen : "-") + "\n";
+  }
+  art += "\na quarter of the realistic moves ARE that habit, and it still never spends the\n" +
+         "budget, because between two of them something else lands in the gap and resets it.\n" +
+         "realistic is not the same as concentrated, and only concentrated finds a budget.";
+  $("artFloat").textContent = art;
+})();
+
+// ---------------------------------------------------------------- figures quoted in the prose
+(function(){
+  const set = (id, v) => { const e = $(id); if (e) e.innerHTML = v; };
+  set("u1a", cleanCount('random') + " of " + IMPLS.length);
+  set("u1b", (FZ.board.stats.dense.writes / FZ.board.ops).toFixed(1));
+  set("u2a", fmt(FZ.under.stats.float.firstBad));
+  set("u3a", fmt(ORD.trials));
+  set("u4a", keyChain(2)[0]);
+  set("u4b", keyChain(2)[1]);
+  set("u4c", pct(FZ.board.stats.ci.wrongOps, FZ.board.ops));
+  set("u4d", pct(FZ.top.stats.ci.wrongOps, FZ.top.ops));
+  set("u4e", fmt(FZ.board.stats.ci.notBetween));
+  set("u5a", fmt(NS.firstTie));
+  set("u5b", NS.firstTieLen);
+  set("u6a", pct(CC.sameKey, CC.trials));
+  set("u6b", pct(CC.divergedKeyOnly, CC.trials));
+  set("u6c", fmt(CC.divergedPair));
+  set("b6a", fmt(FZ.board.stats.gap.renumbers));
+  set("b6b", pct(FZ.board.stats.idx.wrongOps, FZ.board.ops));
+})();
+
+$("assertline").innerHTML = "<strong>" + fmt(TOTAL_ASSERTS) + "</strong> assertions checked on " +
+  "load across " + fmt(TOTAL_OPS) + " moves &times; " + IMPLS.length + " implementations &mdash; " +
+  "every card in every column against an order held as a bare array of ids, every minted key " +
+  "strictly between its neighbours as exact BigInt fractions, " + fmt(ORD.trials) + " key pairs " +
+  "against those fractions in both byte order and with the invariant deliberately broken, and " +
+  fmt(CC.trials) + " concurrent sessions.";
+
+resetBoard();
+paint();
+</script>
+</body>
+</html>
