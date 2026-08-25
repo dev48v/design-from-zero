@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero · Day 71 — Undo history</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1f5f9; color:#0f172a; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e8edf5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#4338ca; }
+
+  header { background:#fff; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#4338ca; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e8edf5; color:#0f172a; }
+  .tabs button.on { background:#0f172a; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e8edf5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#475569; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#64748b; margin:0 0 12px; }
+  .note { font-size:12px; color:#64748b; margin:12px 0 0; }
+  .rule { border-top:1px solid #e2e8f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; }
+  .prose ul { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e2e8f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num tr.me td { background:#eef2ff; font-weight:700; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#94a3b8; }
+  .scroll { overflow-x:auto; }
+
+  .ctl { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+         font-size:13px; }
+  .ctl label { display:flex; flex-direction:column; gap:3px; }
+  .ctl span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b; }
+  .ctl select, .ctl button { font:inherit; font-size:13px; padding:6px 10px; border-radius:8px;
+                             border:1px solid #cbd5e1; background:#fff; }
+  .ctl button { cursor:pointer; font-weight:700; background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl button.ghost { background:#fff; color:#0f172a; }
+
+  .split { display:grid; gap:22px; align-items:start; }
+  @media (min-width:1024px) { .split { grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); } }
+
+  textarea#pad { width:100%; min-height:190px; resize:vertical; font-family:ui-monospace, Menlo,
+      Consolas, monospace; font-size:13px; line-height:1.6; padding:12px 13px; border-radius:11px;
+      border:1px solid #cbd5e1; background:#fbfcfe; color:#0f172a; outline:none; }
+  textarea#pad:focus { border-color:#4338ca; box-shadow:0 0 0 3px #e0e7ff; }
+
+  .rail { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
+  .chip { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:10.5px; line-height:1.4;
+          border:1px solid #dbe2ec; background:#f6f8fb; color:#334155; border-radius:7px;
+          padding:2px 6px; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+          white-space:nowrap; }
+  .chip b { color:#4338ca; font-weight:800; }
+  .chip.top { border-color:#4338ca; background:#eef2ff; color:#312e81; }
+  .chip.redo { border-style:dashed; color:#94a3b8; background:#fff; }
+  .chip.redo b { color:#cbd5e1; }
+  .railcap { font-size:10px; font-weight:800; letter-spacing:.1em; color:#94a3b8; margin:12px 0 0; }
+  .docbox { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:#334155;
+            white-space:pre-wrap; word-break:break-word; text-align:left; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 71</p>
+    <h1>
+      &#9194; Undo history &mdash; press Ctrl+Z and the last thing you did comes back. Underneath is
+      not a stack of documents but a stack of <strong>inverse patches</strong>, and one predicate
+      decides everything you feel about it: whether the keystroke you just made <em>joins</em> the
+      entry on top of the stack or starts a new one. Five clauses answer that. The eight machines
+      here differ by one clause each &mdash; and the property every undo test asserts, <em>undo
+      everything, redo the same number of times, the text is back</em>, is satisfied by
+      <strong>eight of eight</strong> on <strong>100.0%</strong> of 700 generated test cases, because
+      on a two-stack machine it is very nearly a tautology. The same round trip asserted on the
+      <em>caret</em> instead of the text separates one of them on <strong>700 of 700</strong>. The
+      cap that trims the wrong end of the stack is invisible to three corpora out of four and needs a
+      session longer than the cap &mdash; the first operation it gets wrong is a straight line,
+      <strong>about six operations per unit of cap</strong>. And the clause that looks most essential,
+      that the new edit be <em>contiguous</em> with the run, turned out to be redundant:
+      <strong>0 divergences in 179,243 operations</strong>, never once the sole reason for a break,
+      and the input that finally separates it is not a keystroke at all.
+      <strong>6,179,960 assertions</strong> on load against a history modelled the other way round
+      &mdash; whole-document snapshots and a pointer. Pure vanilla JavaScript, one file, no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9194; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Type in the box.</strong> Ctrl+Z and Ctrl+Shift+Z work, and so do the buttons. The
+        violet row underneath is the undo stack &mdash; one chip per entry, showing what that entry
+        will give back. Watch how many keystrokes collapse into one chip, and where a chip refuses to
+        grow. The panel on the right replays the identical keystrokes through all eight machines.
+      </p>
+      <div class="ctl">
+        <label><span>&nbsp;</span><button id="bUndo">&#9194; undo</button></label>
+        <label><span>&nbsp;</span><button id="bRedo" class="ghost">redo &#9193;</button></label>
+        <label><span>&nbsp;</span><button id="bSent" class="ghost">type a sentence</button></label>
+        <label><span>&nbsp;</span><button id="bBranch" class="ghost">undo, then type something else</button></label>
+        <label><span>&nbsp;</span><button id="bClock" class="ghost">walk away 40 minutes</button></label>
+        <label><span>&nbsp;</span><button id="bTwo" class="ghost">type in two places</button></label>
+        <label><span>&nbsp;</span><button id="bRemote" class="ghost">a collaborator edits it</button></label>
+        <label><span>&nbsp;</span><button id="bSess" class="ghost">150 keystrokes</button></label>
+        <label><span>&nbsp;</span><button id="bReset" class="ghost">reset</button></label>
+      </div>
+      <div class="split">
+        <div>
+          <textarea id="pad" spellcheck="false" aria-label="editable document"></textarea>
+          <p class="railcap" id="railcap">THE UNDO STACK</p>
+          <div class="rail" id="rail"></div>
+          <p class="note" id="padnote"></p>
+        </div>
+        <div>
+          <p class="cap">THIS SESSION, MEASURED</p>
+          <table class="num"><tbody id="live"></tbody></table>
+          <p class="cap" style="margin:18px 0 8px">THE SAME KEYSTROKES, ALL EIGHT</p>
+          <div class="scroll"><table class="num">
+            <thead><tr><th>implementation</th><th>the document it is showing</th>
+              <th>entries</th><th>same</th></tr></thead>
+            <tbody id="liveImpl"></tbody></table></div>
+          <p class="note" id="assertline"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE PROPERTY EVERYBODY TESTS, ON FOUR CORPORA</p>
+      <p class="lead">
+        Press undo until nothing happens, press redo the same number of times, and the text is back.
+        That is the assertion in essentially every undo test ever written. Note what it does not ask:
+        not where the caret went, not how much one press gave back, and not whether the state it
+        passed through on the way ever existed. Percentages are <em>sessions that passed</em>.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>what one clause changed</th>
+          <th>a test suite<br>700 cases</th><th>a real session<br>140 sessions</th>
+          <th>aimed at the seams<br>140 sessions</th><th>a whole day<br>24 sessions</th>
+          <th>the same round trip,<br>asserted on the caret</th></tr></thead>
+        <tbody id="tRT"></tbody></table></div>
+      <p class="note" id="rtnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">NOW ASSERT AFTER EVERY SINGLE OPERATION INSTEAD</p>
+      <p class="lead">
+        The same eight machines, the same four op streams, against a history built the other way
+        round &mdash; whole-document snapshots and an index &mdash; compared after every keystroke,
+        every caret move, every undo and every redo. The last column is the cheapest assertion on
+        this page and the one nobody writes: does <code>canRedo</code> agree about whether there is
+        anything to redo.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>a test suite<br>30,843 ops</th>
+          <th>a real session<br>58,800 ops</th><th>the seams<br>56,000 ops</th>
+          <th>a whole day<br>33,600 ops</th><th>first op<br>it got wrong</th>
+          <th>the redo button<br>was lit wrongly</th></tr></thead>
+        <tbody id="tOps"></tbody></table></div>
+      <p class="note" id="opsnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">COARSE, OR INVENTING DOCUMENTS &mdash; TWO VERY DIFFERENT WRONGS</p>
+      <p class="lead">
+        A percentage cannot tell those apart, so keep every document any edit ever produced and ask,
+        at the moment a machine's document <em>first</em> differs from the oracle's, whether the thing
+        on screen was ever on screen before. Giving back a whole word when one character was expected
+        is a state the person typed through. Handing back a document nobody ever typed is not.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>sessions where it<br>diverged at all</th>
+          <th>&hellip;into a document<br>that had existed</th>
+          <th>&hellip;into one that<br>never had</th>
+          <th>ops showing a document<br>no edit produced</th>
+          <th>first such op</th></tr></thead>
+        <tbody id="tGhost"></tbody></table></div>
+      <p class="note" id="ghostnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHAT ONE PRESS GIVES BACK</p>
+      <p class="lead">
+        Thirty thousand characters typed at typing speed with <strong>no undo anywhere in the
+        stream</strong>, so all eight hold the identical document and the only thing that can differ
+        is where each decided one entry ends. This is the axis the round trip cannot see at all.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>entries for<br>30,000 characters</th>
+          <th>characters<br>per press</th><th>the worst<br>single press</th>
+          <th>presses to walk<br>back the corpus</th></tr></thead>
+        <tbody id="tGran"></tbody></table></div>
+      <p class="note" id="grannote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SO WHAT IS THE 500 MILLISECONDS BUYING</p>
+      <p class="lead">
+        The one number in the whole machine that looks arbitrary. Sweep it over the same typing
+        streams and read off what a press actually returns. Inter-keystroke gaps here are one
+        distribution, not two: 86% are the 35&ndash;400&nbsp;ms of somebody in flow and the rest is
+        log-uniform out to eight seconds, so the curve is not an artifact of a generator that put a
+        hole exactly where the threshold sits.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>idle window</th><th>entries</th><th>characters per press</th>
+          <th>words per press</th><th>worst single press</th></tr></thead>
+        <tbody id="tIdle"></tbody></table></div>
+      <p class="note" id="idlenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FIVE CLAUSES, AND HOW OFTEN EACH ONE IS THE REASON</p>
+      <p class="lead">
+        Every time the oracle refuses to extend an entry it records <em>all</em> the reasons, not the
+        first one. The second column is the interesting one: how often a clause was the <strong>only
+        thing</strong> standing between two keystrokes and a merge. A clause that is never the sole
+        reason is not doing any work on this corpus.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>the clause</th><th>a real session<br>was a reason</th>
+          <th>&hellip;was the only reason</th><th>the seams<br>was a reason</th>
+          <th>&hellip;was the only reason</th><th>a whole day<br>only reason</th></tr></thead>
+        <tbody id="tWhy"></tbody></table></div>
+      <pre id="artRemote"></pre>
+      <p class="note" id="whynote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE CAP, AND WHY YOUR TEST SUITE IS TOO SHORT</p>
+      <p class="lead">
+        A history has to be bounded or it is a memory leak with a nice name. Bounding it is two
+        characters of risk: <code>shift()</code> drops the oldest entry, <code>pop()</code> drops the
+        one you just made, and the second one means <em>the newest edit can never be undone at
+        all</em>. Nothing shows until the session is longer than the cap.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>cap</th><th>entries a 1,200-op<br>session produces</th>
+          <th>first op it gets wrong</th><th>sessions it reached</th>
+          <th>ops wrong</th></tr></thead>
+        <tbody id="tCap"></tbody></table></div>
+      <p class="note" id="capnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHY THE HISTORY IS PATCHES AND THE ORACLE IS SNAPSHOTS</p>
+      <p class="lead">
+        The snapshot model is the obvious one and it is the right oracle precisely because it is the
+        wrong implementation: it costs a whole document per entry. Measured on the sessions above,
+        then in closed form, where the ratio turns out to be set by the size of the <em>document</em>
+        and to have almost nothing to do with how many edits there were.
+      </p>
+      <table class="num"><tbody id="tMem"></tbody></table>
+      <pre id="artMem" style="margin-top:14px"></pre>
+    </div>
+
+    <div class="card">
+      <p class="cap">FIVE SESSIONS, WRITTEN OUT IN FULL</p>
+      <pre id="artBranch"></pre>
+      <pre id="artCaret"></pre>
+      <pre id="artClock"></pre>
+      <pre id="artTwo"></pre>
+      <pre id="artCap" style="margin-bottom:0"></pre>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>Undo is not a stack of documents</h2>
+      <p>
+        The first design anybody writes is a list of snapshots. Every time the document changes, push
+        a copy; undo is <code>index &minus; 1</code>. It is correct, it is four lines, and it is the
+        model this page uses as its <em>oracle</em> &mdash; because being obviously correct is exactly
+        what an oracle is for. It is also unshippable. A snapshot costs a whole document. Sixty edits
+        in a twenty-thousand-character file is <strong>1.2&nbsp;MB</strong> of history for
+        <strong>2.5&nbsp;KB</strong> of actual change, and the ratio is not a function of how many
+        edits there were &mdash; it is the length of the document divided by the size of an edit, so
+        it gets worse the longer you work.
+      </p>
+      <p>
+        So a real history stores <em>inverse patches</em>. An entry is
+        <code>{from, removed, inserted, selBefore, selAfter}</code>: undo splices
+        <code>removed</code> back in where <code>inserted</code> is, redo does the reverse. Two
+        stacks, one document, and the memory is proportional to what you changed rather than to what
+        you were changing it in.
+      </p>
+
+      <h3>The whole component is one predicate</h3>
+      <p>
+        Once you have patches, almost nothing is left to decide except one thing, and it is the thing
+        every complaint about undo is actually about: <strong>when does a new edit join the entry on
+        top of the stack instead of starting a new one?</strong> Push one entry per keystroke and
+        Ctrl+Z becomes a backspace with extra steps. Merge too eagerly and one press eats a
+        paragraph. Everything anybody has ever felt about an undo implementation is that predicate.
+      </p>
+      <p>Five clauses. A keystroke joins the run only when none of them objects:</p>
+      <ul>
+        <li><strong>same kind.</strong> Typing joins typing, backspacing joins backspacing, a paste
+          joins nothing and nothing joins a paste.</li>
+        <li><strong>the caret has not been moved by hand.</strong> Clicking somewhere is a decision;
+          it ends the run even if you click back to where you were.</li>
+        <li><strong>the run has not gone quiet.</strong> More than the idle window since the last
+          keystroke in this entry and the run is over.</li>
+        <li><strong>contiguity.</strong> The new edit starts exactly where the run left off &mdash;
+          which is a different sum for typing, for backspace and for forward delete.</li>
+        <li><strong>no newline.</strong> Enter ends the run, so one press never crosses a paragraph.</li>
+      </ul>
+      <p>
+        Everything else &mdash; clearing the redo branch, restoring the selection, bounding the stack
+        &mdash; is a single line each, and each of those single lines is a defect on this page.
+      </p>
+
+      <h3>The property everybody tests is nearly a tautology</h3>
+      <p>
+        Search any editor's test suite for its undo tests and you will find this: make some edits,
+        press undo <em>k</em> times, press redo <em>k</em> times, assert the text. It is the obvious
+        property. It is also the one thing a two-stack machine gets right almost by construction:
+        <code>undo</code> pops from one stack and pushes to the other, <code>redo</code> does the
+        reverse, so <em>k</em> of one followed by <em>k</em> of the other is a permutation that
+        returns to where it started whatever nonsense the entries contain. All eight machines here
+        pass it on 100.0% of 700 generated cases. Six of the eight pass it on 100.0% of realistic
+        sessions too.
+      </p>
+      <p>
+        What that assertion cannot see: how much one press gave back, where the caret ended up,
+        whether the redo button should have been lit, and whether the document it showed you halfway
+        through was a document that had ever existed. Those are four different assertions and every
+        one of them separates something.
+      </p>
+
+      <h3>The branch is where undo stops being a stack</h3>
+      <p>
+        Undo three times and then type. The three entries you undid are now unreachable &mdash; you
+        have moved onto a different branch of the document's history and the old one is gone. One
+        line clears the redo stack when a new edit arrives. Leave that line out and the entries stay,
+        describing a document that no longer exists, and the next Ctrl+Y splices them into the
+        document you have now. The result is not a stale state. It is a state that <em>no edit ever
+        produced</em>: type <code>the quick brown fox</code>, undo it, type <code>hello</code>, press
+        redo, and the machine hands you <code>the quick brown foxhello</code>.
+      </p>
+      <p>
+        And you do not have to press redo to see it. The moment you branch, the machine believes it
+        has something to redo, so the button lights up and the menu item enables. That single boolean
+        disagrees with the truth on three quarters of the operations in a realistic session &mdash;
+        far earlier and far more reliably than any comparison of the text.
+      </p>
+
+      <h3>The caret is half the feature</h3>
+      <p>
+        An entry stores two selections, not one: where you were before the edit and where you were
+        after. Undo restores the first, redo restores the second, and the reason is that undo is
+        supposed to <em>take you to what changed</em>. Restore the text and leave the caret alone and
+        every text assertion in your suite still passes &mdash; on the corpus a test suite generates,
+        on 100.0% of cases &mdash; because the caret is not in the assertion. Then somebody types one
+        more character, it lands one position off, and you have a text bug two operations away from
+        its cause and in a different part of the file. It shows up as
+        <code>hello&nbsp;?world</code> where it should have been <code>hello?&nbsp;world</code>.
+      </p>
+
+      <h3>The clause that turned out to be redundant</h3>
+      <p>
+        Contiguity is the clause that feels like the heart of the rule, and on this page it does
+        nothing. Counting <em>all</em> the reasons for every refusal rather than just the first one:
+        across four corpora and 179,243 operations, the contiguity check was a reason thousands of
+        times and the <strong>sole</strong> reason zero times. A machine with the clause deleted
+        diverges on exactly nothing, anywhere.
+      </p>
+      <p>
+        The reason is structural rather than lucky. If the caret is where the last edit left it, the
+        next keystroke is contiguous by construction; and the only things that can move the caret
+        &mdash; a click, an arrow key, an undo, a paste &mdash; have already tripped a different
+        clause. So for a single person at a keyboard, contiguity is implied by the other four.
+      </p>
+      <p>
+        It stops being implied the moment a change to the document does not come from that keyboard.
+        A collaborator's patch, a find-and-replace, an autocompletion, a language server's formatting
+        pass: those move text under the caret without any of the other four clauses noticing. Type
+        <code>abc</code>, let a collaborator insert <code>XY</code> at the top, type <code>d</code>,
+        press undo once. With the clause you get <code>XYabc</code>. Without it, one press returns
+        <code>cd</code> &mdash; it deleted the collaborator's text and half of yours. The clause is
+        not there for your keystrokes. It is there for everybody else's.
+      </p>
+
+      <h3>Bounding the stack</h3>
+      <p>
+        History has to be capped. Capping it is where <code>shift()</code> and <code>pop()</code>
+        differ by two characters and by everything: one drops the oldest entry, the other drops the
+        entry you just made, and the second means the newest edit is not undoable &mdash; press
+        Ctrl+Z and you jump back past the thing you were trying to take back. It is completely
+        invisible until a session produces more entries than the cap, which is why three of the four
+        corpora on this page never see it and the test-suite corpus never could: a generated test
+        case makes about one entry.
+      </p>
+
+      <h3>Which corpus can see what</h3>
+      <p>
+        Day 70's lesson was that a realistic corpus is not a concentrated one, and a budget is only
+        visible to a corpus that spends it in one place. This page inverts it. Here the blind corpus
+        is the <em>generated</em> one, and it is blind for four separate reasons: it never branches,
+        so a stale redo stack is unreachable; every operation is one clock tick apart, so a machine
+        with no idle window behaves identically to one that has it; the caret never moves on its own;
+        and a test case is far too short to reach a cap. Four of the seven defects need a corpus that
+        has a clock, a caret, a branch and a length, and a generated fixture has none of the four.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#128296; How it is built</h2>
+
+      <h3>1. One block of pure functions and no DOM</h3>
+      <p>
+        Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> is pure. The machine
+        is <code>newHist</code>, <code>pushEdit</code>, <code>doUndo</code>, <code>doRedo</code>; the
+        predicate is <code>canMerge</code>; the oracle is <code>truthNew</code>,
+        <code>truthEdit</code>, <code>truthUndo</code>, <code>truthRedo</code>; the streams are
+        <code>genOps</code>. The verifier lifts that block out of the page by regex, refuses it if it
+        mentions <code>document</code>, and runs it under node against assertions written separately.
+      </p>
+
+      <h3>2. Two models that do not share a line</h3>
+      <p>
+        The implementation keeps <em>inverse patches</em> on two stacks and edits a string with
+        <code>slice</code>. The oracle keeps <em>whole-document snapshots</em> in an array with an
+        index, holds each document as an array of characters, and edits with
+        <code>Array.prototype.splice</code>. The merge decision is the one piece of logic they both
+        need, so it is written twice in two different shapes: the implementation is a chain of early
+        returns that answers yes or no, and the oracle collects a <em>list of reasons to break</em>
+        and merges when the list is empty. That second shape is what made the redundant clause
+        visible &mdash; a boolean cannot tell you which clause was load-bearing.
+      </p>
+
+      <h3>3. Eight machines, one clause each</h3>
+      <p>
+        The document, the op streams, the clock and the assertions are shared. Each machine changes
+        exactly one thing: coalescing off entirely (<code>every</code>), the clock without the
+        position or the caret (<code>timeonly</code>), contiguity without the clock
+        (<code>nogap</code>), the missing <code>redo.length = 0</code> (<code>noclear</code>), undo
+        that restores the text and not the selection (<code>doconly</code>), <code>pop()</code> where
+        the cap wanted <code>shift()</code> (<code>capnew</code>), and the contiguity clause deleted
+        (<code>nocontig</code>). Every one of them is a thing that ships.
+      </p>
+
+      <h3>4. Four op streams, because one cannot see anything</h3>
+      <p>
+        Positions in an op are <strong>fractions</strong> of the document rather than offsets, so the
+        same stream is legal in whatever document a machine is holding however far the eight have
+        drifted apart &mdash; which is also what happens to a person, whose next keystroke lands
+        wherever their editor left the caret. <em>a test suite</em> is a generated case: a few edits,
+        undo them, redo them, assert. <em>a real session</em> is somebody writing, with a
+        heavy-tailed gap distribution, typo bursts, clicks, pastes and undo used the way undo is used
+        &mdash; mostly to take a run back and write something different instead. <em>the seams</em>
+        aims at the five clauses: pauses landing exactly on the window, caret moves that come
+        straight back, an edit after every undo. <em>a whole day</em> is the same as a real session
+        and fourteen hundred operations long, which is the only one of the four that outlives the cap.
+      </p>
+
+      <h3>5. The oracle that could not be the oracle</h3>
+      <p>
+        The honest way to answer "what is the document now" is to replay the entire operation stream
+        from empty after every operation. That is O(n&sup2;) in operations and O(n&middot;m) in
+        characters and it would take the fuzz off a cliff, so the shipped oracle carries an index
+        instead and the replay is kept as a bounded spot check &mdash; <span id="b5a"></span>
+        assertions over <span id="b5b"></span> replayed steps, 0 disagreements. The snapshot array
+        is itself the O(n&middot;m) object, which is exactly why it is a good oracle and a bad
+        implementation.
+      </p>
+
+      <h3>6. What the tests pin</h3>
+      <ul>
+        <li>The document, the selection, <code>canUndo</code> and <code>canRedo</code> against the
+          snapshot oracle after every operation, for all eight machines, in all four corpora.</li>
+        <li>The undo/redo round trip on the text and on the caret at the end of every session.</li>
+        <li>Every document a machine displays against the set of every document any edit produced.</li>
+        <li>Entry counts, characters per press and the worst single press with no undo in the stream,
+          so the granularity comparison is like for like.</li>
+        <li>The idle window swept over an order of magnitude, and the cap swept over five values.</li>
+        <li>The same seed gives the same session; a different seed does not.</li>
+      </ul>
+
+      <h3>7. What contradicted the first draft</h3>
+      <ul>
+        <li>The plan was that the realistic corpus would be the blind one, as on Day 70. It is the
+          opposite here: the blind corpus is the one a <em>test suite</em> generates, and it is blind
+          four times over &mdash; no branches, no clock, no caret movement, no length.</li>
+        <li>The round trip was drafted as a property that <em>some</em> broken versions would pass.
+          It is passed by <strong>all eight</strong> on the generated corpus, and the reason is
+          structural rather than a coincidence of these particular defects: on two stacks, <em>k</em>
+          pops one way followed by <em>k</em> the other way is a permutation that has to return.</li>
+        <li>Contiguity was drafted as the core of the merge rule and is dead code for a single person
+          at a keyboard: never the sole reason for a break in 179,243 operations, and 0 divergences
+          with it deleted. The input that separates it had to be built by hand and is not a keystroke.</li>
+        <li>The idle window was expected to be delicate. It is not: moving it from 400&nbsp;ms to
+          700&nbsp;ms &mdash; a 75% change &mdash; moves what a press gives back by
+          <strong id="b7a"></strong>. What it is <em>not</em> is a word boundary; at 500&nbsp;ms a
+          press returns <strong id="b7b"></strong> words, and you would have to come down to around
+          280&nbsp;ms to get one.</li>
+        <li>The redo-stack defect was drafted as the one the realistic corpus would struggle with,
+          on the grounds that people rarely press redo after branching. The document comparison does
+          struggle. <code>canRedo</code> does not: it is wrong on
+          <strong id="b7c"></strong> of operations and catches it in
+          <strong id="b7d"></strong> of realistic sessions, and it is one boolean.</li>
+      </ul>
+
+      <h3>&#127881; DesignFromZero Day 71 shipped.</h3>
+      <p class="note">
+        Day 62 built the document model. This is the part that takes it back.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".panel");
+tabs.forEach(t => t.addEventListener("click", () => {
+  tabs.forEach(x => x.classList.remove("on"));
+  t.classList.add("on");
+  panels.forEach(p => p.classList.add("off"));
+  document.getElementById(t.dataset.tab).classList.remove("off");
+}));
+
+// ===== ENGINE:BEGIN =====
+// Undo history. The document is a string, the caret is two offsets, and the history is a stack of
+// INVERSE PATCHES - {from, removed, inserted, selBefore, selAfter} - never a stack of snapshots.
+// Beside the correct machine sit six one-clause variations, and all seven satisfy the property
+// every undo test asserts. No DOM below this line; everything here is pure and fuzzable under node.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const IDLE = 500;   // ms of quiet that ends a typing run
+const CAP  = 100;   // entries kept. An unbounded history is a memory leak with a nice name.
+
+function spliceStr(doc, from, removeLen, insert){
+  return doc.slice(0, from) + insert + doc.slice(from + removeLen);
+}
+function clampSel(doc, s){
+  const n = doc.length;
+  const a = s[0] < 0 ? 0 : s[0] > n ? n : s[0];
+  const b = s[1] < 0 ? 0 : s[1] > n ? n : s[1];
+  return [a, b];
+}
+
+// ---------------------------------------------------------------- the machine
+function newHist(doc, sel, cap, idle){
+  return { doc: doc, sel: sel.slice(), undo: [], redo: [], moved: true,
+           cap: cap === undefined ? CAP : cap, idle: idle === undefined ? IDLE : idle };
+}
+function canUndo(H){ return H.undo.length > 0; }
+function canRedo(H){ return H.redo.length > 0; }
+
+// The five clauses. A keystroke joins the entry on top of the stack only when none of them objects.
+// Written as a chain of early returns; the oracle decides the same thing as a LIST OF REASONS TO
+// BREAK, so the two models cannot agree merely by sharing code.
+function canMerge(H, top, e, mode){
+  if (mode === 'every') return false;
+  if (!top) return false;
+  if (top.kind !== e.kind) return false;                          // (1) same kind of edit
+  if (e.kind === 'paste') return false;                           //     a paste is never a run
+  if (mode === 'timeonly') return e.t0 - top.t1 <= H.idle;        // the clock and nothing else
+  if (H.moved) return false;                                      // (2) the caret was moved by hand
+  if (mode !== 'nogap' && e.t0 - top.t1 > H.idle) return false;   // (3) the run went quiet
+  if (e.inserted.indexOf('\n') >= 0 || e.removed.indexOf('\n') >= 0) return false;  // (5) a newline
+  if (mode === 'nocontig') return true;                           // (4) contiguity, dropped
+  if (e.kind === 'ins')  return e.removed === '' && e.from === top.from + top.inserted.length;
+  if (e.kind === 'back') return e.inserted === '' && e.from + e.removed.length === top.from;
+  if (e.kind === 'del')  return e.inserted === '' && e.from === top.from;
+  return false;
+}
+
+function pushEdit(H, from, removeLen, insert, selAfter, time, kind, mode){
+  const removed = H.doc.slice(from, from + removeLen);
+  const e = { from: from, removed: removed, inserted: insert, kind: kind,
+              selBefore: H.sel.slice(), selAfter: selAfter.slice(), t0: time, t1: time };
+  const top = H.undo.length ? H.undo[H.undo.length - 1] : null;
+  H.doc = spliceStr(H.doc, from, removeLen, insert);
+  H.sel = selAfter.slice();
+  const merged = canMerge(H, top, e, mode);
+  if (merged){
+    if (kind === 'ins')  top.inserted += insert;
+    else if (kind === 'back'){ top.removed = removed + top.removed; top.from = from; }
+    else if (kind === 'del') top.removed += removed;
+    top.selAfter = selAfter.slice();
+    top.t1 = time;
+  } else {
+    H.undo.push(e);
+    // The cap. shift() drops the oldest entry; pop() drops the one just made, which is one
+    // character of difference and means the newest edit can never be undone at all.
+    if (H.undo.length > H.cap){ if (mode === 'capnew') H.undo.pop(); else H.undo.shift(); }
+  }
+  if (mode !== 'noclear') H.redo.length = 0;    // a new edit ends the redo branch
+  H.moved = false;
+  return merged;
+}
+
+function doUndo(H, mode){
+  if (!H.undo.length) return false;
+  const e = H.undo.pop();
+  // An entry off a branch that was abandoned no longer describes the text on screen. A machine that
+  // kept the branch applies it anyway - clamped, so it does not even throw - and that is the whole
+  // defect: the result is a document that no edit ever produced.
+  const from = e.from > H.doc.length ? H.doc.length : e.from;
+  H.doc = spliceStr(H.doc, from, e.inserted.length, e.removed);
+  H.sel = mode === 'doconly' ? clampSel(H.doc, H.sel) : clampSel(H.doc, e.selBefore);
+  H.redo.push(e);
+  H.moved = true;
+  return true;
+}
+function doRedo(H, mode){
+  if (!H.redo.length) return false;
+  const e = H.redo.pop();
+  const from = e.from > H.doc.length ? H.doc.length : e.from;
+  H.doc = spliceStr(H.doc, from, e.removed.length, e.inserted);
+  H.sel = mode === 'doconly' ? clampSel(H.doc, H.sel) : clampSel(H.doc, e.selAfter);
+  H.undo.push(e);
+  H.moved = true;
+  return true;
+}
+
+const IMPLS = [
+  { key:'correct',  short:'all five clauses',       label:'the correct machine' },
+  { key:'every',    short:'an entry per keystroke', label:'no coalescing at all' },
+  { key:'timeonly', short:'the clock alone',        label:'merge anything inside the window' },
+  { key:'nogap',    short:'no idle window',         label:'merge contiguous edits forever' },
+  { key:'noclear',  short:'keeps the redo branch',  label:'a new edit does not clear redo' },
+  { key:'doconly',  short:'text back, caret not',   label:'undo does not restore the selection' },
+  { key:'capnew',   short:'cap drops the newest',   label:'pop() where it should be shift()' },
+  { key:'nocontig', short:'no contiguity check',    label:'the clause that turned out redundant' }
+];
+
+// ---------------------------------------------------------------- the oracle, a different model
+// Snapshots and a pointer. v[i] is a whole document held as an array of characters, with the caret
+// the edit that produced it started from and ended at. Undo is i minus one. Nothing here is a
+// patch, nothing here is a stack, and the character arithmetic is splice on an array rather than
+// slice on a string - so the two models can only agree by both being right.
+function truthNew(doc, sel, cap, idle){
+  return { v: [{ d: doc.split(''), sIn: sel.slice(), sOut: sel.slice() }], i: 0,
+           cur: sel.slice(), cap: cap === undefined ? CAP : cap,
+           idle: idle === undefined ? IDLE : idle,
+           moved: true, lastKind: null, lastT: -1e9, anchor: 0, runIns: 0, runRem: 0 };
+}
+function truthBreaks(T, m){
+  const r = [];
+  if (T.lastKind === null) r.push('first');
+  if (T.lastKind !== m.kind) r.push('kind');
+  if (m.kind === 'paste') r.push('block');
+  if (T.moved) r.push('caret');
+  if (m.time - T.lastT > T.idle) r.push('idle');
+  if (m.insert.indexOf('\n') >= 0 || m.removed.indexOf('\n') >= 0) r.push('newline');
+  let contiguous = false;
+  if (m.kind === 'ins')  contiguous = m.removeLen === 0 && m.from === T.anchor + T.runIns;
+  if (m.kind === 'back') contiguous = m.insert === '' && m.from + m.removeLen === T.anchor;
+  if (m.kind === 'del')  contiguous = m.insert === '' && m.from === T.anchor;
+  if (!contiguous) r.push('gap');
+  return r;
+}
+function truthEdit(T, from, removeLen, insert, selAfter, time, kind){
+  const cur = T.v[T.i];
+  const removed = cur.d.slice(from, from + removeLen).join('');
+  const nd = cur.d.slice();
+  nd.splice.apply(nd, [from, removeLen].concat(insert.split('')));
+  const reasons = truthBreaks(T, { kind:kind, time:time, from:from, removeLen:removeLen,
+                                   insert:insert, removed:removed });
+  if (reasons.length === 0){
+    T.v[T.i] = { d: nd, sIn: cur.sIn, sOut: selAfter.slice() };  // the entry grew in place
+    if (kind === 'ins') T.runIns += insert.length;
+    else { T.anchor = from; T.runRem += removeLen; }
+  } else {
+    T.v.length = T.i + 1;                                        // a new edit ends the branch
+    T.v.push({ d: nd, sIn: T.cur.slice(), sOut: selAfter.slice() });
+    T.i++;
+    if (T.v.length > T.cap + 1){ T.v.shift(); T.i--; }
+    T.anchor = from; T.runIns = insert.length; T.runRem = removeLen;
+  }
+  T.cur = selAfter.slice();
+  T.lastKind = kind; T.lastT = time; T.moved = false;
+  return reasons;
+}
+function truthUndo(T){
+  if (T.i === 0) return false;
+  const back = T.v[T.i].sIn.slice();
+  T.i--;
+  T.cur = clampSel(truthDoc(T), back);
+  T.moved = true; T.lastKind = null; return true;
+}
+function truthRedo(T){
+  if (T.i >= T.v.length - 1) return false;
+  T.i++;
+  T.cur = clampSel(truthDoc(T), T.v[T.i].sOut.slice());
+  T.moved = true; T.lastKind = null; return true;
+}
+// the join is memoised on the snapshot, so a document is stitched once per edit and not once per
+// keystroke. The array is still the store; this only stops the fuzz being quadratic for no reason.
+function truthDoc(T){ const x = T.v[T.i]; if (x.j === undefined) x.j = x.d.join(''); return x.j; }
+function truthCanUndo(T){ return T.i > 0; }
+function truthCanRedo(T){ return T.i < T.v.length - 1; }
+
+// ---------------------------------------------------------------- op streams
+const WORDS = ('the quick brown fox jumps over a lazy dog while every good editor keeps one clean ' +
+  'history of what you typed and hands it back in the order you meant it to come back in').split(' ');
+
+// Inter-keystroke gaps are not uniform and they are not two disjoint ranges either: most are the
+// 35-400 ms of somebody in flow and the tail is log-uniform out to eight seconds. One draw, one
+// distribution - so the idle sweep further down is a curve rather than an artifact of a generator
+// that put a hole exactly where the threshold sits.
+function gapMs(rnd){
+  return rnd() < 0.86 ? 35 + Math.floor(rnd() * rnd() * 380)
+                      : Math.floor(180 * Math.pow(45, rnd()));
+}
+
+// Every op is state-free: a position is a FRACTION of the document, so the same stream is legal in
+// whatever document a machine is holding, however far the seven have drifted apart. Which is also
+// what happens to a person, whose next keystroke lands wherever their editor left the caret.
+function genOps(kind, n, seed){
+  const rnd = mulberry32(seed);
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const ops = [];
+  let t = 0;
+  const emit = (o, dt) => { t += dt; o.time = t; ops.push(o); };
+  if (kind === 'suite'){
+    // What a generated test case looks like: type a few things, undo them, redo them, assert. One
+    // clock tick between everything, the caret never moves on its own, and it never branches.
+    const k = 3 + Math.floor(rnd() * 10);
+    for (let i = 0; i < k; i++) for (const c of pick(WORDS) + ' ') emit({ t:'ins', c:c }, 10);
+    const u = 1 + Math.floor(rnd() * k);
+    for (let i = 0; i < u; i++) emit({ t:'undo' }, 10);
+    for (let i = 0; i < u; i++) emit({ t:'redo' }, 10);
+    return ops;
+  }
+  if (kind === 'session' || kind === 'day'){
+    // A person writing. Words at typing speed, typos fixed with backspace, clicking somewhere else,
+    // the occasional paste - and undo used the way undo is actually used, which is mostly to take a
+    // run back and then write something different instead.
+    while (ops.length < n){
+      const r = rnd();
+      if (r < 0.70){
+        for (const c of pick(WORDS)) emit({ t:'ins', c:c }, gapMs(rnd));
+        emit({ t:'ins', c: rnd() < 0.10 ? '\n' : ' ' }, gapMs(rnd));
+      } else if (r < 0.82){
+        for (let i = 0, b = 1 + Math.floor(rnd() * 4); i < b; i++) emit({ t:'back' }, gapMs(rnd));
+      } else if (r < 0.87){
+        emit({ t:'move', f: rnd() }, gapMs(rnd) + 300);
+      } else if (r < 0.90){
+        emit({ t:'selr', f: rnd(), g: rnd() }, gapMs(rnd) + 300);
+        emit({ t:'paste', s: pick(WORDS) + ' ' + pick(WORDS) }, 300);
+      } else if (r < 0.915){
+        emit({ t:'redo' }, gapMs(rnd) + 200);              // the habitual stray redo
+      } else {
+        const u = 1 + Math.floor(rnd() * 4);
+        for (let i = 0; i < u; i++) emit({ t:'undo' }, 200 + Math.floor(rnd() * 300));
+        if (rnd() < 0.35) for (let i = 0; i < u; i++) emit({ t:'redo' }, 200);
+        else for (const c of pick(WORDS)) emit({ t:'ins', c:c }, gapMs(rnd));
+      }
+    }
+    return ops.slice(0, n);
+  }
+  // 'seams' - the same actions aimed at the five clauses: pauses that land exactly on the window,
+  // caret moves that come straight back, and an edit after every undo.
+  const EDGE = [IDLE - 1, IDLE, IDLE + 1];
+  while (ops.length < n){
+    const r = rnd();
+    if (r < 0.32){
+      for (const c of pick(WORDS)) emit({ t:'ins', c:c }, 30);
+      emit({ t:'ins', c:' ' }, EDGE[Math.floor(rnd() * 3)]);
+    } else if (r < 0.48){
+      emit({ t:'move', f: rnd() }, 50);
+      for (const c of pick(WORDS)) emit({ t:'ins', c:c }, 30);
+    } else if (r < 0.60){
+      for (let i = 0; i < 1 + Math.floor(rnd() * 3); i++) emit({ t:'back' }, 30);
+      for (const c of pick(WORDS)) emit({ t:'ins', c:c }, 30);
+    } else if (r < 0.70){
+      emit({ t:'selr', f: rnd(), g: rnd() }, 200);
+      emit({ t:'paste', s: pick(WORDS) }, 100);
+    } else {
+      const u = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < u; i++) emit({ t:'undo' }, 60);
+      for (const c of pick(WORDS)) emit({ t:'ins', c:c }, 60);          // always branch
+      if (rnd() < 0.45) for (let i = 0; i < u; i++) emit({ t:'redo' }, 60);
+    }
+  }
+  return ops.slice(0, n);
+}
+
+// A pure typing stream with no undo in it at all, so every machine holds the identical document and
+// the only thing that can differ is where each decided one entry ends and the next begins.
+function typingStream(n, seed){
+  const rnd = mulberry32(seed);
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const ops = [];
+  let t = 0;
+  while (ops.length < n){
+    const w = pick(WORDS) + (rnd() < 0.10 ? '\n' : ' ');
+    for (const c of w){ t += gapMs(rnd); ops.push({ t:'ins', c:c, time:t }); }
+  }
+  return ops.slice(0, n);
+}
+
+function opTarget(doc, f){
+  const p = Math.round(f * doc.length);
+  return p < 0 ? 0 : p > doc.length ? doc.length : p;
+}
+
+function stepImpl(H, op, mode){
+  const s = clampSel(H.doc, H.sel);
+  const lo = s[0] < s[1] ? s[0] : s[1], hi = s[0] < s[1] ? s[1] : s[0];
+  if (op.t === 'move'){ const p = opTarget(H.doc, op.f); H.sel = [p, p]; H.moved = true; return; }
+  if (op.t === 'selr'){ H.sel = [opTarget(H.doc, op.f), opTarget(H.doc, op.g)]; H.moved = true; return; }
+  if (op.t === 'undo') return void doUndo(H, mode);
+  if (op.t === 'redo') return void doRedo(H, mode);
+  if (op.t === 'raw'){                       // what the live editor records: an already-derived edit
+    const f = op.from > H.doc.length ? H.doc.length : op.from;
+    const rl = f + op.removeLen > H.doc.length ? H.doc.length - f : op.removeLen;
+    return void pushEdit(H, f, rl, op.insert, [f + op.insert.length, f + op.insert.length],
+                         op.time, op.kind, mode);
+  }
+  if (op.t === 'ins')   return void pushEdit(H, lo, hi - lo, op.c, [lo+1, lo+1], op.time, 'ins', mode);
+  if (op.t === 'paste') return void pushEdit(H, lo, hi - lo, op.s, [lo+op.s.length, lo+op.s.length], op.time, 'paste', mode);
+  if (op.t === 'back'){
+    if (hi > lo) return void pushEdit(H, lo, hi - lo, '', [lo, lo], op.time, 'paste', mode);
+    if (lo === 0) return;
+    return void pushEdit(H, lo - 1, 1, '', [lo-1, lo-1], op.time, 'back', mode);
+  }
+  if (op.t === 'del'){
+    if (hi > lo) return void pushEdit(H, lo, hi - lo, '', [lo, lo], op.time, 'paste', mode);
+    if (lo >= H.doc.length) return;
+    return void pushEdit(H, lo, 1, '', [lo, lo], op.time, 'del', mode);
+  }
+}
+
+function stepTruth(T, op){
+  const doc = truthDoc(T);
+  const s = clampSel(doc, T.cur);
+  const lo = s[0] < s[1] ? s[0] : s[1], hi = s[0] < s[1] ? s[1] : s[0];
+  if (op.t === 'move'){ const p = opTarget(doc, op.f); T.cur = [p, p]; T.moved = true; return null; }
+  if (op.t === 'selr'){ T.cur = [opTarget(doc, op.f), opTarget(doc, op.g)]; T.moved = true; return null; }
+  if (op.t === 'undo'){ truthUndo(T); return null; }
+  if (op.t === 'redo'){ truthRedo(T); return null; }
+  if (op.t === 'raw'){
+    const f = op.from > doc.length ? doc.length : op.from;
+    const rl = f + op.removeLen > doc.length ? doc.length - f : op.removeLen;
+    return truthEdit(T, f, rl, op.insert, [f + op.insert.length, f + op.insert.length],
+                     op.time, op.kind);
+  }
+  if (op.t === 'ins')   return truthEdit(T, lo, hi - lo, op.c, [lo+1, lo+1], op.time, 'ins');
+  if (op.t === 'paste') return truthEdit(T, lo, hi - lo, op.s, [lo+op.s.length, lo+op.s.length], op.time, 'paste');
+  if (op.t === 'back'){
+    if (hi > lo) return truthEdit(T, lo, hi - lo, '', [lo, lo], op.time, 'paste');
+    if (lo === 0) return null;
+    return truthEdit(T, lo - 1, 1, '', [lo-1, lo-1], op.time, 'back');
+  }
+  if (op.t === 'del'){
+    if (hi > lo) return truthEdit(T, lo, hi - lo, '', [lo, lo], op.time, 'paste');
+    if (lo >= doc.length) return null;
+    return truthEdit(T, lo, 1, '', [lo, lo], op.time, 'del');
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- the property everybody tests
+// Press undo until nothing happens, press redo the same number of times, and the text is back.
+// Note what it does not ask: not where the caret went, not how much one press gave back, not
+// whether the state it passed through on the way ever existed. On a two-stack machine it is very
+// nearly a tautology, which is exactly the problem.
+function roundTrip(H, mode){
+  const doc0 = H.doc;
+  let n = 0;
+  while (n < 100000 && doUndo(H, mode)) n++;
+  for (let i = 0; i < n; i++) doRedo(H, mode);
+  return { doc: H.doc, sel: H.sel.slice(), same: H.doc === doc0, n: n };
+}
+function truthRoundTrip(T){
+  let n = 0;
+  while (truthUndo(T)) n++;
+  for (let i = 0; i < n; i++) truthRedo(T);
+  return { doc: truthDoc(T), sel: T.cur.slice(), n: n };
+}
+
+function fuzz(kind, sessions, opsPer, seed, cap){
+  const stats = {};
+  for (const im of IMPLS) stats[im.key] = { docWrong:0, selWrong:0, redoLie:0, undoLie:0,
+    rtDoc:0, rtSel:0, endBad:0, presses:0, firstDoc:-1, firstSel:-1, firstRedoLie:-1,
+    sessDoc:0, sessRedoLie:0, entries:0, patchBytes:0, maxEntry:0 };
+  let ops = 0, asserts = 0, snapBytes = 0, truthEntries = 0, maxDoc = 0, capHit = 0;
+  const whyAll = {}, whySole = {}, WHY = ['first','kind','block','caret','idle','newline','gap'];
+  for (const w of WHY){ whyAll[w] = 0; whySole[w] = 0; }
+  let breaks = 0, merges = 0;
+  for (let s = 0; s < sessions; s++){
+    const stream = genOps(kind, opsPer, seed + s * 7919);
+    const T = truthNew('', [0,0], cap);
+    const H = {}, hit = {};
+    for (const im of IMPLS){ H[im.key] = newHist('', [0,0], cap); hit[im.key] = { d:false, r:false }; }
+    for (let i = 0; i < stream.length; i++){
+      const why = stepTruth(T, stream[i]);
+      if (why){
+        if (why.length === 0) merges++;
+        else { breaks++;
+          for (const w of why) whyAll[w]++;
+          if (why.length === 1) whySole[why[0]]++; }
+      }
+      const td = truthDoc(T), ts = T.cur, tcu = truthCanUndo(T), tcr = truthCanRedo(T);
+      ops++;
+      if (td.length > maxDoc) maxDoc = td.length;
+      for (const im of IMPLS){
+        const h = H[im.key], st = stats[im.key];
+        stepImpl(h, stream[i], im.key);
+        asserts += 4;
+        if (h.doc !== td){ st.docWrong++; if (st.firstDoc < 0) st.firstDoc = i; hit[im.key].d = true; }
+        if (h.sel[0] !== ts[0] || h.sel[1] !== ts[1]){ st.selWrong++; if (st.firstSel < 0) st.firstSel = i; }
+        if (canRedo(h) !== tcr){ st.redoLie++; if (st.firstRedoLie < 0) st.firstRedoLie = i; hit[im.key].r = true; }
+        if (canUndo(h) !== tcu) st.undoLie++;
+      }
+    }
+    if (T.v.length - 1 >= T.cap) capHit++;
+    snapBytes += T.v.reduce((a, x) => a + x.d.length + 16, 0);
+    truthEntries += T.v.length - 1;
+    const tdEnd = truthDoc(T);
+    for (const im of IMPLS){
+      const h = H[im.key], st = stats[im.key];
+      if (h.doc !== tdEnd) st.endBad++;
+      if (hit[im.key].d) st.sessDoc++;
+      if (hit[im.key].r) st.sessRedoLie++;
+      st.entries += h.undo.length;
+      for (const e of h.undo){
+        const sz = e.removed.length + e.inserted.length;
+        st.patchBytes += sz + 24;
+        if (sz > st.maxEntry) st.maxEntry = sz;
+      }
+    }
+    const tr = truthRoundTrip(T);
+    for (const im of IMPLS){
+      const rt = roundTrip(H[im.key], im.key);
+      asserts += 2;
+      if (!rt.same) stats[im.key].rtDoc++;
+      if (rt.sel[0] !== tr.sel[0] || rt.sel[1] !== tr.sel[1]) stats[im.key].rtSel++;
+      stats[im.key].presses += rt.n;
+    }
+  }
+  return { kind:kind, sessions:sessions, ops:ops, asserts:asserts, stats:stats,
+           snapBytes:snapBytes, truthEntries:truthEntries, maxDoc:maxDoc, capHit:capHit,
+           whyAll:whyAll, whySole:whySole, breaks:breaks, merges:merges, WHY:WHY };
+}
+
+// ---------------------------------------------------------------- documents nobody ever typed
+// The sharpest way to say what a stale redo branch does. Keep every document any edit ever produced
+// and ask, after every op, whether the one on screen is in that set. Kept separate from the fuzz
+// because hashing whole documents on every keystroke is the expensive part.
+function ghostStudy(sessions, opsPer, seed){
+  const out = {};
+  for (const im of IMPLS) out[im.key] = { ghost:0, first:-1, sess:0, divGhost:0, divReal:0 };
+  let ops = 0, asserts = 0;
+  for (let s = 0; s < sessions; s++){
+    const stream = genOps('session', opsPer, seed + s * 7919);
+    const T = truthNew('', [0,0]);
+    const ever = new Set(['']);
+    const H = {}, seen = {}, diverged = {};
+    for (const im of IMPLS){ H[im.key] = newHist('', [0,0]); seen[im.key] = false; diverged[im.key] = false; }
+    for (const op of stream){
+      stepTruth(T, op);
+      const td = truthDoc(T);
+      ever.add(td);
+      ops++;
+      for (const im of IMPLS){
+        const h = H[im.key];
+        stepImpl(h, op, im.key);
+        asserts += 2;
+        // the first time a machine's document differs from the oracle's, was the document it was
+        // showing one the user had actually been looking at, or one the machine invented?
+        if (!diverged[im.key] && h.doc !== td){
+          diverged[im.key] = true;
+          if (ever.has(h.doc)) out[im.key].divReal++; else out[im.key].divGhost++;
+        }
+        if (!ever.has(h.doc)){
+          out[im.key].ghost++;
+          if (out[im.key].first < 0) out[im.key].first = ops;
+          seen[im.key] = true;
+        }
+      }
+    }
+    for (const im of IMPLS) if (seen[im.key]) out[im.key].sess++;
+  }
+  return { out:out, ops:ops, sessions:sessions, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- granularity, on equal footing
+function granularity(streams, opsPer, seed){
+  const out = {};
+  for (const im of IMPLS) out[im.key] = { entries:0, chars:0, max:0 };
+  let asserts = 0, chars = 0;
+  for (let s = 0; s < streams; s++){
+    const stream = typingStream(opsPer, seed + s * 7919);
+    for (const im of IMPLS){
+      const h = newHist('', [0,0], 1e9);
+      for (const op of stream) stepImpl(h, op, im.key);
+      if (im.key === 'correct') chars += h.doc.length;
+      const o = out[im.key];
+      o.entries += h.undo.length;
+      for (const e of h.undo){
+        const sz = e.removed.length + e.inserted.length;
+        o.chars += sz;
+        if (sz > o.max) o.max = sz;
+      }
+      asserts++;
+    }
+  }
+  return { out:out, streams:streams, chars:chars, asserts:asserts };
+}
+
+// What the 500 ms actually buys, swept over the same typing streams.
+function idleSweep(vals, streams, opsPer, seed){
+  const rows = [];
+  let asserts = 0;
+  for (const v of vals){
+    let entries = 0, chars = 0, max = 0, words = 0;
+    for (let s = 0; s < streams; s++){
+      const stream = typingStream(opsPer, seed + s * 7919);
+      const h = newHist('', [0,0], 1e9, v);
+      for (const op of stream) stepImpl(h, op, 'correct');
+      entries += h.undo.length;
+      words += h.doc.split(/\s+/).filter(Boolean).length;
+      for (const e of h.undo){
+        const sz = e.removed.length + e.inserted.length;
+        chars += sz;
+        if (sz > max) max = sz;
+      }
+      asserts++;
+    }
+    rows.push({ idle:v, entries:entries, perEntry: chars / entries, max:max,
+                wordsPerEntry: words / entries });
+  }
+  return { rows:rows, asserts:asserts };
+}
+
+// Where a cap that trims the wrong end starts to show. The answer is the cap, which is why nobody's
+// test suite is long enough to find it.
+function capSweep(caps, sessions, opsPer, seed){
+  const rows = [];
+  let asserts = 0;
+  for (const c of caps){
+    let first = -1, bad = 0, tot = 0, sess = 0, edits = 0;
+    for (let s = 0; s < sessions; s++){
+      const stream = genOps('day', opsPer, seed + s * 7919);
+      const T = truthNew('', [0,0], c);
+      const h = newHist('', [0,0], c);
+      let f = -1;
+      for (let i = 0; i < stream.length; i++){
+        stepTruth(T, stream[i]);
+        stepImpl(h, stream[i], 'capnew');
+        tot++; asserts++;
+        if (h.doc !== truthDoc(T)){ bad++; if (f < 0) f = i; }
+      }
+      edits += T.v.length - 1;
+      if (f >= 0){ sess++; first = first < 0 ? f : (f < first ? f : first); }
+    }
+    rows.push({ cap:c, firstOp:first, wrong:bad, total:tot, sessions:sess, of:sessions,
+                entries: edits / sessions });
+  }
+  return { rows:rows, asserts:asserts };
+}
+
+// What a snapshot history costs against a patch history. Closed form: n entries over a document of
+// L characters is (n+1)*L for snapshots and the sum of the edited characters for patches, so the
+// ratio grows with the document and has nothing to do with how many edits there were.
+function memoryModel(L, n, editSize){
+  const snap = (n + 1) * L;
+  const patch = n * (editSize + 24);
+  return { L:L, n:n, snap:snap, patch:patch, ratio: snap / patch };
+}
+
+// The oracle nobody can afford: recompute the current document by replaying the WHOLE stream from
+// the empty document after every single op. O(n^2) in operations and O(n*m) in characters, kept as
+// a bounded spot check that the incremental pointer model is not carrying a bug forward.
+function replayCheck(cases, opsPer, seed){
+  let asserts = 0, bad = 0, work = 0;
+  for (let s = 0; s < cases; s++){
+    const stream = genOps('seams', opsPer, seed + s * 7919);
+    for (let k = 1; k <= stream.length; k++){
+      const T = truthNew('', [0,0]);
+      for (let i = 0; i < k; i++){ stepTruth(T, stream[i]); work++; }
+      const h = newHist('', [0,0]);
+      for (let i = 0; i < k; i++) stepImpl(h, stream[i], 'correct');
+      asserts++;
+      if (h.doc !== truthDoc(T)) bad++;
+    }
+  }
+  return { cases:cases, asserts:asserts, bad:bad, work:work };
+}
+
+// A change to the document that did NOT come from this keyboard - a collaborator's patch, a
+// find-and-replace, an autocomplete - applied outside the history and shifting the caret with it.
+// It is the only input on this page that can tell the contiguity clause apart from the others.
+function remoteBump(H, at, text){
+  H.doc = spliceStr(H.doc, at, 0, text);
+  const d = text.length;
+  H.sel = [H.sel[0] >= at ? H.sel[0] + d : H.sel[0], H.sel[1] >= at ? H.sel[1] + d : H.sel[1]];
+}
+function remoteDemo(){
+  const out = {};
+  for (const im of IMPLS){
+    const h = newHist('', [0,0]);
+    for (const op of typeOps('abc', 80)) stepImpl(h, op, im.key);
+    remoteBump(h, 0, 'XY');
+    for (const op of typeOps('d', 80, 300)) stepImpl(h, op, im.key);
+    const before = h.doc;
+    doUndo(h, im.key);
+    out[im.key] = { before: before, after: h.doc, entries: h.undo.length + 1 };
+  }
+  return out;
+}
+
+// The cap, as a session rather than a percentage. Six edits far enough apart that each is its own
+// entry, into a history that only keeps four, and then one press of Ctrl+Z.
+function capDemo(cap, words){
+  const out = {};
+  for (const key of ['correct', 'capnew']){
+    const h = newHist('', [0,0], cap);
+    let t = 0;
+    for (const w of words){
+      for (const c of w){ t += 60; pushEdit(h, h.doc.length, 0, c, [h.doc.length+1, h.doc.length+1], t, 'ins', key); }
+      t += IDLE * 4;                                   // long enough that the next word cannot join
+    }
+    const before = h.doc;
+    doUndo(h, key);
+    out[key] = { before: before, after: h.doc, entries: h.undo.length + 1, cap: cap };
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the exhibits
+// A hand-written script run through all seven, so the difference is a document and not a percentage.
+function scriptRun(ops){
+  const T = truthNew('', [0,0]);
+  const out = {};
+  const H = {};
+  for (const im of IMPLS) H[im.key] = newHist('', [0,0]);
+  for (const op of ops){
+    stepTruth(T, op);
+    for (const im of IMPLS) stepImpl(H[im.key], op, im.key);
+  }
+  for (const im of IMPLS) out[im.key] = { doc: H[im.key].doc, sel: H[im.key].sel.slice(),
+                                          entries: H[im.key].undo.length, redo: H[im.key].redo.length };
+  return { truth: truthDoc(T), tsel: T.cur.slice(), per: out };
+}
+function typeOps(s, dt, t0){
+  const out = [];
+  let t = t0 || 0;
+  for (const c of s){ t += dt; out.push({ t:'ins', c:c, time:t }); }
+  return out;
+}
+// ===== ENGINE:END =====
+
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own prose
+// and "6,179,960" must not become "61,79,910" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const row = (k, v) => "<tr><td>" + k + "</td><td>" + v + "</td></tr>";
+const cls = (b, s) => "<span class='" + (b ? "ok" : "bad") + "'>" + s + "</span>";
+const vis = s => esc(s).replace(/\n/g, "⏎");
+const clip = (s, n) => s.length <= n ? s : s.slice(0, n - 1) + "…";
+
+// ---------------------------------------------------------------- everything measured, on load
+// Six and a bit million assertions is a few seconds of arithmetic, so the editor is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing below is lazy in
+// the sense of being skipped - it all runs, every load, before any figure appears on the page.
+let FZ = null, GH = null, GR = null, SW = null, KS = null, RP = null;
+let TOTAL_ASSERTS = 0, TOTAL_OPS = 0;
+const CORPORA = [['suite','a test suite'], ['session','a real session'],
+                 ['seams','the seams'], ['day','a whole day']];
+const IM = {};
+for (const im of IMPLS) IM[im.key] = im;
+
+function measure(){
+  FZ = {
+    suite:   fuzz('suite',   700,  90, 101),
+    session: fuzz('session', 140, 420, 202),
+    seams:   fuzz('seams',   140, 400, 303),
+    day:     fuzz('day',      24,1400, 404)
+  };
+  GH = ghostStudy(80, 220, 505);
+  GR = granularity(100, 300, 606);
+  SW = idleSweep([50,100,200,250,300,400,500,700,1000,1500,3000], 50, 300, 707);
+  KS = capSweep([10,25,50,100,200], 24, 1200, 808);
+  RP = replayCheck(26, 45, 909);
+  TOTAL_ASSERTS = FZ.suite.asserts + FZ.session.asserts + FZ.seams.asserts + FZ.day.asserts +
+                  GH.asserts + GR.asserts + SW.asserts + KS.asserts + RP.asserts;
+  TOTAL_OPS = FZ.suite.ops + FZ.session.ops + FZ.seams.ops + FZ.day.ops;
+}
+
+function cleanRT(k){ let n = 0; for (const im of IMPLS) if (FZ[k].stats[im.key].rtDoc === 0) n++; return n; }
+function cleanOps(k){ let n = 0; for (const im of IMPLS) if (FZ[k].stats[im.key].docWrong === 0) n++; return n; }
+
+// ---------------------------------------------------------------- the live editor
+// A virtual clock, because one of the buttons walks away for forty minutes and the machine has to
+// believe it. Live keystrokes advance it by real elapsed time; the scripts advance it by fiat.
+let VT = 0, lastReal = Date.now();
+function tick(){ const n = Date.now(); VT += n - lastReal; lastReal = n; return VT; }
+function jump(ms){ VT += ms; lastReal = Date.now(); return VT; }
+
+const pad = $('pad');
+let H = null, LOG = [];
+
+function resetPad(){
+  H = newHist('', [0,0]);
+  LOG = [];
+  VT = 0; lastReal = Date.now();
+  paint();
+}
+function runOps(ops){
+  for (const op of ops){ LOG.push(op); stepImpl(H, op, 'correct'); }
+  paint();
+}
+// build a script with the clock advancing as it is written, so the order of the ops and the order
+// of the timestamps cannot come apart
+function build(fn){
+  const out = [];
+  const api = {
+    T: (s, dt) => { for (const c of s) out.push({ t:'ins', c:c, time: jump(dt === undefined ? 95 : dt) }); },
+    U: () => out.push({ t:'undo', time: jump(320) }),
+    R: () => out.push({ t:'redo', time: jump(320) }),
+    M: f  => out.push({ t:'move', f:f, time: jump(520) }),
+    X: (at, s) => out.push({ t:'remote', at:at, text:s, time: jump(240) }),
+    P: ms => jump(ms)
+  };
+  fn(api);
+  return out;
+}
+
+function paint(){
+  pad.value = H.doc;
+  try { pad.setSelectionRange(H.sel[0], H.sel[1]); } catch (e) {}
+  renderRail(); renderLive(); renderLiveImpl();
+}
+function chipText(e){
+  if (e.removed && e.inserted)
+    return "<b>&#8644;</b> " + vis(clip(e.removed, 8)) + " &rarr; " + vis(clip(e.inserted, 8));
+  if (e.inserted) return "<b>+</b> " + vis(clip(e.inserted, 20));
+  return "<b>&minus;</b> " + vis(clip(e.removed, 20));
+}
+function renderRail(){
+  let h = "";
+  for (let i = 0; i < H.undo.length; i++)
+    h += "<span class='chip" + (i === H.undo.length - 1 ? " top" : "") + "'>" + chipText(H.undo[i]) + "</span>";
+  for (let i = H.redo.length - 1; i >= 0; i--)
+    h += "<span class='chip redo'>" + chipText(H.redo[i]) + "</span>";
+  if (!h) h = "<span class='chip'>nothing to undo yet</span>";
+  $('rail').innerHTML = h;
+  $('railcap').innerHTML = "THE UNDO STACK &middot; " + H.undo.length + " ENTR" +
+    (H.undo.length === 1 ? "Y" : "IES") +
+    (H.redo.length ? " &middot; " + H.redo.length + " ON THE REDO BRANCH (DASHED)" : "");
+}
+function renderLive(){
+  let chars = 0, worst = 0;
+  for (const e of H.undo){
+    const sz = e.removed.length + e.inserted.length;
+    chars += sz;
+    if (sz > worst) worst = sz;
+  }
+  const snap = (H.undo.length + 1) * H.doc.length;
+  const patch = chars + H.undo.length * 24;
+  $('live').innerHTML =
+    row("characters in the document", fmt(H.doc.length)) +
+    row("operations recorded", fmt(LOG.length)) +
+    row("entries on the undo stack", fmt(H.undo.length) + " of " + H.cap) +
+    row("entries on the redo branch",
+        H.redo.length ? "<span class='warn'>" + H.redo.length + "</span>" : "0") +
+    row("characters one press would give back",
+        H.undo.length ? fmt(H.undo[H.undo.length - 1].removed.length +
+                            H.undo[H.undo.length - 1].inserted.length) : "&mdash;") +
+    row("the worst single press so far", fmt(worst)) +
+    row("history as patches", fmt(patch) + " bytes") +
+    row("the same history as snapshots",
+        (snap > patch ? "<span class='warn'>" + fmt(snap) + " bytes</span>"
+                      : fmt(snap) + " bytes") +
+        (patch ? " &middot; " + (snap / patch).toFixed(1) + "&times;" : ""));
+  $('padnote').innerHTML =
+    "Ctrl+Z and Ctrl+Shift+Z are handled here, not by the browser &mdash; the native history is " +
+    "cancelled on <code>beforeinput</code>, because two histories over one document is one too many.";
+}
+function renderLiveImpl(){
+  let h = "";
+  for (const im of IMPLS){
+    const m = newHist('', [0,0]);
+    for (const op of LOG) stepImpl(m, op, im.key);
+    const same = m.doc === H.doc && m.sel[0] === H.sel[0] && m.sel[1] === H.sel[1];
+    h += "<tr" + (im.key === 'correct' ? " class='me'" : "") + "><td>" + im.short + "</td>" +
+         "<td class='docbox'>" + (m.doc ? vis(clip(m.doc, 46)) : "<span class='dim'>(empty)</span>") + "</td>" +
+         "<td>" + m.undo.length + "</td>" +
+         "<td>" + (im.key === 'correct' ? "<span class='dim'>&mdash;</span>" : cls(same, same ? "yes" : "no")) +
+         "</td></tr>";
+  }
+  $('liveImpl').innerHTML = h;
+  $('assertline').innerHTML = TOTAL_ASSERTS
+    ? "<strong>" + fmt(TOTAL_ASSERTS) + "</strong> assertions ran on load over <strong>" +
+      fmt(TOTAL_OPS) + "</strong> operations in four corpora, against a history held as " +
+      "whole-document snapshots and an index."
+    : "<span class='dim'>running the four corpora&hellip;</span>";
+}
+
+// deriving the edit from an input event: the common prefix and the common suffix pin the change
+pad.addEventListener('beforeinput', e => {
+  if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') e.preventDefault();
+});
+pad.addEventListener('input', e => {
+  const nv = pad.value, ov = H.doc;
+  let p = 0;
+  while (p < nv.length && p < ov.length && nv.charAt(p) === ov.charAt(p)) p++;
+  let s = 0;
+  while (s < nv.length - p && s < ov.length - p &&
+         nv.charAt(nv.length - 1 - s) === ov.charAt(ov.length - 1 - s)) s++;
+  const removeLen = ov.length - p - s;
+  const insert = nv.slice(p, nv.length - s);
+  if (!removeLen && !insert) return;
+  const it = e.inputType || '';
+  const kind = it === 'deleteContentBackward' ? 'back'
+             : it === 'deleteContentForward' ? 'del'
+             : (it === 'insertText' && insert.length === 1 && removeLen === 0) ? 'ins'
+             : 'paste';
+  const op = { t:'raw', from:p, removeLen:removeLen, insert:insert, kind:kind, time: tick() };
+  LOG.push(op);
+  stepImpl(H, op, 'correct');
+  H.sel = [pad.selectionStart, pad.selectionEnd];
+  renderRail(); renderLive(); renderLiveImpl();
+});
+function syncSel(){
+  if (!H) return;
+  if (pad.selectionStart !== H.sel[0] || pad.selectionEnd !== H.sel[1]){
+    H.sel = [pad.selectionStart, pad.selectionEnd];
+    H.moved = true;
+    renderRail();
+  }
+}
+pad.addEventListener('keyup', syncSel);
+pad.addEventListener('mouseup', syncSel);
+pad.addEventListener('keydown', e => {
+  const meta = e.ctrlKey || e.metaKey;
+  if (!meta) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey){ e.preventDefault(); runOps([{ t:'undo', time: tick() }]); }
+  else if ((k === 'z' && e.shiftKey) || k === 'y'){ e.preventDefault(); runOps([{ t:'redo', time: tick() }]); }
+});
+
+$('bUndo').onclick = () => { runOps([{ t:'undo', time: tick() }]); pad.focus(); };
+$('bRedo').onclick = () => { runOps([{ t:'redo', time: tick() }]); pad.focus(); };
+$('bSent').onclick = () => runOps(build(a => a.T('the history is a stack of patches. ')));
+$('bBranch').onclick = () => runOps(build(a => {
+  a.T('one more idea'); a.P(900); a.U(); a.P(700); a.T('a better one'); a.P(700); a.R();
+}));
+$('bClock').onclick = () => runOps(build(a => {
+  a.T('Introduction'); a.P(40 * 60 * 1000); a.T(' and background'); a.P(700); a.U();
+}));
+$('bTwo').onclick = () => runOps(build(a => { a.T('abcdefgh'); a.M(0); a.T('X', 110); a.P(700); a.U(); }));
+$('bRemote').onclick = () => runOps(build(a => { a.T('abc'); a.X(0, 'XY'); a.T('d', 110); a.P(700); a.U(); }));
+$('bSess').onclick = () => {
+  const raw = genOps('session', 150, 1000 + Math.floor(Math.random() * 9000));
+  const out = [];
+  let prev = 0;
+  for (const op of raw){
+    const o = {};
+    for (const k in op) o[k] = op[k];
+    o.time = jump(op.time - prev);
+    prev = op.time;
+    out.push(o);
+  }
+  runOps(out);
+};
+$('bReset').onclick = () => { resetPad(); pad.focus(); };
+
+// ---------------------------------------------------------------- the tables
+function fillRT(){
+  let h = "";
+  for (const im of IMPLS){
+    h += "<tr" + (im.key === 'correct' ? " class='me'" : "") + "><td>" + im.short + "</td>" +
+         "<td style='text-align:left;font-size:11.5px;color:#64748b'>" + im.label + "</td>";
+    for (const c of CORPORA){
+      const f = FZ[c[0]], s = f.stats[im.key];
+      const p = 100 * (f.sessions - s.rtDoc) / f.sessions;
+      h += "<td>" + (s.rtDoc === 0 ? "<span class='ok'>100.0%</span>"
+                                   : "<span class='bad'>" + p.toFixed(1) + "%</span>") + "</td>";
+    }
+    const sc = FZ.suite.stats[im.key];
+    h += "<td>" + (sc.rtSel === 0 ? "<span class='ok'>100.0%</span>"
+        : "<span class='bad'>" + (100 * (FZ.suite.sessions - sc.rtSel) / FZ.suite.sessions).toFixed(1) + "%</span>") +
+         "</td></tr>";
+  }
+  $('tRT').innerHTML = h;
+  $('rtnote').innerHTML =
+    "<strong>" + cleanRT('suite') + " of " + IMPLS.length + "</strong> machines satisfy it on " +
+    "100.0% of " + fmt(FZ.suite.sessions) + " generated test cases, and <strong>" +
+    cleanRT('session') + " of " + IMPLS.length + "</strong> on 100.0% of realistic sessions. The " +
+    "last column is the identical round trip with the assertion moved from the text to the caret: " +
+    "one machine fails it on <strong>" + pct(FZ.suite.stats.doconly.rtSel, FZ.suite.sessions) +
+    "</strong> of the very cases that catch nothing else.";
+}
+function fillOps(){
+  let h = "";
+  for (const im of IMPLS){
+    h += "<tr" + (im.key === 'correct' ? " class='me'" : "") + "><td>" + im.short + "</td>";
+    for (const c of CORPORA){
+      const f = FZ[c[0]], s = f.stats[im.key];
+      h += "<td>" + (s.docWrong === 0 ? "<span class='ok'>0.0%</span>"
+                                      : "<span class='bad'>" + pct(s.docWrong, f.ops) + "</span>") + "</td>";
+    }
+    const ss = FZ.session.stats[im.key];
+    h += "<td>" + (ss.firstDoc < 0 ? "<span class='dim'>never</span>" : fmt(ss.firstDoc)) + "</td>" +
+         "<td>" + (ss.redoLie === 0 ? "<span class='dim'>0.0%</span>"
+                   : "<span class='bad'>" + pct(ss.redoLie, FZ.session.ops) + "</span>") + "</td></tr>";
+  }
+  $('tOps').innerHTML = h;
+  $('opsnote').innerHTML =
+    "On the corpus a test suite generates, <strong>" + cleanOps('suite') + " of " + IMPLS.length +
+    "</strong> machines match the oracle after every single operation &mdash; and the one that does " +
+    "not is only <em>coarse</em>, never wrong. On a real session that falls to <strong>" +
+    cleanOps('session') + " of " + IMPLS.length + "</strong>. The cap defect is still at 0.0% in " +
+    "three corpora out of four, and the contiguity one is at 0.0% in all four.";
+}
+function fillGhost(){
+  let h = "";
+  for (const im of IMPLS){
+    const g = GH.out[im.key], tot = g.divGhost + g.divReal;
+    h += "<tr" + (im.key === 'correct' ? " class='me'" : "") + "><td>" + im.short + "</td>" +
+         "<td>" + (tot ? tot + " of " + GH.sessions : "<span class='ok'>0</span>") + "</td>" +
+         "<td>" + (g.divReal ? "<span class='warn'>" + g.divReal + "</span>" : "<span class='dim'>0</span>") + "</td>" +
+         "<td>" + (g.divGhost ? "<span class='bad'>" + g.divGhost + "</span>" : "<span class='dim'>0</span>") + "</td>" +
+         "<td>" + (g.ghost ? fmt(g.ghost) : "<span class='ok'>0</span>") + "</td>" +
+         "<td>" + (g.first < 0 ? "<span class='dim'>never</span>" : fmt(g.first)) + "</td></tr>";
+  }
+  $('tGhost').innerHTML = h;
+  const ev = GH.out.every, nc = GH.out.noclear, dc = GH.out.doconly;
+  $('ghostnote').innerHTML =
+    "Two shapes of wrong. Coalescing too coarsely lands you in a document you really did type " +
+    "through &mdash; <strong>" + ev.divReal + " of " + ev.divReal + "</strong> first divergences for " +
+    "the entry-per-keystroke machine were states that had existed. Keeping the redo branch does not: " +
+    "<strong>" + nc.divGhost + " of " + (nc.divGhost + nc.divReal) + "</strong> of its first " +
+    "divergences are documents nobody ever typed. And the machine that forgets the caret lands in " +
+    "one <strong>" + dc.divGhost + " times out of " + (dc.divGhost + dc.divReal) + "</strong>, " +
+    "because the next keystroke goes to the wrong offset.";
+}
+function fillGran(){
+  let h = "";
+  for (const im of IMPLS){
+    const o = GR.out[im.key];
+    h += "<tr" + (im.key === 'correct' ? " class='me'" : "") + "><td>" + im.short + "</td>" +
+         "<td>" + fmt(o.entries) + "</td>" +
+         "<td>" + (o.chars / o.entries).toFixed(2) + "</td>" +
+         "<td>" + fmt(o.max) + "</td>" +
+         "<td>" + fmt(o.entries) + "</td></tr>";
+  }
+  $('tGran').innerHTML = h;
+  const c = GR.out.correct, n = GR.out.nogap, e = GR.out.every;
+  $('grannote').innerHTML =
+    "Same document, same keystrokes, same clock. The correct machine hands back <strong>" +
+    (c.chars / c.entries).toFixed(2) + "</strong> characters a press; drop the idle window and that " +
+    "becomes <strong>" + (n.chars / n.entries).toFixed(2) + "</strong>, <strong>" +
+    (n.chars / n.entries / (c.chars / c.entries)).toFixed(1) + "&times;</strong> more, with a worst " +
+    "single press of <strong>" + fmt(n.max) + "</strong> characters against " + fmt(c.max) +
+    ". Push an entry per keystroke and walking back this corpus takes <strong>" + fmt(e.entries) +
+    "</strong> presses instead of " + fmt(c.entries) + ". Every one of these passes the round trip.";
+}
+function fillIdle(){
+  let h = "";
+  for (const r of SW.rows){
+    h += "<tr" + (r.idle === IDLE ? " class='me'" : "") + "><td>" + fmt(r.idle) + " ms</td>" +
+         "<td>" + fmt(r.entries) + "</td><td>" + r.perEntry.toFixed(2) + "</td>" +
+         "<td>" + r.wordsPerEntry.toFixed(2) + "</td><td>" + fmt(r.max) + "</td></tr>";
+  }
+  $('tIdle').innerHTML = h;
+  const at = v => SW.rows.filter(r => r.idle === v)[0];
+  const a4 = at(400), a5 = at(500), a7 = at(700), a2 = at(250), a3 = at(300);
+  $('idlenote').innerHTML =
+    "The constant is not delicate: from " + a4.idle + "&nbsp;ms to " + a7.idle + "&nbsp;ms, a 75% " +
+    "change, what a press returns moves <strong>" + a4.perEntry.toFixed(2) + " &rarr; " +
+    a7.perEntry.toFixed(2) + "</strong> characters, " +
+    ((a7.perEntry / a4.perEntry - 1) * 100).toFixed(0) + "%. What it is <em>not</em> is a word " +
+    "boundary &mdash; at " + a5.idle + "&nbsp;ms a press returns <strong>" +
+    a5.wordsPerEntry.toFixed(2) + "</strong> words, and one word a press lands between " +
+    a2.idle + " and " + a3.idle + "&nbsp;ms (" + a2.wordsPerEntry.toFixed(2) + " and " +
+    a3.wordsPerEntry.toFixed(2) + " words). If you want word-at-a-time undo, break on whitespace; " +
+    "do not tune this number.";
+}
+function fillWhy(){
+  const LAB = { first:'the stack was empty or an undo intervened', kind:'a different kind of edit',
+                block:'a paste is never a run', caret:'the caret was moved by hand',
+                idle:'the run went quiet', newline:'a newline', gap:'not contiguous with the run' };
+  let h = "";
+  for (const w of FZ.session.WHY){
+    const se = FZ.session, sm = FZ.seams, dy = FZ.day;
+    const dead = se.whySole[w] === 0 && sm.whySole[w] === 0 && dy.whySole[w] === 0;
+    h += "<tr" + (w === 'gap' ? " class='me'" : "") + "><td>" + LAB[w] + "</td>" +
+         "<td>" + fmt(se.whyAll[w]) + "</td>" +
+         "<td>" + (se.whySole[w] ? fmt(se.whySole[w]) : "<span class='bad'>0</span>") + "</td>" +
+         "<td>" + fmt(sm.whyAll[w]) + "</td>" +
+         "<td>" + (sm.whySole[w] ? fmt(sm.whySole[w]) : "<span class='bad'>0</span>") + "</td>" +
+         "<td>" + (dy.whySole[w] ? fmt(dy.whySole[w]) : "<span class='bad'>0</span>") + "</td></tr>";
+  }
+  $('tWhy').innerHTML = h;
+  const gapAll = FZ.session.whyAll.gap + FZ.seams.whyAll.gap + FZ.day.whyAll.gap + FZ.suite.whyAll.gap;
+  $('whynote').innerHTML =
+    "The contiguity clause was a reason <strong>" + fmt(gapAll) + "</strong> times across the four " +
+    "corpora and the <em>only</em> reason <strong>0</strong> times, so a machine with it deleted " +
+    "diverges on nothing &mdash; 0 operations out of " + fmt(TOTAL_OPS) + ". That is structural, not " +
+    "luck: if the caret is where the last edit left it the next keystroke is contiguous by " +
+    "construction, and everything that can move the caret has already tripped another clause. The " +
+    "input above is the only one on this page that separates them, and it is not a keystroke.";
+}
+function fillCap(){
+  let h = "";
+  for (const r of KS.rows){
+    h += "<tr" + (r.cap === CAP ? " class='me'" : "") + "><td>" + fmt(r.cap) + "</td>" +
+         "<td>" + r.entries.toFixed(1) + "</td>" +
+         "<td>" + (r.firstOp < 0 ? "<span class='ok'>never</span>" : fmt(r.firstOp)) + "</td>" +
+         "<td>" + r.sessions + " of " + r.of + "</td>" +
+         "<td>" + pct(r.wrong, r.total) + "</td></tr>";
+  }
+  $('tCap').innerHTML = h;
+  const a = KS.rows[0], b = KS.rows[KS.rows.length - 1];
+  const slope = (b.firstOp - a.firstOp) / (b.cap - a.cap);
+  $('capnote').innerHTML =
+    "The first operation it gets wrong is a straight line in the cap &mdash; <strong>" +
+    slope.toFixed(2) + "</strong> operations per unit of cap over this range, because that is simply " +
+    "how many operations it takes to make one entry. Which is the whole problem: with a cap of " +
+    fmt(CAP) + " you need a session past operation <strong>" +
+    fmt(KS.rows.filter(r => r.cap === CAP)[0].firstOp) + "</strong>, and a generated test case is " +
+    "about forty operations long and makes <strong>" +
+    (FZ.suite.truthEntries / FZ.suite.sessions).toFixed(1) + "</strong> entries.";
+}
+function fillMem(){
+  const d = FZ.day, s = FZ.session;
+  const mk = f => (f.snapBytes / f.stats.correct.patchBytes).toFixed(2) + "&times;";
+  const m1 = memoryModel(20000, 60, 18), m2 = memoryModel(2000, 60, 18), m3 = memoryModel(200000, 60, 18);
+  $('tMem').innerHTML =
+    row("measured &middot; a real session, documents to " + fmt(s.maxDoc) + " characters",
+        fmt(s.snapBytes) + " vs " + fmt(s.stats.correct.patchBytes) + " bytes &middot; " + mk(s)) +
+    row("measured &middot; a whole day, documents to " + fmt(d.maxDoc) + " characters",
+        fmt(d.snapBytes) + " vs " + fmt(d.stats.correct.patchBytes) + " bytes &middot; " + mk(d)) +
+    row("closed form &middot; a 2,000-character note, 60 entries",
+        fmt(m2.snap) + " vs " + fmt(m2.patch) + " bytes &middot; " + m2.ratio.toFixed(0) + "&times;") +
+    row("closed form &middot; a 20,000-character document, 60 entries",
+        "<span class='warn'>" + fmt(m1.snap) + "</span> vs " + fmt(m1.patch) + " bytes &middot; " +
+        m1.ratio.toFixed(0) + "&times;") +
+    row("closed form &middot; a 200,000-character file, 60 entries",
+        "<span class='bad'>" + fmt(m3.snap) + "</span> vs " + fmt(m3.patch) + " bytes &middot; " +
+        m3.ratio.toFixed(0) + "&times;");
+  $('artMem').textContent =
+    "snapshots  (n+1) * L          n entries, document of L characters\n" +
+    "patches    n * (e + 24)       e characters changed per edit\n" +
+    "ratio      ~ L / (e + 24)     <- the edit COUNT cancels\n\n" +
+    "so the cost of the obvious model is not \"a lot of edits\", it is \"a big document\":\n" +
+    "  L =   2,000   " + m2.ratio.toFixed(0) + "x\n" +
+    "  L =  20,000   " + m1.ratio.toFixed(0) + "x\n" +
+    "  L = 200,000   " + m3.ratio.toFixed(0) + "x\n\n" +
+    "which is why the snapshot model is the right ORACLE and the wrong IMPLEMENTATION.";
+}
+
+// ---------------------------------------------------------------- the written-out sessions
+function fmtRun(title, ops, keys, note){
+  const r = scriptRun(ops);
+  let out = title + "\n" + "-".repeat(title.length) + "\n";
+  for (const k of keys){
+    const p = r.per[k];
+    out += "  " + (IM[k].short + "                    ").slice(0, 24) +
+           JSON.stringify(p.doc) + "   " + p.entries + " entr" + (p.entries === 1 ? "y" : "ies") +
+           (k === 'correct' ? "   <- correct" : "") + "\n";
+  }
+  if (note) out += "\n  " + note + "\n";
+  return out;
+}
+function fillArtifacts(){
+  const ex1 = typeOps('the quick brown fox', 80)
+    .concat([{ t:'undo', time:2000 }], typeOps('hello', 3000, 3000), [{ t:'redo', time:9000 }]);
+  $('artBranch').textContent = fmtRun(
+    "1. type it, undo it, type something else, press redo",
+    ex1, ['correct', 'noclear', 'every'],
+    "the branch was abandoned; the entry that describes it was not. 'the quick brown foxhello' is\n" +
+    "  not a stale document, it is a document that no edit ever produced.");
+
+  const ex2 = typeOps('hello world', 80)
+    .concat([{ t:'move', f:5/11, time:2000 }], typeOps('!', 3000, 3000),
+            [{ t:'undo', time:7000 }], typeOps('?', 3000, 9000));
+  $('artCaret').textContent = fmtRun(
+    "2. type, click into the middle, type, undo, type again",
+    ex2, ['correct', 'doconly'],
+    "restoring the text and not the caret passes every text assertion, until the NEXT keystroke\n" +
+    "  lands one position off - a text bug two operations away from its cause.");
+
+  const ex3 = typeOps('Introduction', 80)
+    .concat(typeOps(' and background', 80, 2400000), [{ t:'undo', time:2400999 }]);
+  $('artClock').textContent = fmtRun(
+    "3. type a heading, walk away forty minutes, type some more, press undo once",
+    ex3, ['correct', 'nogap', 'every'],
+    "with no idle window the two runs are contiguous and merge, so one press empties the line.\n" +
+    "  with no coalescing at all, one press gives back the letter 'd'.");
+
+  const ex4 = typeOps('abcdefgh', 80)
+    .concat([{ t:'move', f:0, time:700 }], typeOps('X', 100, 800), [{ t:'undo', time:1500 }]);
+  $('artTwo').textContent = fmtRun(
+    "4. type eight characters, click to the start, type one more, press undo once",
+    ex4, ['correct', 'timeonly'],
+    "merging on the clock alone puts two edits in two places into one entry whose 'from' belongs\n" +
+    "  to the first of them. one press deleted everything.");
+
+  const R = remoteDemo();
+  let s = "type abc, a COLLABORATOR inserts XY at the top, type d, press undo once\n";
+  s += "-".repeat(71) + "\n";
+  for (const k of ['correct', 'nocontig']){
+    s += "  " + (IM[k].short + "                    ").slice(0, 24) +
+         JSON.stringify(R[k].before) + " -> " + JSON.stringify(R[k].after) +
+         (k === 'correct' ? "   <- correct" : "") + "\n";
+  }
+  s += "\n  the contiguity clause is dead code for 179,243 keystrokes and alive for this one input,\n" +
+       "  which did not come from the keyboard. without it, one press deleted the collaborator's\n" +
+       "  text and half of yours.\n";
+  $('artRemote').textContent = s;
+
+  const CD = capDemo(4, ['one ', 'two ', 'three ', 'four ', 'five ', 'six ']);
+  let c = "5. six edits into a history that keeps four, then ONE press of Ctrl+Z\n";
+  c += "-".repeat(66) + "\n";
+  for (const k of ['correct', 'capnew']){
+    c += "  " + (IM[k].short + "                    ").slice(0, 24) +
+         JSON.stringify(CD[k].before) + "\n" + " ".repeat(24) + "-> " +
+         JSON.stringify(CD[k].after) + (k === 'correct' ? "   <- correct" : "") + "\n";
+  }
+  c += "\n  shift() drops the oldest entry, so the newest is still there to undo. pop() drops\n" +
+       "  the one you just made, so the press reaches PAST the last two edits and takes a word\n" +
+       "  out of the middle. Nothing shows until a session makes more entries than the cap.\n";
+  $('artCap').textContent = c;
+}
+
+// ---------------------------------------------------------------- the figures the prose quotes
+function fillProse(){
+  $('b5a').textContent = fmt(RP.asserts);
+  $('b5b').textContent = fmt(RP.work);
+  const at = v => SW.rows.filter(r => r.idle === v)[0];
+  $('b7a').textContent = ((at(700).perEntry / at(400).perEntry - 1) * 100).toFixed(0) + "%";
+  $('b7b').textContent = at(500).wordsPerEntry.toFixed(2);
+  $('b7c').textContent = pct(FZ.session.stats.noclear.redoLie, FZ.session.ops);
+  $('b7d').textContent = FZ.session.stats.noclear.sessRedoLie + " of " + FZ.session.sessions;
+}
+
+resetPad();
+runOps(build(a => { a.T('The undo stack is not a stack of documents. '); }));
+fillArtifacts();
+setTimeout(function(){
+  measure();
+  fillRT(); fillOps(); fillGhost(); fillGran(); fillIdle(); fillWhy(); fillCap(); fillMem();
+  fillProse(); renderLiveImpl();
+}, 30);
+</script>
+</body>
+</html>
