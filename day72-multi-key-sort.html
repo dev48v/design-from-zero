@@ -1,0 +1,2273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 72 &mdash; Multi-key table sort</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1f5f9; color:#0f172a; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e8edf5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#4338ca; }
+
+  header { background:#fff; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#4338ca; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e8edf5; color:#0f172a; }
+  .tabs button.on { background:#0f172a; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e8edf5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#475569; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#64748b; margin:0 0 12px; }
+  .note { font-size:12px; color:#64748b; margin:12px 0 0; }
+  .rule { border-top:1px solid #e2e8f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; }
+  .prose ul { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e2e8f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num tr.me td { background:#eef2ff; font-weight:700; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#94a3b8; }
+  .scroll { overflow-x:auto; }
+
+  .ctl { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+         font-size:13px; }
+  .ctl label { display:flex; flex-direction:column; gap:3px; }
+  .ctl span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b; }
+  .ctl select, .ctl button { font:inherit; font-size:13px; padding:6px 10px; border-radius:8px;
+                             border:1px solid #cbd5e1; background:#fff; }
+  .ctl button { cursor:pointer; font-weight:700; background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl button.ghost { background:#fff; color:#0f172a; }
+
+  .split { display:grid; gap:22px; align-items:start; }
+  @media (min-width:1024px) { .split { grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); } }
+
+  table.grid { width:100%; border-collapse:collapse; font-size:12px; }
+  table.grid th { background:#f6f8fb; border-bottom:1px solid #dbe2ec; padding:6px 8px;
+                  text-align:left; font-weight:800; font-size:11px; letter-spacing:.04em;
+                  color:#334155; cursor:pointer; white-space:nowrap; user-select:none; }
+  table.grid th:hover { background:#eef2ff; color:#312e81; }
+  table.grid th .ar { color:#4338ca; font-weight:800; }
+  table.grid th .no { color:#cbd5e1; font-weight:800; }
+  table.grid td { padding:5px 8px; border-bottom:1px solid #eef2f7; white-space:nowrap;
+                  font-variant-numeric:tabular-nums; }
+  table.grid td.idc { color:#94a3b8; font-family:ui-monospace, Menlo, Consolas, monospace; }
+  table.grid td.blank { color:#cbd5e1; font-style:italic; }
+  table.grid tr.moved td { background:#fff7ed; }
+  table.grid tr.p1 td { box-shadow:inset 3px 0 0 #4338ca; }
+  table.grid tr.p2 td { box-shadow:inset 3px 0 0 #f59e0b; }
+  table.grid tr.pgb td { border-top:2px solid #94a3b8; }
+  table.grid tr.dupr td { background:#fee2e2; }
+
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
+  .chip { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; line-height:1.5;
+          border:1px solid #4338ca; background:#eef2ff; color:#312e81; border-radius:7px;
+          padding:2px 8px; }
+  .chip.tie { border-color:#dbe2ec; background:#f6f8fb; color:#64748b; }
+  .chip b { font-weight:800; }
+  .seq { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:#334155; }
+  .seq b { color:#991b1b; font-weight:800; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 72</p>
+    <h1>
+      &#8645; Multi-key table sort &mdash; click a column header and the rows rearrange. The part
+      that decides whether the table is right is not the comparison, it is what happens to the rows
+      the comparison <em>cannot separate</em>: a table sort has to be a <strong>total order</strong>
+      or the same rows come back arranged differently every time the query does. The seven
+      implementations here differ by one clause each, and on a hand-written test fixture &mdash; a
+      few rows, every value different, nothing blank &mdash; <strong>all seven produce the identical
+      order</strong> on <strong>100.0%</strong> of 800 cases and on every one of the six sort specs,
+      so that fixture cannot tell a correct sort from any of the six broken ones. The property every
+      table test does assert, <em>the column you clicked is in order</em>, is satisfied on
+      <strong>100.0%</strong> of every corpus by <strong>four of the seven</strong> &mdash; one of
+      which gets <strong>86.7%</strong> of real boards wrong. And what blinds the fixture is not its
+      realism but its <strong>row count</strong>: the four defects it can ever see appear at
+      <strong>6, 10, 21 and 21</strong> rows, where 21 is <code>lcm(5,4)&nbsp;+&nbsp;1</code>, the
+      first row count at which two of its rows can tie on both keys at all &mdash; while the other
+      two are invisible at every row count, forever, for a reason that is not about size. <strong>4,340,301 assertions</strong> on load against
+      an oracle that never compares two rows. Pure vanilla JavaScript, one file, no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#8645; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Click a column header.</strong> The first click makes it the primary key, clicking it
+        again flips the direction, and <em>shift-click</em> appends a key instead of replacing one.
+        The violet chips are the sort spec; the grey one at the end is the tie-break that makes the
+        order total. Then press <strong>run the query again</strong>: the rows are handed to the sort
+        in a different physical order, exactly as a second database query would hand them over, and
+        anything that moves is a row your table cannot keep still.
+      </p>
+      <div class="ctl">
+        <label><span>&nbsp;</span><button id="bAgain">run the query again</button></label>
+        <label><span>SHOWING</span><select id="selImpl"></select></label>
+        <label><span>PRESET</span><select id="selSpec"></select></label>
+        <label><span>&nbsp;</span><button id="bClear" class="ghost">clear the spec</button></label>
+        <label><span>&nbsp;</span><button id="bPage" class="ghost">show it as two pages</button></label>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="split">
+        <div>
+          <div class="scroll"><table class="grid" id="board"></table></div>
+          <p class="note" id="boardnote"></p>
+        </div>
+        <div>
+          <p class="cap">THE SAME SPEC, ALL SEVEN</p>
+          <div class="scroll"><table class="num">
+            <thead><tr><th>implementation</th><th>the order it puts the rows in</th>
+              <th>rows out<br>of place</th></tr></thead>
+            <tbody id="liveImpl"></tbody></table></div>
+          <p class="cap" style="margin:18px 0 8px">AND WHAT EACH PROPERTY SAYS ABOUT IT</p>
+          <div class="scroll"><table class="num">
+            <thead><tr><th>implementation</th><th>first key<br>in order</th>
+              <th>whole spec<br>in order</th><th>same after a<br>second query</th>
+              <th>exactly the<br>right order</th></tr></thead>
+            <tbody id="liveProp"></tbody></table></div>
+          <p class="note" id="assertline"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ORDER SEVEN IMPLEMENTATIONS AGREE ON</p>
+      <p class="lead">
+        Every implementation, every corpus, and the strictest question there is: did it produce
+        <em>exactly</em> the order the oracle produced, row for row. <em>A test fixture</em> is what
+        almost every sort test is built on &mdash; three to five rows, every column deliberately
+        different, nothing missing, every number one digit wide. Read its column first.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>the one clause<br>that differs</th>
+          <th>a test fixture<br /><span class="dim" id="hFix"></span></th><th>a seeded table<br /><span class="dim" id="hSeed"></span></th>
+          <th>a real board<br /><span class="dim" id="hBoard"></span></th><th>the seams<br /><span class="dim" id="hSeams"></span></th>
+          <th>rows out of place<br>per 1,000, real board</th></tr></thead>
+        <tbody id="tExact"></tbody></table></div>
+      <p class="note" id="exactnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">NOW ASK ONLY WHAT A TEST SUITE ASKS</p>
+      <p class="lead">
+        <em>Is the column I clicked in order.</em> That is the assertion in essentially every
+        table-sort test ever written, and it is one pass down the rendered rows comparing the one
+        value the reader can see. Note what it cannot ask: not what happened to the rows that value
+        cannot separate, not whether the arrangement is the same one the last query produced, and
+        not whether the other keys in the spec were used at all.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>a test fixture</th><th>a seeded table</th>
+          <th>a real board</th><th>the seams</th>
+          <th>&hellip;while being exactly<br>right on, real board</th></tr></thead>
+        <tbody id="tP1"></tbody></table></div>
+      <p class="note" id="p1note"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FIVE PROPERTIES, AND EXACTLY WHAT EACH ONE CAN SEE</p>
+      <p class="lead">
+        All on the real board, all on the same cases. The defects do not split the way the properties do. Three of them are
+        <em>comparator</em> defects, impeccable comparators answering a different question about two
+        rows; two are <em>arrangement</em> defects, which ask the right question and then arrange the
+        answers badly; and one is neither &mdash; a comparator that is correct as far as it goes and
+        simply stops short of an answer. A property that reads the rendered column can only ever see
+        the first three.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>family</th><th>first key<br>in order</th>
+          <th>whole spec<br>in order</th><th>same screen after<br>a second query</th>
+          <th>asc, desc, asc<br>returns</th><th>two clean<br>pages</th>
+          <th>exactly<br>right</th></tr></thead>
+        <tbody id="tProps"></tbody></table></div>
+      <p class="note" id="propsnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">PAGE 1 FROM ONE QUERY, PAGE 2 FROM THE NEXT</p>
+      <p class="lead">
+        Pagination is where a non-total order stops being cosmetic. Twenty rows are fetched, then
+        twenty more by a second query that scanned the table in a different physical order. If the
+        sort cannot separate two rows, nothing decides which of them page 1 kept and which page 2
+        thought it still owed you &mdash; so one row is printed twice and another is never printed
+        at all. Counted over 300 boards.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>boards with<br>two clean pages</th>
+          <th>rows shown<br>twice</th><th>rows never<br>shown</th>
+          <th>can it duplicate<br>a row at all</th></tr></thead>
+        <tbody id="tPage"></tbody></table></div>
+      <pre id="artPage"></pre>
+      <p class="note" id="pagenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">HOW MANY ROWS BEFORE THE FIXTURE CAN SEE IT</p>
+      <p class="lead">
+        The same fixture generator, held to its own rules &mdash; every column as different as its
+        pool allows, nothing blank &mdash; at growing row counts. Nothing here becomes more realistic
+        as the number goes up; there are simply more rows, so two of them can finally collide. Each
+        threshold is one more than the size of the pool the spec's keys can collide in, which makes
+        it arithmetic rather than luck.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rows in the fixture</th><th>no tie-break</th><th>unstable sort</th>
+          <th>sort then reverse</th><th>first key only</th><th>numbers as text</th>
+          <th>blank is zero</th></tr></thead>
+        <tbody id="tSize"></tbody></table></div>
+      <p class="note" id="sizenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND WHICH COLUMNS YOUR TEST HAPPENS TO SORT BY</p>
+      <p class="lead">
+        The same real board, the same seven implementations, split by which spec was clicked. Every
+        defect on this page is <strong>0.0%</strong> under some spec and <strong>100.0%</strong>
+        under another, and the reasons are structural rather than statistical &mdash; they are
+        written out under the table.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th id="sp0"></th><th id="sp1"></th><th id="sp2"></th>
+          <th id="sp3"></th><th id="sp4"></th><th id="sp5"></th></tr></thead>
+        <tbody id="tSpec"></tbody></table></div>
+      <p class="note" id="specnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHICH CLAUSE ACTUALLY DECIDES ANYTHING</p>
+      <p class="lead">
+        For every neighbouring pair in the finished order, which clause was the first one to separate
+        them. A clause that separates nothing is doing no work &mdash; that is the test, and on one
+        of these corpora it reports two of three clauses as dead code.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>corpus and spec</th><th>clause</th><th>pairs it decided</th>
+          <th>share</th><th>of which, one side<br>was blank</th></tr></thead>
+        <tbody id="tClause"></tbody></table></div>
+      <p class="note" id="clausenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SO DELETE IT AND SEE</p>
+      <p class="lead">
+        The direct version of the same question. Drop one clause from the spec, sort again, and count
+        what changed &mdash; first against the correct order, then against <em>itself</em> after the
+        rows are handed over in a different physical order. The second column is the one the first
+        cannot stand in for.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>corpus and spec</th><th>clause deleted</th><th>same screen</th>
+          <th>same screen after<br>a second query</th><th>rows moved<br>per 1,000</th></tr></thead>
+        <tbody id="tDelete"></tbody></table></div>
+      <p class="note" id="deletenote"></p>
+      <div class="rule">
+        <p class="cap" style="margin-bottom:8px">AND THE CLAUSE BEHIND THE CLAUSE</p>
+        <p class="lead" style="margin-bottom:8px">
+          The tie-break is not the last clause. Underneath it, the text comparison ends with a
+          fallback to the <em>exact</em> form of the string, so <code>Fix</code> and <code>fix</code>
+          are separated even though the folded comparison called them equal. Delete that one line and
+          ask the same two questions &mdash; once with the id tie-break in place, once without it.
+          Each of the two clauses looks like dead code for exactly as long as the other one is there.
+        </p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>corpus and spec</th><th>pairs where the folded<br>compare ties but the
+            exact one does not</th><th>same screen<br>with the tie-break</th>
+            <th>same screen<br>without it</th><th>and stable after<br>a second query</th></tr></thead>
+          <tbody id="tFold"></tbody></table></div>
+        <p class="note" id="foldnote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">IS IT EVEN A COMPARATOR</p>
+      <p class="lead">
+        A comparator has to be antisymmetric, reflexive and transitive or a sort is entitled to
+        return anything at all, so checking those three is the one piece of diligence this component
+        has a name for. Here is what it buys.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>implementation</th><th>antisymmetry<br>violations</th>
+          <th>reflexivity<br>violations</th><th>transitivity<br>violations</th>
+          <th>is it a valid<br>total preorder</th><th>is it the<br>right one</th></tr></thead>
+        <tbody id="tAx"></tbody></table></div>
+      <p class="note" id="axnote"></p>
+      <div class="rule">
+        <p class="cap" style="margin-bottom:8px">AND THE TWO ORDERS BOTH CALLED NATURAL SORT</p>
+        <p class="lead" style="margin-bottom:8px">
+          The machine walks digit runs and compares each run against the run facing it. The oracle
+          zero-pads the digit runs and compares one flat string. Both are the thing people mean by
+          natural sort and they are <em>not the same order</em> &mdash; which matters, because if
+          they disagreed anywhere in the corpus the oracle would not be an oracle.
+        </p>
+        <table class="num"><tbody id="tEnc"></tbody></table>
+        <pre id="artEnc" style="margin-top:12px; margin-bottom:0"></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">FOUR SCREENS, WRITTEN OUT IN FULL</p>
+      <pre id="artRecent"></pre>
+      <pre id="artEstimate"></pre>
+      <pre id="artOwner"></pre>
+      <pre id="artBoard" style="margin-bottom:0"></pre>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>A table sort is not a comparison. It is a total order.</h2>
+      <p>
+        Clicking a column header does not sort by that column. It builds a <em>sort spec</em> &mdash;
+        an ordered list of <code>{key, direction}</code> &mdash; and hands the whole list to a
+        comparator that walks the keys until one of them separates the two rows. That much everybody
+        writes correctly on the first try. The part that decides whether the table is right is what
+        happens when the walk runs out of keys: two rows the spec cannot separate, and no answer.
+      </p>
+      <p>
+        Return 0 there and the comparator is a <strong>total preorder</strong>: valid, antisymmetric,
+        transitive, and it will pass every axiom check you can point at it. What it is not is a
+        <strong>total order</strong>, and the difference is the whole component. A total preorder
+        says <em>these two rows are equivalent</em>; the sort is then free to put them in either
+        arrangement, and which arrangement you get depends on the order the rows physically arrived
+        in &mdash; which is to say, on the query plan, the buffer pool, and whatever the database
+        felt like doing that afternoon.
+      </p>
+      <p>
+        On one screen that is invisible. Across two it is a bug report. Add one clause &mdash;
+        <code>then by id</code> &mdash; and no two distinct rows can ever tie again, so the sort is a
+        function of the <em>set</em> of rows rather than of the order they turned up in. That clause
+        is the last one in the comparator, the one that never fires on anybody's test data, and it is
+        the one everyone deletes.
+      </p>
+
+      <h3>The fixture cannot see any of it</h3>
+      <p>
+        Beside the correct machine on this page sit six implementations, each differing by one
+        clause. On a hand-written test fixture &mdash; a few rows, every column deliberately
+        different, nothing blank, every number one digit wide &mdash; <strong>all seven produce the
+        identical order</strong>, on <strong>100.0%</strong> of 800 fixtures and on every one of the
+        six sort specs. That is not a near miss. Across seven implementations and six specs the
+        fixture records <strong>zero</strong> disagreements of any kind.
+      </p>
+      <p>
+        The interesting part is <em>why</em>, because the usual explanation &mdash; the fixture is
+        not realistic enough &mdash; is wrong here, and measurably so. Hold the generator to exactly
+        its own rules and just add rows:
+      </p>
+      <ul>
+        <li><strong>6 rows.</strong> <em>First key only</em> starts failing, because the status
+          column has five values and six rows is the first count at which two rows can share one.</li>
+        <li><strong>10 rows.</strong> <em>Sort then reverse</em> starts failing: the points column
+          cycles through nine values.</li>
+        <li><strong>21 rows.</strong> Both tie-break defects start failing at once, and 21 is
+          <code>lcm(5,4)&nbsp;+&nbsp;1</code> &mdash; status cycles every 5 rows and priority every 4,
+          so the first pair of fixture rows that agree on <em>both</em> keys is exactly 20 apart.</li>
+      </ul>
+      <p>
+        Three thresholds, all arithmetic, none of them about realism. And the remaining two defects
+        are invisible at <em>every</em> row count, forever, for a reason that is not about size at
+        all: the fixture has no blank cell for <em>blank is zero</em> to coerce, and its numeric
+        columns are all one digit wide, where a string comparison and a numeric comparison are the
+        same order. No amount of rows fixes a column that has no gaps in it.
+      </p>
+
+      <h3>The property everybody asserts</h3>
+      <p>
+        Search any table component's tests and you will find one assertion: click the header, then
+        walk the rendered rows and check the column is in order. It is the obvious property. It is
+        also satisfied on <strong>100.0%</strong> of every corpus by <strong>four of the seven</strong>
+        implementations here &mdash; the correct one, both tie-break defects, and <em>first key
+        only</em>, which is exactly right on <strong>13.3%</strong> of real boards.
+      </p>
+      <p>
+        That last one deserves a moment. It reads the first key of the spec, sorts by it, appends the
+        tie-break and throws the other four keys away. The column you clicked comes out in perfect
+        order. Every row you can see is where you would expect. And it is a different arrangement
+        from the correct one on <strong>86.7%</strong> of real boards, putting <strong>789</strong>
+        rows per 1,000 somewhere other than where they belong. The property cannot see it because the
+        property only reads the column it was told about, and that column is the one thing this
+        implementation gets right.
+      </p>
+
+      <h3>Five properties, and the two that look identical</h3>
+      <p>
+        So write more properties. <em>Is the whole spec in order</em>, not just the first key.
+        <em>Does a second query give the same screen.</em> <em>Does asc, desc, asc come back to where
+        it started.</em> <em>Do two pages of twenty contain forty distinct rows.</em> Each one catches
+        something the others miss and none of them is a superset of another, which is the usual
+        finding. The unusual one is what separates the two implementations that behave most alike.
+      </p>
+      <p>
+        <em>No tie-break</em> and <em>unstable sort</em> score within three points of each other on
+        every column but one: 43.3% and 43.7% on the second query, 63.7% and 63.0% on pagination,
+        42.0% and 44.7% exactly right. The round trip splits them cleanly &mdash; <strong>100.0%</strong> for
+        the missing tie-break, <strong>43.3%</strong> for the unstable sort &mdash; and the reason is
+        structural rather than lucky. Flipping the first key's direction does not change <em>which</em>
+        rows are tied; it is the same set of rows either way. So a stable sort returns a tied group in
+        the order it found it in both directions, and the round trip comes back exactly. The round
+        trip is blind to a missing tie-break by construction. What it sees is an actual instability,
+        and nothing else on the page sees that alone.
+      </p>
+      <p>
+        The other reading of that grid is that the five properties rank in almost exactly the reverse
+        of how often they get written. <em>Is the first key in order</em> is the assertion that
+        exists in every suite, and on a real board it is <strong>100.0%</strong> for three of the six
+        defects &mdash; it cannot see a missing tie-break, an unstable sort, or a spec with four
+        fifths of its keys thrown away. <em>Do two pages of twenty hold forty distinct rows</em> is
+        the assertion almost nobody writes, and on a real board it is the <strong>only</strong> one
+        of the five that is under 100.0% for all six. It is not free, either: on the seams corpus,
+        where the whole table fits inside two pages, the same assertion falls back to catching only
+        the two implementations that can duplicate a row. The property is doing its work because the
+        table is bigger than the screen, which is the condition under which the bug matters anyway.
+      </p>
+
+      <h3>Pagination is where it stops being cosmetic</h3>
+      <p>
+        Twenty rows come back from one query and twenty more from the next. If the order is not
+        total, nothing decides which of two tied rows page 1 kept and which one page 2 thought it
+        still owed you &mdash; so one row is printed twice and another is never printed at all. Over
+        300 boards the missing tie-break duplicates <strong>279</strong> rows and loses
+        <strong>465</strong>.
+      </p>
+      <p>
+        The four defects that <em>cannot</em> duplicate a row are the ones worth thinking about.
+        <em>Sort then reverse</em>, <em>first key only</em>, <em>numbers as text</em> and <em>blank
+        is zero</em> are all perfectly deterministic total orders: the same rows always come back the
+        same way, so the two pages are always consistent with each other. They just quietly hand you
+        the wrong forty rows &mdash; <strong>682</strong>, <strong>551</strong>, <strong>241</strong>
+        and <strong>941</strong> rows respectively that belonged on the first two pages and were never
+        shown. Determinism is not correctness. It is only the absence of the duplicate, which is the
+        one symptom anybody files a ticket about.
+      </p>
+
+      <h3>Which clause is doing the work &mdash; asked two ways that disagree</h3>
+      <p>
+        There is a tidy way to find dead code in a comparator: for every neighbouring pair in the
+        finished order, record which clause was the first to separate them. A clause that separates
+        nothing is doing nothing.
+      </p>
+      <p>
+        Run it on the fixture with <code>status, priority</code> and it reports that
+        <code>status</code> decides <strong>100.0%</strong> of all 597 pairs and that
+        <code>priority</code> and the tie-break decide <strong>nothing at all</strong>. By this test
+        two of the three clauses are dead code and both should go. Run the same spec on a real board
+        and <code>status</code> decides <strong>5.6%</strong>, <code>priority</code>
+        <strong>16.9%</strong>, and the tie-break the fixture called dead does <strong>77.5%</strong>
+        of the work.
+      </p>
+      <p>
+        Then there is the direct version: delete the clause, sort again, count what changed. On the
+        five-key board spec the two questions come apart in a way that is worth staring at. Deleting
+        <code>status</code>, the loudest clause there is, moves <strong>981</strong> rows per 1,000
+        and leaves the second-query column at <strong>100.0%</strong> &mdash; a completely different
+        screen that is nonetheless perfectly stable. Deleting the tie-break instead moves
+        <strong>11.7</strong> rows per 1,000 and leaves <strong>70.0%</strong> of screens
+        byte-identical, which in a review reads as rounding &mdash; while the second-query column
+        falls to <strong>69.3%</strong>. A missing key is loud and stable. A missing tie-break is
+        quiet and not, and only one of the two columns can tell you so.
+      </p>
+
+      <h3>The clause behind the clause</h3>
+      <p>
+        Underneath the tie-break there is one more. The text comparison folds case and accents so
+        that <code>Zoe</code>, <code>Zöe</code> and <code>zoe</code> group together, and then falls
+        back to the <em>exact</em> form of the string so that two values that fold together still get
+        an order. On a real board that fallback is genuinely unreachable: <strong>0</strong> pairs out
+        of 10,258 where it would have been the deciding clause. Delete it and nothing changes,
+        anywhere, with or without the tie-break.
+      </p>
+      <p>
+        On the seams corpus, where names differ only by case and accent, it would decide
+        <strong>173</strong> pairs &mdash; and deleting it <em>still</em> leaves <strong>80.7%</strong>
+        of screens identical, because the id tie-break quietly absorbs the pairs it used to handle.
+        Take both away and stability collapses to <strong>52.0%</strong>. Two clauses, each of which
+        measures as dead code for exactly as long as the other one is there. That is the failure mode
+        of clause-level coverage as a design tool, and it is the reason the tie-break survives in
+        correct code only because somebody refused to delete something they could not justify.
+      </p>
+
+      <h3>Checking the comparator finds none of it</h3>
+      <p>
+        A comparator has to be antisymmetric, reflexive and transitive or the sort is entitled to
+        return anything at all, and checking those three is the one piece of diligence this component
+        has a name for. All seven implementations pass all three, with zero violations on every
+        triple tested. Three of the six defects are impeccable comparators answering a question
+        nobody asked. One is a valid preorder that returns 0 for two rows that are not the same row.
+        And two are not comparator defects at all &mdash; they share their comparator with the
+        correct implementation and differ in what happens after it returns.
+      </p>
+      <p>
+        The check that <em>does</em> mean something is exhaustive and does no sorting: enumerate every
+        permutation of a small table and keep the ones that are non-decreasing. A total order leaves
+        exactly one, and it did, in <strong>100.0%</strong> of 600 tables &mdash; each of which is the
+        arrangement the implementation produced. That is what total means, verified without a sort
+        algorithm anywhere in the room.
+      </p>
+
+      <h3>Which corpus can see what</h3>
+      <p>
+        Day 69's lesson was that a generated corpus and a real one score identically on clean data
+        and part company on messy data. Day 70's was that a realistic corpus is not a
+        <em>concentrated</em> one. This page adds a third: the fixture's blindness here is
+        <em>arithmetic</em>, not statistical. Three of its five thresholds are exactly one more than
+        the size of a value pool, and the two defects it never sees are unreachable because the
+        fixture's columns have no blanks and no digit-width variation &mdash; two structural
+        properties, not two unlucky draws. You can compute in advance which defects a fixture is
+        capable of finding. That is a more useful thing to know about a test corpus than whether it
+        looks like production.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#128296; How it is built</h2>
+
+      <h3>1. One block of pure functions and no DOM</h3>
+      <p>
+        Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> is pure. The
+        comparator is <code>makeCmp</code>, built from a spec and four option flags; the seven
+        machines are <code>IMPLS</code>; the corpora are <code>genFixture</code>,
+        <code>genSeeded</code>, <code>genBoard</code> and <code>genSeams</code>; the studies are
+        <code>fuzz</code>, <code>sizeSweep</code>, <code>specSweep</code>, <code>clauseStudy</code>,
+        <code>deleteStudy</code>, <code>foldStudy</code>, <code>toggleStudy</code>,
+        <code>axioms</code> and <code>permStudy</code>. The verifier lifts that block out of the page
+        with a regex, refuses it if it mentions <code>document</code>, and runs it under node against
+        oracles written separately from it.
+      </p>
+
+      <h3>2. An oracle that never compares two rows</h3>
+      <p>
+        The machine dispatches on column type at every comparison and walks the spec key by key. The
+        oracle does none of that. It collects each column's <em>distinct</em> values once, puts them
+        in order once, and turns every row into a <strong>vector of small integers</strong>; the
+        answer is the lexicographic order on those vectors, produced by a bottom-up merge sort that
+        never touches <code>Array.prototype.sort</code>. Descending flips the sign of the
+        <em>rank</em>, which is also why a missing value &mdash; pinned at a constant and never
+        flipped &mdash; sorts last in both directions without anything special being written for it.
+      </p>
+      <p>
+        Two rows are therefore compared as integers, once per case, by code that has no idea what a
+        status or a due date is. A second oracle, a quadratic selection sort taking the first minimum
+        each time, runs on every case of 24 rows or fewer as a check that the fast oracle is the same
+        oracle. And a third check does no sorting at all: enumerate every permutation of a
+        three-to-five-row table, keep the ones that are non-decreasing, and assert exactly one
+        survives.
+      </p>
+
+      <h3>3. Two orders both called natural sort, and why it matters</h3>
+      <p>
+        <code>natCmp</code> cuts each string into runs of digits and runs of everything else and
+        compares run against run, numbers as numbers. The oracle's <code>encVal</code> zero-pads the
+        digit runs and compares one flat string. Both of those are what people mean by natural sort
+        and they are <strong>not the same order</strong>: they part company exactly where a digit run
+        faces a character below <code>&quot;0&quot;</code>. On strings built to break them,
+        <strong>73 of 20,000</strong> pairs disagree.
+      </p>
+      <p>
+        That is a problem only if it happens on the data. So every distinct pair of every text column
+        of every case is checked both ways &mdash; <strong>160,919</strong> pairs across the four
+        corpora, <strong>0</strong> disagreements. The oracle is allowed to be the oracle on this
+        corpus and nowhere else, and the page says so with a number rather than a hope.
+      </p>
+
+      <h3>4. Seven machines, one clause each</h3>
+      <p>
+        The rows, the specs, the oracle and the assertions are shared. Each machine changes exactly
+        one thing: the final <code>id</code> clause removed (<code>notiebreak</code>), a hand-rolled
+        median-of-three quicksort in place of the stable sort (<code>unstable</code>), descending
+        implemented as ascending followed by <code>.reverse()</code> (<code>reversed</code>), the
+        spec truncated to its first key (<code>firstkey</code>), numeric columns compared in their
+        string form (<code>numtext</code>), and a missing value coerced to zero instead of pinned
+        last (<code>nullzero</code>). Every one of them is a thing that ships, and
+        <code>unstable</code> is not a straw man: <code>Array.prototype.sort</code> was itself
+        unstable in V8 until 2018 and plenty of table code still carries its own sort.
+      </p>
+
+      <h3>5. Four corpora and six specs, because one of each sees nothing</h3>
+      <p>
+        <em>A test fixture</em> is what almost every sort test is built on: three to five rows, every
+        column deliberately different, nothing missing, every number one digit wide. <em>A seeded
+        table</em> is the same schema handed to a random generator, so ties happen where the pools
+        are small and blanks happen at their declared rate. <em>A real board</em> is skewed &mdash;
+        two statuses hold most of the work, a couple of people hold most of the tickets, titles repeat
+        because the same bug gets filed twice, and everything was touched on one of three days because
+        somebody ran a bulk update. <em>The seams</em> aims at the clauses: a first key with one value
+        in it, a column that is entirely missing, names that differ only under folding, numbers whose
+        digit widths cross.
+      </p>
+      <p>
+        The six specs matter as much as the corpora, and the grid says why. <em>Sort then reverse</em>
+        is 0.0% on the two all-ascending specs and 100.0% on the three whose first key descends.
+        <em>First key only</em> is 0.0% on exactly one spec &mdash; the single-key one, where there
+        is no rest of the spec to discard. <em>Numbers as text</em> needs a numeric column whose
+        values differ in width and is 0.0% on the four specs that have none. <em>Blank is zero</em>
+        needs a nullable key and is 0.0% on the three specs built only from columns that cannot be
+        blank. Every defect on this page is 0.0% under some spec and 100.0% under another, on the
+        same corpus, for structural reasons that are written out under the grid.
+      </p>
+
+      <h3>6. What the assertions pin</h3>
+      <ul>
+        <li>The exact order, row for row, against the oracle &mdash; and against the oracle run again
+          on the same rows shuffled, so the oracle is proved to be a function of the set before it is
+          used to judge anything.</li>
+        <li>Five weaker properties per case: first key in order, whole spec in order, same screen
+          after a second query, asc/desc/asc returns, two pages of twenty hold forty distinct rows.</li>
+        <li>Every output is a permutation of the input, which is the assertion that catches a sort
+          that drops or duplicates a row outright.</li>
+        <li>Antisymmetry, reflexivity and transitivity for all seven comparators, counting
+          violations rather than passes.</li>
+        <li>Both natural orders against each other, on adversarial strings and on the corpus.</li>
+        <li>The clause-counting study and the clause-deletion study, which are the same question and
+          do not give the same answer.</li>
+      </ul>
+      <p class="note" style="margin-bottom:14px">
+        <span id="pTotal">&hellip;</span> assertions over <span id="pRows">&hellip;</span> sorted
+        rows, every load, in <span id="pMs">&hellip;</span>&nbsp;s.
+      </p>
+
+      <h3>7. What contradicted the first draft</h3>
+      <ul>
+        <li>The plan was to say the fixture is blind because it is not realistic. It is blind because
+          of its <em>row count</em> and its <em>pool sizes</em>, and the thresholds are arithmetic:
+          6 = 5 + 1, 10 = 9 + 1, and 21 = lcm(5,4) + 1 for both tie-break defects at once. The draft
+          said three defects appear at 6, 10 and 21; it is four, two of them arriving together at 21
+          because that is the first row count at which two fixture rows agree on both keys.</li>
+        <li>Two of the six are unreachable by that fixture at <em>any</em> size, which is a different
+          kind of blindness and does not get better with more rows: there is no blank cell to coerce
+          and no numeric column wide enough for a string compare to differ from a numeric one.</li>
+        <li>The asc/desc/asc round trip was drafted as a weak property that would catch nothing much.
+          It is the <em>only</em> one of the five that separates the unstable sort from the missing
+          tie-break, and the reason is structural: flipping the first key's direction does not change
+          which rows are tied, so a stable sort hands a tied group back in the order it found it
+          either way. The round trip is blind to a missing tie-break by construction and sees an
+          actual instability alone.</li>
+        <li>Counting which clause decides a pair and deleting that clause were drafted as two views of
+          one number. On the five-key board they invert: the clause whose deletion changes the most
+          rows leaves the result perfectly stable, and the clause whose deletion changes 11.7 rows per
+          1,000 is the one that destroys stability. Neither number can be derived from the other.</li>
+        <li>The five properties were expected to rank roughly in order of effort. They rank in the
+          reverse of how often they get written: the universal one, <em>is the first key in order</em>,
+          is 100.0% for three of the six defects on a real board, and the one almost nobody writes,
+          <em>do two pages of twenty hold forty distinct rows</em>, is the only one of the five under
+          100.0% for all six &mdash; and only while the table is larger than two pages, which the
+          seams corpus is not.</li>
+        <li>The exact-form fallback under the fold was expected to be dead code and it is &mdash; but
+          only while the tie-break is there. Remove both and the seams corpus loses stability on
+          nearly half its boards, which means neither clause can be justified by measuring it alone.</li>
+      </ul>
+
+      <h3>&#127881; DesignFromZero Day 72 shipped.</h3>
+      <p class="note">
+        Day 30 built the data table. This is the clause at the bottom of its comparator.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// Multi-key table sort. Clicking a column header is a SORT SPEC - an ordered list of {key, dir} -
+// and the whole component is the question of what happens to the rows the spec cannot separate.
+// A table sort must be a TOTAL order or the same rows come back in a different arrangement every
+// time the query does, which is invisible on one screen and fatal across two pages. Beside the
+// correct machine sit six one-clause variations. No DOM below this line; everything here is pure.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- the columns
+const STATUS   = ['Todo', 'In progress', 'In review', 'Blocked', 'Done'];
+const PRIORITY = ['Urgent', 'High', 'Medium', 'Low'];
+
+const COLS = {
+  id:       { label: '#',        type: 'int'  },
+  title:    { label: 'title',    type: 'text' },
+  status:   { label: 'status',   type: 'rank', order: STATUS },
+  priority: { label: 'priority', type: 'rank', order: PRIORITY },
+  assignee: { label: 'assignee', type: 'text', nullable: true },
+  due:      { label: 'due',      type: 'iso',  nullable: true },
+  points:   { label: 'points',   type: 'num',  nullable: true },
+  updated:  { label: 'updated',  type: 'num'  }
+};
+
+// The six specs a person actually clicks their way into. dir 1 ascending, -1 descending.
+const SPECS = {
+  board:    { label: 'status, priority',
+              keys: [{ key: 'status', dir: 1 }, { key: 'priority', dir: 1 }] },
+  triage:   { label: 'priority, due, title',
+              keys: [{ key: 'priority', dir: 1 }, { key: 'due', dir: 1 }, { key: 'title', dir: 1 }] },
+  recent:   { label: 'updated desc',
+              keys: [{ key: 'updated', dir: -1 }] },
+  owner:    { label: 'assignee, due desc',
+              keys: [{ key: 'assignee', dir: 1 }, { key: 'due', dir: -1 }] },
+  estimate: { label: 'points desc, title',
+              keys: [{ key: 'points', dir: -1 }, { key: 'title', dir: 1 }] },
+  full:     { label: 'status, priority, due, assignee, points desc',
+              keys: [{ key: 'status', dir: 1 }, { key: 'priority', dir: 1 }, { key: 'due', dir: 1 },
+                     { key: 'assignee', dir: 1 }, { key: 'points', dir: -1 }] }
+};
+const SPEC_IDS = ['board', 'triage', 'recent', 'owner', 'estimate', 'full'];
+
+// ---------------------------------------------------------------- comparing two values
+function isNull(v){ return v === null || v === undefined || v === ''; }
+
+// Case and accent folding, written out rather than handed to localeCompare, because localeCompare
+// answers differently depending on which ICU the runtime was built with and a sort order that
+// changes with the runtime is not an order.
+const FOLD_MEMO = new Map();
+function fold(s){
+  const k = String(s);
+  let v = FOLD_MEMO.get(k);
+  if (v === undefined){
+    v = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (FOLD_MEMO.size < 30000) FOLD_MEMO.set(k, v);
+  }
+  return v;
+}
+
+// A folded string cut into runs of digits and runs of everything else, each digit run
+// carrying the number it spells. Split once per distinct string; the comparison below still
+// walks run against run.
+const RUN_MEMO = new Map();
+function runsOf(s){
+  let r = RUN_MEMO.get(s);
+  if (r === undefined){
+    const parts = s.match(/\d+|\D+/g) || [];
+    r = [];
+    for (let i = 0; i < parts.length; i++){
+      const x = parts[i], c = x.charCodeAt(0), d = c >= 48 && c <= 57;
+      r.push({ s: x, d: d, n: d ? parseInt(x, 10) : -1 });
+    }
+    if (RUN_MEMO.size < 30000) RUN_MEMO.set(s, r);
+  }
+  return r;
+}
+// "Fix login #2" before "Fix login #10": digit runs compare as numbers, everything else as text.
+function natCmp(a, b){
+  const A = fold(a), B = fold(b);
+  const ra = runsOf(A), rb = runsOf(B);
+  const n = ra.length < rb.length ? ra.length : rb.length;
+  for (let i = 0; i < n; i++){
+    const x = ra[i], y = rb[i];
+    if (x.d && y.d){
+      if (x.n !== y.n) return x.n < y.n ? -1 : 1;
+    } else if (x.s !== y.s) return x.s < y.s ? -1 : 1;
+  }
+  if (ra.length !== rb.length) return ra.length < rb.length ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;    // the exact form is the last resort, so this is TOTAL
+}
+// The same function with that last line deleted, so "Fix" and "fix" come back tied. Kept as
+// its own function rather than a flag, because the question asked of it is whether anything
+// on this page can tell the difference.
+function natCmpNoExact(a, b){
+  const A = fold(a), Z = fold(b);
+  const ra = runsOf(A), rb = runsOf(Z);
+  const n = ra.length < rb.length ? ra.length : rb.length;
+  for (let i = 0; i < n; i++){
+    const x = ra[i], y = rb[i];
+    if (x.d && y.d){
+      if (x.n !== y.n) return x.n < y.n ? -1 : 1;
+    } else if (x.s !== y.s) return x.s < y.s ? -1 : 1;
+  }
+  if (ra.length !== rb.length) return ra.length < rb.length ? -1 : 1;
+  return 0;
+}
+
+function cmpVal(col, a, b){
+  if (col.type === 'rank'){
+    const x = col.order.indexOf(a), y = col.order.indexOf(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  if (col.type === 'num' || col.type === 'int') return a < b ? -1 : a > b ? 1 : 0;
+  if (col.type === 'iso') return a < b ? -1 : a > b ? 1 : 0;
+  return natCmp(a, b);
+}
+function zeroOf(col){
+  return (col.type === 'num' || col.type === 'int') ? 0 : (col.type === 'rank' ? col.order[0] : '');
+}
+
+// ---------------------------------------------------------------- the comparator
+// opts.tie      final tie-break on id, which is what makes the order TOTAL
+// opts.nulls    'last' (the stated policy) or 'zero' (coerce a missing value and sort it)
+// opts.numText  compare numeric columns in their string form
+// opts.only     honour the first key of the spec and drop the rest
+function makeCmp(spec, opts){
+  const o = opts || {};
+  const keys = o.only ? spec.slice(0, 1) : spec;
+  return function(a, b){
+    for (let i = 0; i < keys.length; i++){
+      const k = keys[i], col = COLS[k.key], dir = k.dir < 0 ? -1 : 1;
+      let av = a[k.key], bv = b[k.key];
+      const an = isNull(av), bn = isNull(bv);
+      if (o.nulls === 'zero'){
+        if (an) av = zeroOf(col);
+        if (bn) bv = zeroOf(col);
+      } else {
+        // A missing value is not a small value. It sorts last in BOTH directions, so this
+        // answer is never multiplied by dir.
+        if (an && bn) continue;
+        if (an) return 1;
+        if (bn) return -1;
+      }
+      let r;
+      if (o.numText && (col.type === 'num' || col.type === 'int')){
+        const x = String(av), y = String(bv);
+        r = x < y ? -1 : x > y ? 1 : 0;
+      } else if (o.noExact && col.type === 'text'){
+        r = natCmpNoExact(av, bv);
+      } else {
+        r = cmpVal(col, av, bv);
+      }
+      if (r) return dir * r;
+    }
+    if (o.tie) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    return 0;
+  };
+}
+
+// A hand-rolled quicksort, because plenty of table code carries one and because
+// Array.prototype.sort was itself unstable in V8 until 2018. Median of three, so the
+// pathological input is not the point - the point is that equal rows come out in an
+// order nothing in the input predicts.
+function quickSort(arr, cmp){
+  const a = arr.slice();
+  const swap = (i, j) => { const t = a[i]; a[i] = a[j]; a[j] = t; };
+  (function qs(lo, hi){
+    if (lo >= hi) return;
+    const mid = (lo + hi) >> 1;                       // median of three, so the pathological
+    if (cmp(a[mid], a[lo]) < 0) swap(mid, lo);        // input is not what this is about
+    if (cmp(a[hi],  a[lo]) < 0) swap(hi, lo);
+    if (cmp(a[mid], a[hi]) < 0) swap(mid, hi);
+    const pv = a[hi];
+    let i = lo;
+    for (let j = lo; j < hi; j++) if (cmp(a[j], pv) < 0) swap(i++, j);
+    swap(i, hi);
+    qs(lo, i - 1); qs(i + 1, hi);
+  })(0, a.length - 1);
+  return a;
+}
+
+// ---------------------------------------------------------------- the seven machines
+const IMPLS = {
+  correct: {
+    label: 'correct',
+    note: 'every key, then id',
+    run: (rows, spec) => rows.slice().sort(makeCmp(spec, { tie: true, nulls: 'last' }))
+  },
+  notiebreak: {
+    label: 'no tie-break',
+    note: 'drops the final id clause',
+    run: (rows, spec) => rows.slice().sort(makeCmp(spec, { tie: false, nulls: 'last' }))
+  },
+  unstable: {
+    label: 'unstable sort',
+    note: 'hand-rolled quicksort',
+    run: (rows, spec) => quickSort(rows, makeCmp(spec, { tie: false, nulls: 'last' }))
+  },
+  reversed: {
+    label: 'sort then reverse',
+    note: 'descending by .reverse()',
+    run: (rows, spec) => {
+      const asc = spec.map(k => ({ key: k.key, dir: 1 }));
+      const out = rows.slice().sort(makeCmp(asc, { tie: true, nulls: 'last' }));
+      return spec[0].dir < 0 ? out.reverse() : out;
+    }
+  },
+  firstkey: {
+    label: 'first key only',
+    note: 'ignores the rest of the spec',
+    run: (rows, spec) => rows.slice().sort(makeCmp(spec, { tie: true, nulls: 'last', only: true }))
+  },
+  numtext: {
+    label: 'numbers as text',
+    note: 'compares 10 and 9 as strings',
+    run: (rows, spec) => rows.slice().sort(makeCmp(spec, { tie: true, nulls: 'last', numText: true }))
+  },
+  nullzero: {
+    label: 'blank is zero',
+    note: 'coerces a missing value',
+    run: (rows, spec) => rows.slice().sort(makeCmp(spec, { tie: true, nulls: 'zero' }))
+  }
+};
+const IMPL_IDS = ['correct', 'notiebreak', 'unstable', 'reversed', 'firstkey', 'numtext', 'nullzero'];
+
+// ================================================================ THE ORACLE
+// Nothing in this block compares two rows. Each column's DISTINCT values are collected once,
+// put in order once, and every row becomes a VECTOR OF SMALL INTEGERS; the answer is then the
+// lexicographic order on integer vectors. The machine above dispatches on type at every
+// comparison; the oracle dispatches on type once per value and never again.
+
+const NULL_RANK = 1000000;
+
+// A bottom-up merge sort over strings with plain <, so nothing in the oracle is ever handed to
+// Array.prototype.sort.
+function msortStr(arr){
+  let a = arr.slice();
+  const n = a.length;
+  let buf = new Array(n);
+  for (let w = 1; w < n; w *= 2){
+    for (let lo = 0; lo < n; lo += 2 * w){
+      const mid = Math.min(lo + w, n), hi = Math.min(lo + 2 * w, n);
+      let i = lo, j = mid, k = lo;
+      while (i < mid && j < hi) buf[k++] = a[j] < a[i] ? a[j++] : a[i++];
+      while (i < mid) buf[k++] = a[i++];
+      while (j < hi)  buf[k++] = a[j++];
+    }
+    const t = a; a = buf; buf = t;
+  }
+  return a;
+}
+
+// One string per value, built so that plain < on the strings is the intended order of that
+// column. Written independently of natCmp: digit runs are zero-padded rather than parsed, and
+// the raw form is appended after a separator so two values that fold together still differ.
+const ENC_MEMO = new Map();
+function encVal(col, v){
+  const mk = col.type + '\u0002' + v;
+  const hit = ENC_MEMO.get(mk);
+  if (hit !== undefined) return hit;
+  const out = encValRaw(col, v);
+  if (ENC_MEMO.size < 30000) ENC_MEMO.set(mk, out);
+  return out;
+}
+function encValRaw(col, v){
+  if (col.type === 'rank') return String(100 + col.order.indexOf(v));
+  if (col.type === 'num' || col.type === 'int'){
+    const s = String(v);
+    return (s.length < 14 ? '00000000000000'.slice(s.length) + s : s);
+  }
+  if (col.type === 'iso') return String(v);
+  const f = fold(v).replace(/\d+/g, d => (d.length < 12 ? '000000000000'.slice(d.length) + d : d));
+  return f + '\u0001' + String(v);
+}
+
+// Rank the distinct encodings of each column with an insertion sort over plain <, then read
+// every row off as a vector. Descending flips the sign of the RANK, which is why a missing
+// value - pinned at NULL_RANK and never flipped - stays last in both directions.
+function rankVectors(rows, spec){
+  const maps = spec.map(k => {
+    const col = COLS[k.key], seen = Object.create(null), vals = [];
+    for (let i = 0; i < rows.length; i++){
+      const v = rows[i][k.key];
+      if (isNull(v)) continue;
+      const e = encVal(col, v);
+      if (!(e in seen)){ seen[e] = 1; vals.push(e); }
+    }
+    const sorted = msortStr(vals);                  // its own merge sort over plain string <
+    const rank = Object.create(null);
+    for (let i = 0; i < sorted.length; i++) rank[sorted[i]] = i;
+    return { key: k.key, dir: k.dir < 0 ? -1 : 1, col: col, rank: rank };
+  });
+  return rows.map(r => {
+    const v = [];
+    for (let i = 0; i < maps.length; i++){
+      const m = maps[i], x = r[m.key];
+      v.push(isNull(x) ? NULL_RANK : m.dir * m.rank[encVal(m.col, x)]);
+    }
+    v.push(r.id);
+    return { row: r, v: v };
+  });
+}
+function vecCmp(a, b, depth){
+  const n = depth === undefined ? a.length : depth;
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  return 0;
+}
+// One pass per case: id -> integer vector. Everything downstream is integer comparisons, so no
+// implementation is ever measured against a freshly recomputed opinion.
+function vecMap(rows, spec){
+  const d = rankVectors(rows, spec), m = Object.create(null);
+  for (let i = 0; i < d.length; i++) m[d[i].row.id] = d[i].v;
+  return m;
+}
+// A bottom-up merge sort over those vectors. Obviously stable, and it shares no line with the
+// machine it judges - which sorts row objects through a comparator that dispatches on type.
+function oracleSortM(rows, m){
+  let a = rows.slice();
+  const n = a.length;
+  let buf = new Array(n);
+  for (let w = 1; w < n; w *= 2){
+    for (let lo = 0; lo < n; lo += 2 * w){
+      const mid = Math.min(lo + w, n), hi = Math.min(lo + 2 * w, n);
+      let i = lo, j = mid, k = lo;
+      while (i < mid && j < hi) buf[k++] = vecCmp(m[a[j].id], m[a[i].id]) < 0 ? a[j++] : a[i++];
+      while (i < mid) buf[k++] = a[i++];
+      while (j < hi)  buf[k++] = a[j++];
+    }
+    const t = a; a = buf; buf = t;
+  }
+  return a;
+}
+function oracleSort(rows, spec){ return oracleSortM(rows, vecMap(rows, spec)); }
+// The same answer by selection sort, taking the FIRST minimum every time. Quadratic and kept for
+// small inputs only, as a check that the fast oracle is the same oracle.
+function oracleSortSlow(rows, spec){
+  const d = rankVectors(rows, spec).slice(), out = [];
+  while (d.length){
+    let best = 0;
+    for (let i = 1; i < d.length; i++) if (vecCmp(d[i].v, d[best].v) < 0) best = i;
+    out.push(d.splice(best, 1)[0].row);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the properties
+// P1 is the property every table-sort test in the world asserts: the column you clicked is in
+// order. It reads the FIRST element of the vector and nothing else.
+function sortedToDepth(out, m, depth){
+  for (let i = 1; i < out.length; i++) if (vecCmp(m[out[i - 1].id], m[out[i].id], depth) > 0) return false;
+  return true;
+}
+function propPermutation(out, rows){
+  if (out.length !== rows.length) return false;
+  const a = out.map(r => r.id).sort((x, y) => x - y), b = rows.map(r => r.id).sort((x, y) => x - y);
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function sameOrder(a, b){
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i].id !== b[i].id) return false;
+  return true;
+}
+function outOfPlace(a, b){
+  let n = 0;
+  for (let i = 0; i < a.length; i++) if (a[i].id !== b[i].id) n++;
+  return n;
+}
+
+// ---------------------------------------------------------------- the data
+const FIRST = ['Alice', 'Bob', 'Chen', 'Dana', 'Emil', 'Farah', 'Zo\u00eb', '\u00c1ngela',
+               'Lukasz', 'Ivan', 'Nadia', 'Omar', 'Priya', 'Quinn'];
+const VERBS = ['Fix', 'Add', 'Remove', 'Refactor', 'Document', 'Investigate', 'Revert', 'Ship'];
+const NOUNS = ['login', 'the export', 'the toolbar', 'onboarding', 'the parser', 'billing',
+               'the empty state', 'the retry loop'];
+const FIB = [1, 2, 3, 5, 8, 13, 21, 34];
+
+function pick(rnd, arr){ return arr[Math.floor(rnd() * arr.length)]; }
+function shuffle(rnd, arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(rnd() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+const DAY_MEMO = [];
+function isoDay(n){
+  let v = DAY_MEMO[n];
+  if (v === undefined){
+    v = new Date(Date.UTC(2026, 0, 1) + n * 86400000).toISOString().slice(0, 10);
+    DAY_MEMO[n] = v;
+  }
+  return v;
+}
+
+// A hand-written test fixture: a handful of rows, every column deliberately different, nothing
+// missing, and every number one digit wide. This is what almost every sort test is built on.
+function genFixture(rnd, n){
+  const st = shuffle(rnd, STATUS), pr = shuffle(rnd, PRIORITY), na = shuffle(rnd, FIRST);
+  const rows = [];
+  for (let i = 0; i < n; i++){
+    rows.push({
+      id: i + 1,
+      title: 'Task ' + String.fromCharCode(65 + (i % 26)),
+      status: st[i % st.length],
+      priority: pr[i % pr.length],
+      assignee: na[i % na.length],
+      due: isoDay(10 + i),
+      points: (i % 9) + 1,
+      updated: 19700 + i
+    });
+  }
+  return shuffle(rnd, rows);
+}
+// The same schema filled by a random generator: ties happen where the pools are small, blanks
+// happen at their declared rate, numbers span digit widths.
+function genSeeded(rnd, n){
+  const rows = [];
+  for (let i = 0; i < n; i++){
+    rows.push({
+      id: i + 1,
+      title: pick(rnd, VERBS) + ' ' + pick(rnd, NOUNS) + ' #' + (1 + Math.floor(rnd() * 60)),
+      status: pick(rnd, STATUS),
+      priority: pick(rnd, PRIORITY),
+      assignee: rnd() < 0.15 ? null : pick(rnd, FIRST),
+      due: rnd() < 0.25 ? null : isoDay(Math.floor(rnd() * 90)),
+      points: rnd() < 0.1 ? null : pick(rnd, FIB),
+      updated: 19600 + Math.floor(rnd() * 120)
+    });
+  }
+  return shuffle(rnd, rows);
+}
+// A real board is not uniform. Two statuses hold most of the work, a couple of people hold most
+// of the tickets, titles repeat because people file the same bug twice, and everything was
+// touched on one of a very few days because somebody ran a bulk update.
+function genBoard(rnd, n){
+  const days = [19731, 19733, 19740];
+  const team = FIRST.slice(0, 12);
+  const rows = [];
+  for (let i = 0; i < n; i++){
+    const r = rnd();
+    const status = r < 0.38 ? 'Todo' : r < 0.66 ? 'In progress' : r < 0.78 ? 'In review'
+                 : r < 0.86 ? 'Blocked' : 'Done';
+    const p = rnd();
+    const priority = p < 0.12 ? 'Urgent' : p < 0.42 ? 'High' : p < 0.80 ? 'Medium' : 'Low';
+    const who = Math.floor(Math.pow(rnd(), 2) * team.length);
+    const base = pick(rnd, VERBS) + ' ' + pick(rnd, NOUNS);
+    rows.push({
+      id: i + 1,
+      title: rnd() < 0.18 ? base : base + ' #' + (1 + Math.floor(rnd() * 40)),
+      status: status,
+      priority: priority,
+      assignee: rnd() < 0.20 ? null : team[who],
+      due: rnd() < 0.35 ? null : isoDay(20 + Math.floor(rnd() * 25)),
+      points: rnd() < 0.12 ? null : FIB[Math.floor(Math.pow(rnd(), 1.6) * 6)],
+      updated: days[Math.floor(rnd() * days.length)]
+    });
+  }
+  return shuffle(rnd, rows);
+}
+// Aimed straight at the clauses: a first key with one value in it, a column that is entirely
+// missing, names that only differ under folding, numbers whose digit widths cross.
+function genSeams(rnd, n){
+  const mode = Math.floor(rnd() * 5);
+  const rows = [];
+  for (let i = 0; i < n; i++){
+    const flat = mode === 0;
+    const blankDue = mode === 1 ? true : rnd() < 0.4;
+    rows.push({
+      id: i + 1,
+      title: mode === 2 ? (rnd() < 0.5 ? 'Fix Login' : 'fix login')
+           : mode === 4 ? 'Retry #' + pick(rnd, [1, 2, 9, 10, 11, 100])
+           : pick(rnd, VERBS) + ' ' + pick(rnd, NOUNS),
+      status: flat ? 'Todo' : pick(rnd, STATUS),
+      priority: flat ? 'High' : pick(rnd, PRIORITY),
+      assignee: mode === 3 ? (rnd() < 0.5 ? null : pick(rnd, ['Zo\u00eb', 'Zoe', 'zoe']))
+              : rnd() < 0.3 ? null : pick(rnd, FIRST),
+      due: blankDue && rnd() < 0.5 ? null : isoDay(30 + Math.floor(rnd() * 4)),
+      points: mode === 4 ? pick(rnd, [2, 9, 10, 11, 100]) : (rnd() < 0.25 ? null : pick(rnd, FIB)),
+      updated: 19731 + Math.floor(rnd() * 2)
+    });
+  }
+  return shuffle(rnd, rows);
+}
+
+const CORPORA = {
+  fixture: { label: 'a test fixture', gen: genFixture, lo: 3,  hi: 5,
+             note: 'a handful of rows, every value different, nothing missing' },
+  seeded:  { label: 'a seeded table', gen: genSeeded,  lo: 20, hi: 60,
+             note: 'the same schema filled by a random generator' },
+  board:   { label: 'a real board',   gen: genBoard,   lo: 20, hi: 120,
+             note: 'skewed statuses, a few owners, three update days' },
+  seams:   { label: 'the seams',      gen: genSeams,   lo: 12, hi: 40,
+             note: 'flat first keys, empty columns, folded names' }
+};
+const CORPUS_IDS = ['fixture', 'seeded', 'board', 'seams'];
+
+// ---------------------------------------------------------------- the fuzz
+function fuzz(corpusId, cases, seed){
+  const C = CORPORA[corpusId], rnd = mulberry32(seed);
+  const stat = {};
+  for (const id of IMPL_IDS) stat[id] = {
+    exact: 0, p1: 0, p2: 0, perm: 0, det: 0, toggle: 0, page: 0,
+    dupRows: 0, lostRows: 0, misplaced: 0, cells: 0, firstBad: null, bySpec: {}
+  };
+  for (const id of IMPL_IDS) for (const s of SPEC_IDS) stat[id].bySpec[s] = { n: 0, bad: 0 };
+  let asserts = 0, rowsSeen = 0, slowChecks = 0;
+
+  for (let c = 0; c < cases; c++){
+    const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+    const rows = C.gen(rnd, n);
+    const specId = SPEC_IDS[Math.floor(rnd() * SPEC_IDS.length)];
+    const spec = SPECS[specId].keys;
+    const m = vecMap(rows, spec);                  // computed ONCE, shared by all seven
+    const truth = oracleSortM(rows, m);
+    const other = shuffle(rnd, rows);              // the same rows as a second query returns them
+    const truth2 = oracleSortM(other, m);
+    rowsSeen += n; asserts++;
+    if (!sameOrder(truth, truth2)) throw new Error('the oracle is not a function of the rows');
+    if (n <= 24){                                  // and the slow oracle must agree with the fast one
+      slowChecks++; asserts++;
+      if (!sameOrder(oracleSortSlow(rows, spec), truth)) throw new Error('the two oracles disagree');
+    }
+    for (const id of IMPL_IDS){
+      const S = stat[id], out = IMPLS[id].run(rows, spec);
+      const ex = sameOrder(out, truth);
+      S.exact += ex ? 1 : 0;
+      S.misplaced += outOfPlace(out, truth);
+      S.cells += n;
+      S.p1 += sortedToDepth(out, m, 1) ? 1 : 0;
+      S.p2 += sortedToDepth(out, m, spec.length) ? 1 : 0;
+      S.perm += propPermutation(out, rows) ? 1 : 0;
+      const out2 = IMPLS[id].run(other, spec);
+      S.det += sameOrder(out, out2) ? 1 : 0;
+      const sz = 20;                               // two pages, each answered by a fresh query
+      const p1 = out.slice(0, sz).map(r => r.id), p2 = out2.slice(sz, sz * 2).map(r => r.id);
+      const seen = Object.create(null);
+      for (const x of p1) seen[x] = 1;
+      let dup = 0;
+      for (const x of p2) if (seen[x]) dup++;
+      const shown = Object.create(null);
+      for (const x of p1) shown[x] = 1;
+      for (const x of p2) shown[x] = 1;
+      let lost = 0;
+      const want = truth.slice(0, Math.min(sz * 2, n)).map(r => r.id);
+      for (const x of want) if (!shown[x]) lost++;
+      S.dupRows += dup; S.lostRows += lost;
+      S.page += (dup === 0 && lost === 0) ? 1 : 0;
+      const rec = S.bySpec[specId];
+      rec.n++; if (!ex) rec.bad++;
+      if (!ex && S.firstBad === null) S.firstBad = { c: c, spec: specId, n: n };
+      // one per row comparison actually made, not one per property
+      asserts += 6 * n - 2 + 40 + (n < 40 ? n : 40);
+    }
+  }
+  return { corpus: corpusId, cases: cases, rows: rowsSeen, asserts: asserts,
+           slowChecks: slowChecks, stat: stat };
+}
+
+// ---------------------------------------------------------------- the toggle round trip
+// Click the header twice more and you should be looking at the first screen again. It is the
+// cheapest assertion of the lot and it separates exactly one of the seven.
+function toggleStudy(corpusId, cases, seed){
+  const C = CORPORA[corpusId], rnd = mulberry32(seed), out = {};
+  for (const id of IMPL_IDS) out[id] = 0;
+  let asserts = 0;
+  for (let c = 0; c < cases; c++){
+    const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+    const rows = C.gen(rnd, n);
+    const spec = SPECS[SPEC_IDS[Math.floor(rnd() * SPEC_IDS.length)]].keys;
+    const flip = spec.map((k, i) => i === 0 ? { key: k.key, dir: -k.dir } : k);
+    for (const id of IMPL_IDS){
+      const first = IMPLS[id].run(rows, spec);
+      const back = IMPLS[id].run(IMPLS[id].run(rows, flip), spec);
+      if (sameOrder(back, first)) out[id]++;
+      asserts += n;
+    }
+  }
+  return { per: out, cases: cases, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- which clause decides
+// For every adjacent pair in the correct answer, find the FIRST clause that separates it. A
+// clause that separates nothing on a corpus is doing no work there - which is the whole
+// question, since the last clause is the one people delete.
+function clauseNames(spec){
+  const out = [];
+  for (const k of spec) out.push(k.key + (k.dir < 0 ? ' desc' : ''));
+  out.push('id');
+  return out;
+}
+function whichClause(a, b, spec){
+  for (let i = 0; i < spec.length; i++){
+    const k = spec[i], col = COLS[k.key], av = a[k.key], bv = b[k.key];
+    const an = isNull(av), bn = isNull(bv);
+    if (an && bn) continue;
+    if (an || bn) return { i: i, why: 'blank' };
+    const r = cmpVal(col, av, bv);
+    if (r) return { i: i, why: 'value' };
+  }
+  return { i: spec.length, why: 'id' };
+}
+function clauseStudy(corpusId, cases, seed, specId){
+  const C = CORPORA[corpusId], rnd = mulberry32(seed), spec = SPECS[specId].keys;
+  const names = clauseNames(spec);
+  const decided = names.map(() => 0), blanks = names.map(() => 0);
+  let pairs = 0, asserts = 0, exactFall = 0;
+  for (let c = 0; c < cases; c++){
+    const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+    const rows = C.gen(rnd, n);
+    const out = IMPLS.correct.run(rows, spec);
+    for (let i = 1; i < out.length; i++){
+      const w = whichClause(out[i - 1], out[i], spec);
+      decided[w.i]++; if (w.why === 'blank') blanks[w.i]++;
+      pairs++; asserts++;
+      if (w.i < spec.length && COLS[spec[w.i].key].type === 'text'){
+        const a = out[i - 1][spec[w.i].key], b = out[i][spec[w.i].key];
+        if (!isNull(a) && !isNull(b) && fold(a) === fold(b)) exactFall++;
+      }
+    }
+  }
+  return { specId: specId, names: names, decided: decided, blanks: blanks, pairs: pairs,
+           exactFall: exactFall, asserts: asserts };
+}
+
+// Delete a clause and count what changes on screen. This is the direct version of the same
+// question and it does not agree with the counting version, which is the point.
+function deleteStudy(corpusId, cases, seed, specId){
+  const C = CORPORA[corpusId], spec = SPECS[specId].keys;
+  const names = clauseNames(spec);
+  const out = [];
+  let asserts = 0;
+  for (let d = 0; d <= spec.length; d++){
+    const rnd = mulberry32(seed);
+    let same = 0, sameShuffled = 0, tot = 0, moved = 0, cells = 0;
+    for (let c = 0; c < cases; c++){
+      const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+      const rows = C.gen(rnd, n);
+      const full = IMPLS.correct.run(rows, spec);
+      const cut = d === spec.length
+        ? rows.slice().sort(makeCmp(spec, { tie: false, nulls: 'last' }))
+        : rows.slice().sort(makeCmp(spec.filter((_, i) => i !== d), { tie: true, nulls: 'last' }));
+      same += sameOrder(cut, full) ? 1 : 0;
+      const re = shuffle(mulberry32(seed + c * 7919 + 13), rows);
+      const cut2 = d === spec.length
+        ? re.slice().sort(makeCmp(spec, { tie: false, nulls: 'last' }))
+        : re.slice().sort(makeCmp(spec.filter((_, i) => i !== d), { tie: true, nulls: 'last' }));
+      sameShuffled += sameOrder(cut2, cut) ? 1 : 0;
+      moved += outOfPlace(cut, full); cells += n; tot++; asserts += 3 * n;
+    }
+    out.push({ clause: names[d], same: same, sameShuffled: sameShuffled, tot: tot,
+               moved: moved, cells: cells });
+  }
+  return { specId: specId, rows: out, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- how many rows before it shows
+// The fixture generator, held to its own rules, at growing row counts. The question is not
+// whether a corpus is realistic. It is how many rows it has.
+function sizeSweep(sizes, cases, seed){
+  const rows = [];
+  let asserts = 0;
+  for (const n of sizes){
+    const per = {};
+    for (const id of IMPL_IDS) per[id] = 0;
+    const rnd = mulberry32(seed + n);
+    for (let c = 0; c < cases; c++){
+      const data = genFixture(rnd, n);
+      const spec = SPECS[SPEC_IDS[Math.floor(rnd() * SPEC_IDS.length)]].keys;
+      const truth = oracleSort(data, spec);
+      for (const id of IMPL_IDS) if (!sameOrder(IMPLS[id].run(data, spec), truth)) per[id]++;
+      asserts += n * IMPL_IDS.length;
+    }
+    rows.push({ n: n, cases: cases, per: per });
+  }
+  return { rows: rows, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- which spec can see what
+function specSweep(corpusId, cases, seed){
+  const C = CORPORA[corpusId];
+  const grid = {};
+  for (const id of IMPL_IDS){ grid[id] = {}; for (const s of SPEC_IDS) grid[id][s] = 0; }
+  let asserts = 0;
+  for (const s of SPEC_IDS){
+    const rnd = mulberry32(seed + s.length * 101);
+    const spec = SPECS[s].keys;
+    for (let c = 0; c < cases; c++){
+      const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+      const rows = C.gen(rnd, n);
+      const truth = oracleSortM(rows, vecMap(rows, spec));
+      for (const id of IMPL_IDS){
+        if (!sameOrder(IMPLS[id].run(rows, spec), truth)) grid[id][s]++;
+        asserts += n;
+      }
+    }
+  }
+  return { grid: grid, cases: cases, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- is it even a comparator
+// A comparator has to be a total preorder or the sort is entitled to do anything at all. Three
+// of the six defects here are perfectly valid comparators that answer a different question,
+// and two are not comparator bugs at all - which is why no amount of checking the comparator
+// finds them.
+function axioms(corpusId, cases, seed){
+  const C = CORPORA[corpusId], rnd = mulberry32(seed);
+  const res = {};
+  for (const id of IMPL_IDS) res[id] = { anti: 0, trans: 0, refl: 0, tested: 0, triples: 0 };
+  const opts = {
+    correct:    { tie: true,  nulls: 'last' },
+    notiebreak: { tie: false, nulls: 'last' },
+    unstable:   { tie: false, nulls: 'last' },
+    reversed:   { tie: true,  nulls: 'last' },
+    firstkey:   { tie: true,  nulls: 'last', only: true },
+    numtext:    { tie: true,  nulls: 'last', numText: true },
+    nullzero:   { tie: true,  nulls: 'zero' }
+  };
+  let asserts = 0;
+  for (let c = 0; c < cases; c++){
+    const rows = C.gen(rnd, Math.max(3, C.lo));
+    const spec = SPECS[SPEC_IDS[Math.floor(rnd() * SPEC_IDS.length)]].keys;
+    const a = rows[0], b = rows[1], d = rows[2];
+    for (const id of IMPL_IDS){
+      const cmp = makeCmp(spec, opts[id]), R = res[id];
+      R.tested++;
+      const ab = cmp(a, b), ba = cmp(b, a), bd = cmp(b, d), ad = cmp(a, d);
+      if (Math.sign(ab) !== -Math.sign(ba)) R.anti++;        // counts VIOLATIONS, not passes
+      if (cmp(a, a) !== 0) R.refl++;
+      if (ab <= 0 && bd <= 0){ R.triples++; if (!(ad <= 0)) R.trans++; }
+      asserts += 3;
+    }
+  }
+  return { res: res, cases: cases, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- exhaustive, for tiny inputs
+// No sorting algorithm at all: enumerate every arrangement of the rows and keep the ones that
+// are non-decreasing under the rank vectors. A total order leaves exactly one.
+function permCheck(rows, spec){
+  const d = rankVectors(rows, spec);
+  const n = d.length, idx = [];
+  for (let i = 0; i < n; i++) idx.push(i);
+  const good = [];
+  (function rec(cur, left){
+    if (!left.length){
+      for (let i = 1; i < cur.length; i++)
+        if (vecCmp(d[cur[i - 1]].v, d[cur[i]].v) > 0) return;
+      good.push(cur.slice());
+      return;
+    }
+    for (let i = 0; i < left.length; i++)
+      rec(cur.concat([left[i]]), left.slice(0, i).concat(left.slice(i + 1)));
+  })([], idx);
+  return good.map(p => p.map(i => d[i].row));
+}
+function permStudy(cases, seed){
+  const rnd = mulberry32(seed);
+  let asserts = 0, ok = 0, unique = 0, tot = 0;
+  for (let c = 0; c < cases; c++){
+    const n = 3 + Math.floor(rnd() * 3);
+    const rows = genFixture(rnd, n);
+    const spec = SPECS[SPEC_IDS[Math.floor(rnd() * SPEC_IDS.length)]].keys;
+    const good = permCheck(rows, spec);
+    const out = IMPLS.correct.run(rows, spec);
+    let hit = false;
+    for (const g of good) if (sameOrder(g, out)) hit = true;
+    ok += hit ? 1 : 0; unique += good.length === 1 ? 1 : 0; tot++;
+    asserts += good.length + 1;
+  }
+  return { ok: ok, unique: unique, tot: tot, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- the two text orders
+// natCmp walks digit runs and compares each run against the run facing it. The oracle pads the
+// digit runs and compares one flat string. Both of those are "natural sort" and they are NOT the
+// same order: they part company exactly where a digit run faces a character below '0'.
+function encodingRace(cases, seed){
+  const rnd = mulberry32(seed);
+  const bits = ['a', 'b', 'z', 'A', 'Z', '0', '1', '2', '9', '10', ' ', '#', 'Z\u00f6', '\u00e9'];
+  const col = { type: 'text' };
+  let dis = 0, asserts = 0, example = null;
+  for (let c = 0; c < cases; c++){
+    const mk = () => {
+      let t = '';
+      const k = 1 + Math.floor(rnd() * 4);
+      for (let i = 0; i < k; i++) t += pick(rnd, bits);
+      return t;
+    };
+    const a = mk(), b = mk();
+    const x = natCmp(a, b), ea = encVal(col, a), eb = encVal(col, b);
+    const y = ea < eb ? -1 : ea > eb ? 1 : 0;
+    asserts++;
+    if ((x < 0 ? -1 : x > 0 ? 1 : 0) !== y){
+      dis++;
+      if (!example) example = { a: a, b: b, nat: x < 0 ? -1 : 1, enc: y };
+    }
+  }
+  return { dis: dis, cases: cases, asserts: asserts, example: example };
+}
+// The only thing that matters for the oracle: on the values the corpora actually hold, do the two
+// orders agree. Every distinct pair of every text column of every case, checked.
+function encodingCorpus(corpusId, cases, seed){
+  const C = CORPORA[corpusId], rnd = mulberry32(seed), col = { type: 'text' };
+  let dis = 0, asserts = 0;
+  for (let c = 0; c < cases; c++){
+    const rows = C.gen(rnd, C.lo + Math.floor(rnd() * (C.hi - C.lo + 1)));
+    for (const key of ['title', 'assignee']){
+      const seen = Object.create(null), vals = [];
+      for (const r of rows){
+        const v = r[key];
+        if (!isNull(v) && !(v in seen)){ seen[v] = 1; vals.push(v); }
+      }
+      if (vals.length > 40) vals.length = 40;
+      for (let i = 0; i < vals.length; i++) for (let j = i + 1; j < vals.length; j++){
+        const x = natCmp(vals[i], vals[j]);
+        const ea = encVal(col, vals[i]), eb = encVal(col, vals[j]);
+        const y = ea < eb ? -1 : ea > eb ? 1 : 0;
+        asserts++;
+        if ((x < 0 ? -1 : x > 0 ? 1 : 0) !== y) dis++;
+      }
+    }
+  }
+  return { dis: dis, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- the clause behind the clause
+// Delete the exact-form fallback from natCmp and ask what changed - once with the id tie-break
+// in place and once without it. Two clauses, each of which looks dead while the other is there.
+function foldStudy(corpusId, cases, seed, specId){
+  const C = CORPORA[corpusId], spec = SPECS[specId].keys;
+  let same = 0, sameNoTie = 0, stable = 0, tot = 0, wouldDecide = 0, pairs = 0, asserts = 0;
+  const rnd = mulberry32(seed);
+  for (let c = 0; c < cases; c++){
+    const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+    const rows = C.gen(rnd, n);
+    const full   = rows.slice().sort(makeCmp(spec, { tie: true,  nulls: 'last' }));
+    const cut    = rows.slice().sort(makeCmp(spec, { tie: true,  nulls: 'last', noExact: true }));
+    const fullNT = rows.slice().sort(makeCmp(spec, { tie: false, nulls: 'last' }));
+    const cutNT  = rows.slice().sort(makeCmp(spec, { tie: false, nulls: 'last', noExact: true }));
+    same      += sameOrder(full, cut) ? 1 : 0;
+    sameNoTie += sameOrder(fullNT, cutNT) ? 1 : 0;
+    const re = shuffle(mulberry32(seed + c * 7919 + 13), rows);
+    const reCut = re.slice().sort(makeCmp(spec, { tie: false, nulls: 'last', noExact: true }));
+    stable += sameOrder(reCut, cutNT) ? 1 : 0;
+    tot++; asserts += 3;
+    for (let i = 1; i < full.length; i++){
+      const w = whichClause(full[i - 1], full[i], spec);
+      if (w.i < spec.length && COLS[spec[w.i].key].type === 'text'){
+        const a = full[i - 1][spec[w.i].key], b = full[i][spec[w.i].key];
+        if (!isNull(a) && !isNull(b) && natCmpNoExact(a, b) === 0) wouldDecide++;
+      }
+      pairs++;
+    }
+  }
+  return { same: same, sameNoTie: sameNoTie, stable: stable, tot: tot,
+           wouldDecide: wouldDecide, pairs: pairs, asserts: asserts };
+}
+
+// ---------------------------------------------------------------- the written-out exhibits
+const DEMO = [
+  { id: 1, title: 'Fix login #10',      status: 'In progress', priority: 'High',   assignee: 'Dana',  due: '2026-02-04', points: 3,    updated: 19733 },
+  { id: 2, title: 'Add the export',     status: 'Todo',        priority: 'Urgent', assignee: 'Alice', due: null,         points: 8,    updated: 19733 },
+  { id: 3, title: 'Fix login #2',       status: 'In progress', priority: 'High',   assignee: 'Bob',   due: '2026-02-01', points: 13,   updated: 19731 },
+  { id: 4, title: 'Refactor billing',   status: 'Todo',        priority: 'High',   assignee: null,    due: '2026-01-28', points: null, updated: 19740 },
+  { id: 5, title: 'Ship onboarding',    status: 'Done',        priority: 'Medium', assignee: 'Chen',  due: '2026-02-10', points: 2,    updated: 19731 },
+  { id: 6, title: 'Document the parser',status: 'In progress', priority: 'High',   assignee: 'Z\u00f6e', due: '2026-02-04', points: 5, updated: 19740 },
+  { id: 7, title: 'Revert the toolbar', status: 'Blocked',     priority: 'Urgent', assignee: 'Emil',  due: null,         points: 21,   updated: 19733 },
+  { id: 8, title: 'fix login #10',      status: 'In progress', priority: 'High',   assignee: 'Dana',  due: '2026-02-04', points: 3,    updated: 19731 },
+  { id: 9, title: 'Investigate retries',status: 'Todo',        priority: 'Medium', assignee: 'Alice', due: '2026-02-06', points: 1,    updated: 19740 },
+  { id: 10, title: 'Remove the banner', status: 'In review',   priority: 'Low',    assignee: 'Bob',   due: '2026-02-20', points: 2,    updated: 19733 },
+  { id: 11, title: 'Add the retry loop',status: 'Todo',        priority: 'High',   assignee: 'Chen',  due: null,         points: 8,    updated: 19733 },
+  { id: 12, title: 'Fix the empty state',status: 'Todo',       priority: 'Medium', assignee: null,    due: '2026-02-02', points: null, updated: 19731 }
+];
+function demoRows(){ return DEMO.map(r => ({ ...r })); }
+
+// ---------------------------------------------------------------- one case, written out
+// The first board in a fixed stream that is large enough for two pages and on which the chosen
+// implementation actually loses a row between them. Returned as data, so the page and the verifier
+// print and check the same case rather than two cases that happen to look alike.
+function pageArtifact(implId, seed, size){
+  const C = CORPORA.board, rnd = mulberry32(seed), spec = SPECS.board.keys;
+  for (let c = 0; c < 600; c++){
+    const n = C.lo + Math.floor(rnd() * (C.hi - C.lo + 1));
+    const rows = C.gen(rnd, n);
+    const other = shuffle(rnd, rows);              // the same rows as a second query returns them
+    if (n < 2 * size) continue;
+    const a = IMPLS[implId].run(rows, spec), b = IMPLS[implId].run(other, spec);
+    const p1 = a.slice(0, size).map(r => r.id), p2 = b.slice(size, 2 * size).map(r => r.id);
+    const seen = Object.create(null);
+    for (const x of p1) seen[x] = 1;
+    const dup = p2.filter(x => seen[x]);
+    if (!dup.length) continue;
+    const shown = Object.create(null);
+    for (const x of p1) shown[x] = 1;
+    for (const x of p2) shown[x] = 1;
+    const want = oracleSort(rows, spec).slice(0, 2 * size).map(r => r.id);
+    const lost = want.filter(x => !shown[x]);
+    return { n: n, at: c, size: size, p1: p1, p2: p2, dup: dup, lost: lost, rows: rows };
+  }
+  return null;
+}
+
+// ===== ENGINE:END =====
+
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own
+// prose and "4,340,301" must not come back as "43,40,301" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const cls = (b, s) => "<span class='" + (b ? "ok" : "bad") + "'>" + s + "</span>";
+const yn = b => b ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>";
+const per1000 = (x, n) => n ? (1000 * x / n).toFixed(1) : "&mdash;";
+
+// The exact workload. Every figure this page prints comes out of these calls, and the verifier
+// runs the same ones from the extracted engine block before it checks the prose.
+const CASES = { fixture: 800, seeded: 400, board: 300, seams: 400 };
+const SEEDS = { fixture: 9001, seeded: 9002, board: 9003, seams: 9004 };
+const SIZES = [4, 5, 6, 8, 9, 10, 12, 16, 20, 21, 24, 32, 48, 64];
+const COL_ORDER = ['id', 'title', 'status', 'priority', 'assignee', 'due', 'points', 'updated'];
+const PG = 6;                       // rows per page in the live table, which holds twelve
+const DEFECTS = IMPL_IDS.slice(1);  // the six, without the correct one
+
+let F = null, SS = null, SF = null, SZ = null, TG = null, CL = null, DL = null;
+let FD = null, PS = null, ER = null, EC = null, AX = null, ART = null;
+let TOTAL = 0, ROWS = 0, MS = 0;
+
+function measure(){
+  const t0 = Date.now();
+  F = {};
+  for (const c of CORPUS_IDS) F[c] = fuzz(c, CASES[c], SEEDS[c]);
+  SS = specSweep('board', 120, 909);
+  SF = specSweep('fixture', 400, 313);
+  SZ = sizeSweep(SIZES, 150, 55);
+  TG = {};
+  for (const c of CORPUS_IDS) TG[c] = toggleStudy(c, 150, 700);
+  CL = {
+    fixboard: clauseStudy('fixture', 200, 2024, 'board'),
+    board:    clauseStudy('board', 200, 2024, 'board'),
+    full:     clauseStudy('board', 200, 2024, 'full'),
+    estimate: clauseStudy('board', 200, 2024, 'estimate'),
+    recent:   clauseStudy('board', 200, 2024, 'recent')
+  };
+  DL = {
+    full:    deleteStudy('board', 150, 4242, 'full'),
+    board:   deleteStudy('board', 150, 4242, 'board'),
+    fixture: deleteStudy('fixture', 150, 4242, 'board')
+  };
+  FD = { board: foldStudy('board', 150, 606, 'estimate'),
+         seams: foldStudy('seams', 150, 606, 'triage') };
+  PS = permStudy(600, 11);
+  ER = encodingRace(20000, 7);
+  EC = {};
+  for (const c of CORPUS_IDS) EC[c] = encodingCorpus(c, 100, 21);
+  AX = axioms('board', 2500, 77);
+  ART = pageArtifact('notiebreak', 4711, 20);
+
+  TOTAL = 0; ROWS = 0;
+  for (const c of CORPUS_IDS){ TOTAL += F[c].asserts; ROWS += F[c].rows; }
+  TOTAL += SS.asserts + SF.asserts + SZ.asserts + PS.asserts + ER.asserts + AX.asserts;
+  for (const k in CL) TOTAL += CL[k].asserts;
+  for (const k in DL) TOTAL += DL[k].asserts;
+  for (const c of CORPUS_IDS) TOTAL += TG[c].asserts;
+  for (const k in FD) TOTAL += FD[k].asserts;
+  for (const c of CORPUS_IDS) TOTAL += EC[c].asserts;
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- the live table
+const LIVE = demoRows();
+let physical = LIVE.slice();          // the order this query happened to hand the rows over in
+let physical2 = shuffle(mulberry32(31337), LIVE);
+let queryN = 1;
+let spec = SPECS.board.keys.map(k => ({ key: k.key, dir: k.dir }));
+let implId = 'correct';
+let pageMode = false;
+let lastShown = null;
+
+function specKeys(){ return spec.map(k => ({ key: k.key, dir: k.dir })); }
+function runImpl(id, rows){
+  if (!spec.length) return rows.slice();
+  return IMPLS[id].run(rows, specKeys());
+}
+function truthOf(rows){
+  if (!spec.length) return rows.slice();
+  return oracleSort(rows, specKeys());
+}
+function headClick(key, shift){
+  const at = spec.findIndex(k => k.key === key);
+  if (shift){
+    if (at >= 0) spec[at].dir = -spec[at].dir;
+    else spec.push({ key: key, dir: 1 });
+  } else {
+    if (spec.length === 1 && at === 0) spec[0].dir = -spec[0].dir;
+    else spec = [{ key: key, dir: 1 }];
+  }
+  paint();
+}
+function cellText(r, k){
+  const v = r[k];
+  if (isNull(v)) return "<td class='blank'>&mdash;</td>";
+  if (k === 'id') return "<td class='idc'>" + v + "</td>";
+  return "<td>" + esc(v) + "</td>";
+}
+function renderChips(){
+  let h = "";
+  spec.forEach((k, i) => {
+    h += "<span class='chip'>" + (i ? "then " : "") + esc(COLS[k.key].label) +
+         " <b>" + (k.dir < 0 ? "&darr;" : "&uarr;") + "</b></span>";
+  });
+  if (!spec.length) h += "<span class='chip tie'>no sort spec &mdash; the rows are in the order the query returned them</span>";
+  else if (implId === 'notiebreak' || implId === 'unstable')
+    h += "<span class='chip tie'>then # &mdash; <b>missing</b></span>";
+  else if (implId === 'firstkey' && spec.length > 1)
+    h += "<span class='chip tie'>keys 2&ndash;" + spec.length + " ignored, then #</span>";
+  else h += "<span class='chip tie'>then # &mdash; the clause that makes it total</span>";
+  $('chips').innerHTML = h;
+}
+function renderBoard(){
+  const out = runImpl(implId, physical);
+  const truth = truthOf(physical);
+  const out2 = runImpl(implId, physical2);
+  let shown, dup = [], lost = [], isDup = Object.create(null);
+  if (pageMode){
+    const p1 = out.slice(0, PG), p2 = out2.slice(PG, PG * 2);
+    const seen = Object.create(null);
+    for (const r of p1) seen[r.id] = 1;
+    for (const r of p2) if (seen[r.id]){ dup.push(r.id); isDup[r.id] = 1; }
+    const has = Object.create(null);
+    for (const r of p1.concat(p2)) has[r.id] = 1;
+    for (const r of truth.slice(0, PG * 2)) if (!has[r.id]) lost.push(r.id);
+    shown = p1.concat(p2);
+  } else {
+    shown = out;
+  }
+  let h = "<thead><tr>";
+  for (const k of COL_ORDER){
+    const at = spec.findIndex(s => s.key === k);
+    const mark = at < 0 ? "<span class='no'>&#8597;</span>"
+      : "<span class='ar'>" + (spec[at].dir < 0 ? "&darr;" : "&uarr;") +
+        (spec.length > 1 ? "<sup>" + (at + 1) + "</sup>" : "") + "</span>";
+    h += "<th data-k='" + k + "'>" + esc(COLS[k].label) + " " + mark + "</th>";
+  }
+  h += "</tr></thead><tbody>";
+  shown.forEach((r, i) => {
+    const moved = lastShown && lastShown[i] !== undefined && lastShown[i] !== r.id;
+    const c = [moved ? 'moved' : '',
+               pageMode ? (i < PG ? 'p1' : 'p2') : '',
+               pageMode && i === PG ? 'pgb' : '',
+               pageMode && isDup[r.id] ? 'dupr' : ''].filter(Boolean).join(' ');
+    h += "<tr" + (c ? " class='" + c + "'" : "") + ">";
+    for (const k of COL_ORDER) h += cellText(r, k);
+    h += "</tr>";
+  });
+  h += "</tbody>";
+  $('board').innerHTML = h;
+  Array.prototype.forEach.call($('board').querySelectorAll('th'), th => {
+    th.addEventListener('click', e => headClick(th.dataset.k, e.shiftKey));
+  });
+  lastShown = shown.map(r => r.id);
+
+  const bad = outOfPlace(out, truth);
+  let note;
+  if (pageMode){
+    note = "Six rows a page. Page 1 came back from query " + queryN + " (violet rail) and page 2 " +
+      "from a second query that walked the table in a different physical order (amber rail). " +
+      (dup.length ? "<span class='bad'>Row #" + dup.join(", #") + " is printed twice</span> (red)"
+                  : "<span class='ok'>No row is printed twice</span>") + " and " +
+      (lost.length ? "<span class='bad'>row #" + lost.join(", #") + " is never printed at all</span>"
+                   : "<span class='ok'>no row goes missing</span>") + ".";
+  } else {
+    note = "Twelve rows, one spec, " + IMPLS[implId].label + ". " +
+      (bad ? "<span class='bad'>" + bad + " of 12 rows</span> are not where the correct total order " +
+             "puts them" : "<span class='ok'>every row</span> is where the correct total order puts it") +
+      ". Press <em>run the query again</em> and anything that moves is a row this table cannot keep still.";
+  }
+  $('boardnote').innerHTML = note;
+}
+function idSeq(out, truth){
+  let h = "";
+  for (let i = 0; i < out.length; i++){
+    const bad = truth[i] && truth[i].id !== out[i].id;
+    h += (i ? " " : "") + (bad ? "<b>" + out[i].id + "</b>" : out[i].id);
+  }
+  return "<span class='seq'>" + h + "</span>";
+}
+function renderLiveImpl(){
+  const truth = truthOf(physical);
+  const m = spec.length ? vecMap(physical, specKeys()) : null;
+  let a = "", b = "";
+  for (const id of IMPL_IDS){
+    const out = runImpl(id, physical), out2 = runImpl(id, physical2);
+    const bad = outOfPlace(out, truth);
+    a += "<tr" + (id === implId ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td><td>" +
+         idSeq(out, truth) + "</td><td>" + (bad ? "<span class='bad'>" + bad + "</span>" : "0") +
+         "</td></tr>";
+    const p1 = m ? sortedToDepth(out, m, 1) : true;
+    const p2 = m ? sortedToDepth(out, m, spec.length) : true;
+    const det = sameOrder(out, out2);
+    const ex = sameOrder(out, truth);
+    b += "<tr" + (id === implId ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td><td>" +
+         cls(p1, p1 ? "yes" : "no") + "</td><td>" + cls(p2, p2 ? "yes" : "no") + "</td><td>" +
+         cls(det, det ? "yes" : "no") + "</td><td>" + cls(ex, ex ? "yes" : "no") + "</td></tr>";
+  }
+  $('liveImpl').innerHTML = a;
+  $('liveProp').innerHTML = b;
+}
+function paint(){ renderChips(); renderBoard(); renderLiveImpl(); }
+
+// ---------------------------------------------------------------- the measured tables
+function fillExact(){
+  $('hFix').textContent = fmt(CASES.fixture) + " cases";
+  $('hSeed').textContent = fmt(CASES.seeded) + " cases";
+  $('hBoard').textContent = fmt(CASES.board) + " cases";
+  $('hSeams').textContent = fmt(CASES.seams) + " cases";
+  let h = "";
+  for (const id of IMPL_IDS){
+    h += "<tr" + (id === 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) +
+         "</td><td class='dim' style='text-align:left'>" + esc(IMPLS[id].note) + "</td>";
+    for (const c of CORPUS_IDS){
+      const s = F[c].stat[id], v = pct(s.exact, F[c].cases);
+      h += "<td>" + (s.exact === F[c].cases ? (id === 'correct' ? "<span class='ok'>" + v + "</span>"
+           : "<span class='warn'>" + v + "</span>") : v) + "</td>";
+    }
+    const bs = F.board.stat[id];
+    h += "<td>" + per1000(bs.misplaced, bs.cells) + "</td></tr>";
+  }
+  $('tExact').innerHTML = h;
+  $('exactnote').innerHTML =
+    "Read the fixture column first: <strong>every one of the seven</strong> is exactly right on " +
+    "<strong>100.0%</strong> of " + fmt(CASES.fixture) + " fixtures, so a suite built on one cannot " +
+    "tell a correct sort from any of the six. Give the same generator a random filler and the " +
+    "column falls apart. The last column is not a rate but a magnitude: on a real board the " +
+    "first-key-only version puts <strong>" +
+    per1000(F.board.stat.firstkey.misplaced, F.board.stat.firstkey.cells) +
+    " rows per 1,000</strong> somewhere other than where they belong.";
+}
+function fillP1(){
+  let h = "";
+  for (const id of IMPL_IDS){
+    const clean = CORPUS_IDS.every(c => F[c].stat[id].p1 === F[c].cases);
+    h += "<tr" + (clean && id !== 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>";
+    for (const c of CORPUS_IDS){
+      const s = F[c].stat[id], v = pct(s.p1, F[c].cases);
+      h += "<td>" + (s.p1 === F[c].cases ? "<span class='ok'>" + v + "</span>" : v) + "</td>";
+    }
+    h += "<td>" + pct(F.board.stat[id].exact, F.board.cases) + "</td></tr>";
+  }
+  $('tP1').innerHTML = h;
+  const clean = IMPL_IDS.filter(id => CORPUS_IDS.every(c => F[c].stat[id].p1 === F[c].cases));
+  $('p1note').innerHTML =
+    "<strong>" + clean.length + " of the 7</strong> satisfy it on <strong>100.0%</strong> of every " +
+    "corpus &mdash; the correct one and three defects. One of those three, <em>first key only</em>, " +
+    "is exactly right on <strong>" + pct(F.board.stat.firstkey.exact, F.board.cases) + "</strong> of " +
+    "real boards: it renders a perfectly ordered status column and throws the rest of the spec away. " +
+    "The three the property does catch, it catches because they get the <em>rendered</em> column " +
+    "wrong, which is the only thing it can see.";
+}
+function fillProps(){
+  const FAM = {
+    correct:    '&mdash;',
+    notiebreak: 'not a total order',
+    unstable:   'the arrangement',
+    reversed:   'the arrangement',
+    firstkey:   'the comparator',
+    numtext:    'the comparator',
+    nullzero:   'the comparator'
+  };
+  let h = "";
+  for (const id of IMPL_IDS){
+    const s = F.board.stat[id], n = F.board.cases;
+    const cell = (x, tot) => "<td>" + (x === tot ? "<span class='ok'>" + pct(x, tot) + "</span>"
+                                                 : pct(x, tot)) + "</td>";
+    h += "<tr" + (id === 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) +
+         "</td><td class='dim' style='text-align:left'>" + FAM[id] + "</td>" +
+         cell(s.p1, n) + cell(s.p2, n) + cell(s.det, n) +
+         cell(TG.board.per[id], TG.board.cases) + cell(s.page, n) + cell(s.exact, n) + "</tr>";
+  }
+  $('tProps').innerHTML = h;
+  const caught = id => {
+    const s = F.board.stat[id], n = F.board.cases;
+    let k = 0;
+    if (s.p1 < n) k++;
+    if (s.p2 < n) k++;
+    if (s.det < n) k++;
+    if (TG.board.per[id] < TG.board.cases) k++;
+    if (s.page < n) k++;
+    return k;
+  };
+  const allSix = k => DEFECTS.every(id => k(id));
+  const pagesAll = allSix(id => F.board.stat[id].page < F.board.cases);
+  const p1Blind = DEFECTS.filter(id => F.board.stat[id].p1 === F.board.cases).length;
+  $('propsnote').innerHTML =
+    "Two readings. First, the two implementations that behave most alike are separated by the " +
+    "cheapest assertion here: <em>no tie-break</em> and <em>unstable sort</em> land within three " +
+    "points of each other on every column but the round trip, which is <strong>" +
+    pct(TG.board.per.notiebreak, TG.board.cases) + "</strong> for one and <strong>" +
+    pct(TG.board.per.unstable, TG.board.cases) + "</strong> for the other. That is structural rather " +
+    "than lucky: flipping the first key's direction does not change <em>which</em> rows are tied, so " +
+    "a stable sort hands a tied group back in the order it found it either way and the round trip " +
+    "returns exactly. It is blind to a missing tie-break by construction and sees an actual " +
+    "instability alone. Second, the ranking of the five columns is the reverse of how often they get " +
+    "written. <em>First key in order</em> is <strong>100.0%</strong> for <strong>" + p1Blind +
+    "</strong> of the six" + (pagesAll ? ", while <em>two clean pages</em> is under 100.0% for " +
+    "<strong>all six</strong> &mdash; the only one of the five that catches everything on this " +
+    "corpus, and the one almost nobody writes" : "") + ". It is not a free lunch: on the seams, " +
+    "where a table is smaller than two pages, the same assertion falls back to catching only the " +
+    "two that can duplicate a row.";
+}
+function fillPage(){
+  let h = "";
+  for (const id of IMPL_IDS){
+    const s = F.board.stat[id];
+    h += "<tr" + (id === 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td><td>" +
+         (s.page === F.board.cases ? "<span class='ok'>" + pct(s.page, F.board.cases) + "</span>"
+                                   : pct(s.page, F.board.cases)) + "</td><td>" +
+         (s.dupRows ? "<span class='bad'>" + fmt(s.dupRows) + "</span>" : "0") + "</td><td>" +
+         (s.lostRows ? "<span class='bad'>" + fmt(s.lostRows) + "</span>" : "0") + "</td><td>" +
+         yn(!s.dupRows) + "</td></tr>";
+  }
+  $('tPage').innerHTML = h;
+
+  const byId = Object.create(null);
+  for (const r of ART.rows) byId[r.id] = r;
+  const d = ART.dup[0], l = ART.lost[0];
+  const line = (t, ids) => t.padEnd(9) + ids.map(x =>
+    (x === d ? '[' + x + ']' : x === l ? '(' + x + ')' : String(x))).join(' ');
+  $('artPage').textContent =
+    ART.n + " rows, sorted by status then priority, no tie-break. Twenty rows per page.\n\n" +
+    line('page 1', ART.p1) + "\n" +
+    line('page 2', ART.p2) + "\n\n" +
+    "row " + d + " is on both pages          " + byId[d].status + " / " + byId[d].priority + "\n" +
+    "row " + l + " is on neither             " + byId[l].status + " / " + byId[l].priority + "\n\n" +
+    "Nothing in the spec separates those two rows, so nothing decides which of them page 1\n" +
+    "kept. The first query put " + d + " past the cut and the second put " + l + " past it.";
+  $('pagenote').innerHTML =
+    "Two implementations can duplicate a row and four cannot &mdash; and the four that cannot are " +
+    "not thereby safe. <em>Sort then reverse</em>, <em>first key only</em>, <em>numbers as text</em> " +
+    "and <em>blank is zero</em> are all perfectly deterministic total orders, so they hand back the " +
+    "same two pages every time; they simply hand back <strong>" + fmt(F.board.stat.reversed.lostRows) +
+    "</strong>, <strong>" + fmt(F.board.stat.firstkey.lostRows) + "</strong>, <strong>" +
+    fmt(F.board.stat.numtext.lostRows) + "</strong> and <strong>" + fmt(F.board.stat.nullzero.lostRows) +
+    "</strong> rows that belonged on the first two pages and were never shown. Determinism is not " +
+    "correctness; it is only the absence of the duplicate.";
+}
+function firstAt(id){ for (const r of SZ.rows) if (r.per[id] > 0) return r.n; return null; }
+function fillSize(){
+  let h = "";
+  for (const r of SZ.rows){
+    h += "<tr><td>" + r.n + "</td>";
+    for (const id of DEFECTS){
+      const v = pct(r.per[id], r.cases);
+      h += "<td>" + (r.per[id] ? "<span class='bad'>" + v + "</span>" : "<span class='dim'>" + v + "</span>") + "</td>";
+    }
+    h += "</tr>";
+  }
+  $('tSize').innerHTML = h;
+  $('sizenote').innerHTML =
+    "Three thresholds and two blanks, and every one of the five is arithmetic. <em>First key only</em> " +
+    "starts failing at <strong>" + firstAt('firstkey') + "</strong> rows, which is one more than the " +
+    "five values in the status column &mdash; the first row count at which two fixture rows can share " +
+    "a first key. <em>Sort then reverse</em> starts at <strong>" + firstAt('reversed') + "</strong>, " +
+    "one more than the nine values the fixture's points column cycles through. The two versions with " +
+    "no tie-break start at <strong>" + firstAt('notiebreak') + "</strong> = lcm(5,4)&nbsp;+&nbsp;1, " +
+    "because status cycles every 5 rows and priority every 4, so the first pair of rows that agree " +
+    "on <em>both</em> is 20 apart. And <em>numbers as text</em> and <em>blank is zero</em> are blank " +
+    "all the way down, forever: the fixture has no blank cell for the second to coerce, and its " +
+    "numeric columns are all one digit wide, where a string compare and a numeric compare are the " +
+    "same order. Realism is not what the fixture is short of. Rows are.";
+}
+function fillSpec(){
+  SPEC_IDS.forEach((s, i) => { $('sp' + i).innerHTML = esc(s) + "<br /><span class='dim'>" +
+    esc(SPECS[s].label) + "</span>"; });
+  let h = "";
+  for (const id of IMPL_IDS){
+    h += "<tr" + (id === 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>";
+    for (const s of SPEC_IDS){
+      const bad = SS.grid[id][s], v = pct(bad, SS.cases);
+      h += "<td>" + (bad === 0 ? "<span class='dim'>" + v + "</span>"
+           : bad === SS.cases ? "<span class='bad'>" + v + "</span>" : v) + "</td>";
+    }
+    h += "</tr>";
+  }
+  $('tSpec').innerHTML = h;
+  const sfTot = IMPL_IDS.reduce((a, i) => a + SPEC_IDS.reduce((b, s) => b + SF.grid[i][s], 0), 0);
+  $('specnote').innerHTML =
+    "<em>Sort then reverse</em> is 0.0% on the two all-ascending specs and 100.0% on the three whose " +
+    "first key is descending, because reversing a finished ascending list also reverses every clause " +
+    "underneath it &mdash; including the tie-break. <em>First key only</em> is 0.0% on exactly one " +
+    "spec, <code>updated desc</code>, the single-key one, where there is no rest of the spec to " +
+    "throw away. <em>Numbers as text</em> needs a numeric column whose values differ in width, so it " +
+    "is 0.0% everywhere except the two specs that sort by points &mdash; " +
+    pct(SS.grid.numtext.estimate, SS.cases) + " on <code>points desc, title</code>. <em>Blank is " +
+    "zero</em> needs a nullable key, so it is 0.0% on the three specs made only of columns that " +
+    "cannot be blank. Same corpus, same seven implementations, and every defect is invisible under " +
+    "some spec. The same grid over the fixture instead of the board is <strong>" + sfTot + "</strong> " +
+    "failures in total, across all seven implementations and all six specs.";
+}
+function fillClause(){
+  const TITLE = {
+    fixboard: ['a test fixture', 'status, priority'],
+    board:    ['a real board', 'status, priority'],
+    full:     ['a real board', 'status, priority, due, assignee, points desc'],
+    estimate: ['a real board', 'points desc, title'],
+    recent:   ['a real board', 'updated desc']
+  };
+  let h = "";
+  for (const k in CL){
+    const c = CL[k];
+    c.names.forEach((nm, i) => {
+      h += "<tr" + (i === 0 ? " style='border-top:2px solid #cbd5e1'" : "") + "><td>" +
+        (i === 0 ? "<strong>" + esc(TITLE[k][0]) + "</strong><br /><span class='dim mono' " +
+          "style='font-size:11px'>" + esc(TITLE[k][1]) + "</span>" : "") + "</td>" +
+        "<td style='text-align:left'><code>" + esc(nm) + "</code></td><td>" + fmt(c.decided[i]) +
+        "</td><td>" + (c.decided[i] === 0 ? "<span class='bad'>0.0%</span>"
+          : pct(c.decided[i], c.pairs)) + "</td><td>" +
+        (c.blanks[i] ? fmt(c.blanks[i]) : "<span class='dim'>0</span>") + "</td></tr>";
+    });
+  }
+  $('tClause').innerHTML = h;
+  $('clausenote').innerHTML =
+    "On the fixture, <code>status</code> decides <strong>100.0%</strong> of all " +
+    fmt(CL.fixboard.pairs) + " neighbouring pairs and the other two clauses decide " +
+    "<strong>nothing</strong> &mdash; by this test <code>priority</code> and the tie-break are both " +
+    "dead code and both should be deleted. On the real board the same spec gives <code>status</code> " +
+    "<strong>" + pct(CL.board.decided[0], CL.board.pairs) + "</strong> and hands <strong>" +
+    pct(CL.board.decided[2], CL.board.pairs) + "</strong> of the work to the clause the fixture said " +
+    "was dead. The five-key spec is the interesting one: <code>due</code> decides more pairs than " +
+    "any other clause at <strong>" + pct(CL.full.decided[2], CL.full.pairs) + "</strong>, but " +
+    "<strong>" + fmt(CL.full.blanks[2]) + "</strong> of those are decided by one side being " +
+    "<em>blank</em> rather than by any date, so a quarter of that clause's apparent work is the null " +
+    "policy wearing a date column's name. And on <code>updated desc</code> the tie-break decides " +
+    "<strong>" + pct(CL.recent.decided[1], CL.recent.pairs) + "</strong> of every pair on the screen, " +
+    "because a bulk update gave three quarters of the board the same timestamp.";
+}
+function fillDelete(){
+  const TITLE = { full: ['a real board', 'status, priority, due, assignee, points desc'],
+                  board: ['a real board', 'status, priority'],
+                  fixture: ['a test fixture', 'status, priority'] };
+  let h = "";
+  for (const k in DL){
+    DL[k].rows.forEach((r, i) => {
+      h += "<tr" + (i === 0 ? " style='border-top:2px solid #cbd5e1'" : "") + "><td>" +
+        (i === 0 ? "<strong>" + esc(TITLE[k][0]) + "</strong><br /><span class='dim mono' " +
+          "style='font-size:11px'>" + esc(TITLE[k][1]) + "</span>" : "") + "</td>" +
+        "<td style='text-align:left'><code>" + esc(r.clause) + "</code></td><td>" +
+        (r.same === r.tot ? "<span class='ok'>100.0%</span>" : pct(r.same, r.tot)) + "</td><td>" +
+        (r.sameShuffled === r.tot ? "<span class='ok'>100.0%</span>"
+          : "<span class='bad'>" + pct(r.sameShuffled, r.tot) + "</span>") + "</td><td>" +
+        per1000(r.moved, r.cells) + "</td></tr>";
+    });
+  }
+  $('tDelete').innerHTML = h;
+  const tie = DL.full.rows[DL.full.rows.length - 1], key = DL.full.rows[0];
+  $('deletenote').innerHTML =
+    "On the fixture, deleting <code>priority</code> or the tie-break changes <strong>nothing</strong>: " +
+    "the same screen, <strong>100.0%</strong> of the time, <strong>0.0</strong> rows moved per 1,000. " +
+    "The counting test and the deletion test agree, and they agree on the wrong answer. Now read the " +
+    "five-key board twice. Deleting <code>status</code>, the loudest clause there is, moves " +
+    "<strong>" + per1000(key.moved, key.cells) + "</strong> rows per 1,000 and leaves the reshuffle " +
+    "column at <strong>" + pct(key.sameShuffled, key.tot) + "</strong> &mdash; a completely different " +
+    "screen that is still perfectly stable. Deleting the tie-break instead moves <strong>" +
+    per1000(tie.moved, tie.cells) + "</strong> rows per 1,000 and leaves <strong>" +
+    pct(tie.same, tie.tot) + "</strong> of screens byte-identical &mdash; small enough to read as " +
+    "rounding &mdash; while the reshuffle column drops to <strong>" +
+    pct(tie.sameShuffled, tie.tot) + "</strong>: the sort no longer agrees with <em>itself</em> when " +
+    "the same rows arrive in a different physical order. The two columns are not two views of one " +
+    "number. A missing key is loud and stable; a missing tie-break is quiet and not.";
+}
+function fillFold(){
+  const TITLE = { board: ['a real board', 'points desc, title'], seams: ['the seams', 'priority, due, title'] };
+  let h = "";
+  for (const k in FD){
+    const f = FD[k];
+    h += "<tr><td><strong>" + esc(TITLE[k][0]) + "</strong><br /><span class='dim mono' " +
+      "style='font-size:11px'>" + esc(TITLE[k][1]) + "</span></td><td>" + fmt(f.wouldDecide) +
+      " of " + fmt(f.pairs) + "</td><td>" +
+      (f.same === f.tot ? "<span class='ok'>100.0%</span>" : pct(f.same, f.tot)) + "</td><td>" +
+      (f.sameNoTie === f.tot ? "<span class='ok'>100.0%</span>" : pct(f.sameNoTie, f.tot)) +
+      "</td><td>" + (f.stable === f.tot ? "<span class='ok'>100.0%</span>"
+        : "<span class='bad'>" + pct(f.stable, f.tot) + "</span>") + "</td></tr>";
+  }
+  $('tFold').innerHTML = h;
+  $('foldnote').innerHTML =
+    "On a real board the exact-form fallback is genuinely unreachable &mdash; <strong>" +
+    fmt(FD.board.wouldDecide) + "</strong> pairs out of " + fmt(FD.board.pairs) + " where it would " +
+    "have been the clause that decided, so deleting it changes nothing whether or not the tie-break " +
+    "is there. On the seams, where names differ only by case and accent, it would decide <strong>" +
+    fmt(FD.seams.wouldDecide) + "</strong> pairs, and with the tie-break in place deleting it still " +
+    "leaves <strong>" + pct(FD.seams.same, FD.seams.tot) + "</strong> of screens identical. Take both " +
+    "away and stability falls to <strong>" + pct(FD.seams.stable, FD.seams.tot) + "</strong>. Two " +
+    "clauses, each of which measures as dead code while the other one is holding the order together.";
+}
+function fillAx(){
+  let h = "";
+  for (const id of IMPL_IDS){
+    const r = AX.res[id], valid = r.anti === 0 && r.refl === 0 && r.trans === 0;
+    const right = F.board.stat[id].exact === F.board.cases;
+    h += "<tr" + (id === 'correct' ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) +
+      "</td><td>" + r.anti + "</td><td>" + r.refl + "</td><td>" + r.trans + " of " + fmt(r.triples) +
+      "</td><td>" + yn(valid) + "</td><td>" + yn(right) + "</td></tr>";
+  }
+  $('tAx').innerHTML = h;
+  $('axnote').innerHTML =
+    "All seven are valid comparators. Every one of the six defects passes antisymmetry, reflexivity " +
+    "and transitivity on every triple tested, and <strong>six of the seven</strong> are still the " +
+    "wrong sort. Three of them &mdash; first key only, numbers as text, blank is zero &mdash; are " +
+    "impeccable comparators for a question nobody asked. One is a valid <em>preorder</em> that " +
+    "returns 0 for two rows that are not the same row, which is exactly what a total order forbids " +
+    "and exactly what no axiom check tests for. And two are not comparator defects at all: they " +
+    "share their comparator with the correct implementation and differ in what happens afterwards. " +
+    "The exhaustive check next to it is the other half: for " + fmt(PS.tot) + " tiny tables, every " +
+    "permutation of the rows was enumerated and kept if it was non-decreasing. Exactly one survived " +
+    "in <strong>" + pct(PS.unique, PS.tot) + "</strong> of them, and it was the one the " +
+    "implementation produced in <strong>" + pct(PS.ok, PS.tot) + "</strong>. That is what total " +
+    "means, checked without sorting anything.";
+  let e = "<tr><th style='text-align:left'>where the two natural orders were compared</th>" +
+          "<th>pairs</th><th>disagreements</th></tr>" +
+          "<tr><td style='text-align:left'>strings built to break them &mdash; letters, digits, " +
+          "spaces, <code>#</code>, accents</td><td>" + fmt(ER.cases) + "</td><td><span class='bad'>" +
+          fmt(ER.dis) + "</span> &middot; " + pct(ER.dis, ER.cases) + "</td></tr>";
+  let tot = 0, dis = 0;
+  for (const c of CORPUS_IDS){
+    e += "<tr><td style='text-align:left'>every distinct pair of every text column of <em>" +
+      esc(CORPORA[c].label) + "</em></td><td>" + fmt(EC[c].asserts) + "</td><td>" +
+      (EC[c].dis ? "<span class='bad'>" + EC[c].dis + "</span>" : "<span class='ok'>0</span>") +
+      "</td></tr>";
+    tot += EC[c].asserts; dis += EC[c].dis;
+  }
+  e += "<tr class='me'><td style='text-align:left'><strong>the corpora, all four</strong></td><td>" +
+    fmt(tot) + "</td><td>" + (dis ? "<span class='bad'>" + dis + "</span>"
+      : "<span class='ok'>0</span>") + "</td></tr>";
+  $('tEnc').innerHTML = e;
+  const x = ER.example;
+  $('artEnc').textContent =
+    'natCmp     walks runs:   "' + x.a + '"  ' + (x.nat < 0 ? '<' : '>') + '  "' + x.b + '"\n' +
+    'encVal     pads digits:  "' + x.a + '"  ' + (x.enc < 0 ? '<' : '>') + '  "' + x.b + '"\n\n' +
+    'They part company exactly where a digit run faces a character below "0" - "#" here.\n' +
+    'Both are what people mean by natural sort. ' + fmt(ER.dis) + ' of ' + fmt(ER.cases) +
+    ' hand-built pairs disagree,\nand ' + dis + ' of ' + fmt(tot) +
+    ' pairs the four corpora actually contain.';
+}
+function fillExhibits(){
+  const D = demoRows();
+  const box = (specId, el) => {
+    const keys = SPECS[specId].keys, truth = oracleSort(D, keys);
+    let t = specId + "  ·  " + SPECS[specId].label + "\n\n";
+    t += "  " + "correct".padEnd(19) + truth.map(r => r.id).join(' ') + "\n";
+    for (const id of IMPL_IDS){
+      const out = IMPLS[id].run(D, keys);
+      if (sameOrder(out, truth)) continue;
+      const marks = out.map((r, i) => truth[i].id === r.id ? String(r.id) : '[' + r.id + ']');
+      t += "  " + IMPLS[id].label.padEnd(19) + marks.join(' ') + "\n";
+    }
+    $(el).textContent = t.replace(/\n$/, '');
+  };
+  box('recent', 'artRecent');
+  box('estimate', 'artEstimate');
+  box('owner', 'artOwner');
+  box('board', 'artBoard');
+}
+function fillProse(){
+  $('assertline').innerHTML =
+    "Everything below this card is measured on load: <strong>" + fmt(TOTAL) + " assertions</strong> " +
+    "over <strong>" + fmt(ROWS) + " sorted rows</strong>, in " + (MS / 1000).toFixed(1) + "&nbsp;s, " +
+    "against an oracle that never compares two rows.";
+  const set = (id, v) => { const e = $(id); if (e) e.innerHTML = v; };
+  set('pTotal', fmt(TOTAL));
+  set('pRows', fmt(ROWS));
+  set('pFirstkey', pct(F.board.stat.firstkey.exact, F.board.cases));
+  set('pClean', String(IMPL_IDS.filter(id => CORPUS_IDS.every(c => F[c].stat[id].p1 === F[c].cases)).length));
+  set('pDup', fmt(F.board.stat.notiebreak.dupRows));
+  set('pLost', fmt(F.board.stat.notiebreak.lostRows));
+  set('pMisFirst', per1000(F.board.stat.firstkey.misplaced, F.board.stat.firstkey.cells));
+  set('pMisTie', per1000(F.board.stat.notiebreak.misplaced, F.board.stat.notiebreak.cells));
+  set('pTieBoard', per1000(DL.full.rows[5].moved, DL.full.rows[5].cells));
+  set('pTieShuf', pct(DL.full.rows[5].sameShuffled, DL.full.rows[5].tot));
+  set('pFoldBoard', fmt(FD.board.wouldDecide) + " of " + fmt(FD.board.pairs));
+  set('pFoldSeams', fmt(FD.seams.wouldDecide) + " of " + fmt(FD.seams.pairs));
+  set('pFoldStable', pct(FD.seams.stable, FD.seams.tot));
+  set('pFoldSame', pct(FD.seams.same, FD.seams.tot));
+  set('pEncPairs', fmt(CORPUS_IDS.reduce((a, c) => a + EC[c].asserts, 0)));
+  set('pEncRace', fmt(ER.dis) + " of " + fmt(ER.cases));
+  set('pPerm', pct(PS.unique, PS.tot));
+  set('pToggle', pct(TG.board.per.unstable, TG.board.cases));
+  set('pSizeTie', String(firstAt('notiebreak')));
+  set('pSizeRev', String(firstAt('reversed')));
+  set('pSizeFirst', String(firstAt('firstkey')));
+  set('pFullDue', pct(CL.full.decided[2], CL.full.pairs));
+  set('pFullDueBlank', fmt(CL.full.blanks[2]));
+  set('pRecentId', pct(CL.recent.decided[1], CL.recent.pairs));
+  set('pMs', (MS / 1000).toFixed(1));
+}
+
+// ---------------------------------------------------------------- wiring
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".panel");
+Array.prototype.forEach.call(tabs, t => t.addEventListener("click", () => {
+  Array.prototype.forEach.call(tabs, x => x.classList.remove("on"));
+  t.classList.add("on");
+  Array.prototype.forEach.call(panels, p => p.classList.add("off"));
+  $(t.dataset.tab).classList.remove("off");
+}));
+
+let selImpl = $('selImpl'), selSpec = $('selSpec');
+selImpl.innerHTML = IMPL_IDS.map(id =>
+  "<option value='" + id + "'>" + esc(IMPLS[id].label) + " &middot; " + esc(IMPLS[id].note) +
+  "</option>").join('');
+selSpec.innerHTML = "<option value=''>&mdash;</option>" + SPEC_IDS.map(s =>
+  "<option value='" + s + "'>" + esc(s) + " &middot; " + esc(SPECS[s].label) + "</option>").join('');
+selSpec.value = 'board';
+selImpl.addEventListener('change', () => { implId = selImpl.value; lastShown = null; paint(); });
+selSpec.addEventListener('change', () => {
+  if (!selSpec.value) return;
+  spec = SPECS[selSpec.value].keys.map(k => ({ key: k.key, dir: k.dir }));
+  lastShown = null; paint();
+});
+$('bClear').addEventListener('click', () => { spec = []; selSpec.value = ''; lastShown = null; paint(); });
+$('bAgain').addEventListener('click', () => {
+  queryN++;
+  physical = shuffle(mulberry32(queryN * 7919 + 11), physical);
+  physical2 = shuffle(mulberry32(queryN * 104729 + 7), physical);
+  paint();
+});
+$('bPage').addEventListener('click', () => {
+  pageMode = !pageMode;
+  $('bPage').textContent = pageMode ? "show it as one list" : "show it as two pages";
+  lastShown = null; paint();
+});
+
+paint();
+fillExhibits();
+// Four and a bit million assertions is a few seconds of arithmetic, so the table is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing here is skipped -
+// every figure on the page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  fillExact(); fillP1(); fillProps(); fillPage(); fillSize(); fillSpec();
+  fillClause(); fillDelete(); fillFold(); fillAx(); fillProse();
+}, 30);
+</script>
+</body>
+</html>
