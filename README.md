@@ -75,6 +75,8 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 70 — Order keys](https://dev48.infy.uk/design/day70-order-keys.html) — `day70-order-keys.html`
 - [DesignFromZero · Day 71 — Undo history](https://dev48.infy.uk/design/day71-undo-history.html) — `day71-undo-history.html`
 - [DesignFromZero · Day 72 — Multi-key table sort](https://dev48.infy.uk/design/day72-multi-key-sort.html) — `day72-multi-key-sort.html`
+- [DesignFromZero · Day 73 — Toolbar Overflow](https://dev48.infy.uk/design/day73-toolbar-overflow.html) — `day73-toolbar-overflow.html`
+- [DesignFromZero · Day 74 — Scroll-spy](https://dev48.infy.uk/design/day74-scroll-spy.html) — `day74-scroll-spy.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

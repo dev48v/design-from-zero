@@ -1,0 +1,1735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 74 &mdash; Scroll-spy</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1f5f9; color:#0f172a; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e8edf5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#0e7490; }
+
+  header { background:#fff; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#0e7490; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e8edf5; color:#0f172a; }
+  .tabs button.on { background:#0f172a; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e8edf5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#475569; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#64748b; margin:0 0 12px; }
+  .note { font-size:12px; color:#64748b; margin:12px 0 0; }
+  .rule { border-top:1px solid #e2e8f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; }
+  .prose ul { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e2e8f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num tr.me td { background:#ecfeff; font-weight:700; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#94a3b8; }
+  .scroll { overflow-x:auto; }
+
+  .ctl2 { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+          font-size:13px; max-width:100%; }
+  /* the rule select carries a whole clause of option text; without a cap it sets its own width from
+     the longest option and drags a phone-width page sideways. */
+  .ctl2 label { display:flex; flex-direction:column; gap:3px; min-width:0; max-width:100%; }
+  .ctl2 select { max-width:100%; }
+  .ctl2 span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b; }
+  .ctl2 select, .ctl2 button, .ctl2 input[type=range] { font:inherit; font-size:13px; padding:6px 10px;
+          border-radius:8px; border:1px solid #cbd5e1; background:#fff; }
+  .ctl2 input[type=range] { padding:0; width:220px; max-width:100%; }
+  .ctl2 button { cursor:pointer; font-weight:700; background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl2 button.ghost { background:#fff; color:#0f172a; }
+
+  .badge { display:inline-block; font-size:11.5px; font-weight:800; letter-spacing:.04em;
+           border-radius:999px; padding:4px 12px; border:1px solid #cbd5e1; background:#f8fafc;
+           color:#475569; }
+  .badge.pass { background:#dcfce7; border-color:#86efac; color:#14532d; }
+  .badge.fail { background:#fee2e2; border-color:#fca5a5; color:#7f1d1d; }
+
+  /* the pane and its table of contents. The pane is a real scroll container at a real pixel height,
+     so the browser's own scrollTop is the engine's s and the two numbers are printed side by side. */
+  .spy { display:grid; gap:14px; align-items:start; }
+  @media (min-width:720px) { .spy { grid-template-columns:minmax(0,220px) minmax(0,1fr); } }
+  .toc { list-style:none; margin:0; padding:8px 0 0; border-left:2px solid #e2e8f0; }
+  .toc li { position:relative; }
+  .toc button { display:block; width:100%; text-align:left; font:inherit; font-size:12.5px;
+                border:0; background:none; cursor:pointer; color:#64748b; padding:5px 8px 5px 12px;
+                border-left:2px solid transparent; margin-left:-2px; border-radius:0 6px 6px 0; }
+  .toc button.on { color:#0e7490; font-weight:800; border-left-color:#0e7490; background:#ecfeff; }
+  .toc button.dark { color:#b91c1c; }
+  .toc .never { font-size:9.5px; font-weight:800; letter-spacing:.06em; color:#b91c1c;
+                border:1px solid #fca5a5; border-radius:4px; padding:0 4px; margin-left:6px; }
+  /* the border lives on the box, never on the scroller: with box-sizing:border-box a 1px border
+     would make clientHeight 398 and the model's 400 would be describing a pane that is not there. */
+  .paneBox { position:relative; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden;
+             background:#f8fafc; }
+  .pane { height:400px; overflow-y:auto; overflow-x:hidden; background:#f8fafc; }
+  .doc { position:relative; }
+  /* the declared height IS the model, so content that would not fit is clipped rather than
+     stretching the scroller past the number every table on this page reasons about. */
+  .sec { border-bottom:1px dashed #dbeafe; padding:0 14px; overflow:hidden; }
+  .sec h4 { margin:0; padding-top:10px; font-size:13px; font-weight:800; color:#0f172a; }
+  .sec p { margin:6px 0 0; font-size:11.5px; color:#94a3b8; line-height:1.5; }
+  .sec.lit { background:#ecfeff; }
+  .readline { position:absolute; left:0; right:0; height:0; border-top:2px dashed #0e7490;
+              pointer-events:none; z-index:5; }
+  .readline b { position:absolute; right:6px; top:-16px; font-size:9.5px; font-weight:800;
+                letter-spacing:.08em; color:#0e7490; background:#fff; padding:0 4px;
+                border-radius:4px; border:1px solid #a5f3fc; }
+  .paneWrap { position:relative; }
+  .seq { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:#334155;
+         word-break:break-all; }
+  .pill { display:inline-block; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px;
+          border:1px solid #cbd5e1; background:#f6f8fb; color:#475569; border-radius:6px;
+          padding:1px 7px; margin:0 5px 5px 0; }
+  .pill.dark { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 74</p>
+    <h1>
+      &#9660; Scroll-spy &mdash; the table of contents that lights the heading you are reading. One
+      integer to settle, and the thing everybody tests about it is
+      <em>exactly one entry is lit, it never jumps backwards, and it is on screen</em>. That is
+      satisfied at <strong>every one</strong> of <strong id="pPixels">21,909</strong> whole pixels of
+      scroll across three real documents by <strong id="pBlind">seven</strong> of these
+      <strong id="pImpls">nine</strong> implementations &mdash; and <strong id="pWrong">six</strong> of
+      those seven are wrong, because a heading that is in the table of contents
+      <strong>never lights at all</strong>: <strong id="pDark">8</strong> of
+      <strong id="pEntries">34</strong> entries, named below. The textbook reading line is not buggy
+      &mdash; it satisfies <em>the reading line is inside the lit section</em> at 100% of pixels, and
+      that property is <strong>provably incompatible</strong> with <em>every entry lights</em> on any
+      page whose last headings sit inside the final screen. So you must break one of them, and the
+      correct rule breaks the first one by the least it can: <strong id="pCapped">8</strong> clamped
+      thresholds, all <strong id="pForced">8</strong> forced, worst early activation
+      <strong id="pWorstEarly">608</strong>px against a ceiling of
+      <strong id="pEarlyBound">704</strong>. Also here: never moving backwards is
+      <strong>vacuous</strong> &mdash; <strong id="pBack">0</strong> backward steps in
+      <strong id="pMonoOf">11,557,377</strong> comparisons, and a two-line proof of why;
+      <em>click an entry and it lights</em> is capped by a pigeonhole the correct rule hits exactly;
+      and on the standard six-equal-sections fixture <strong id="pFixPass">seven</strong> of nine pass
+      every test, including a rule that ignores section heights entirely.
+      <strong id="pTotal">58,019,556 assertions</strong> on load. Pure vanilla JavaScript, one file,
+      no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9654;&#9654; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Scroll the pane.</strong> It is a real scroll container at a real pixel height, so the
+        browser's own <code>scrollTop</code> is the engine's <code>s</code> &mdash; the note under it
+        prints the browser's measurement of every section offset next to the modelled one, and they
+        have to agree. The dashed line is the reading line. Switch <em>rule</em> to watch a different
+        implementation answer the same question, then press <strong>walk the whole scroll</strong>:
+        entries that never light once, at any scroll position, get a <span class="never">NEVER</span>
+        tag and stay tagged.
+      </p>
+      <div class="ctl2">
+        <label><span>RULE</span><select id="selImpl"></select></label>
+        <label><span>SCROLL &middot; <b id="sNum">0px</b></span>
+          <input type="range" id="slS" min="0" max="2390" value="0" /></label>
+        <label><span>&nbsp;</span><button id="bWalk" class="ghost">walk the whole scroll</button></label>
+        <label><span>&nbsp;</span><button id="bBottom">take me to the bottom</button></label>
+      </div>
+      <div class="spy">
+        <ul class="toc" id="toc"></ul>
+        <div class="paneWrap">
+          <div class="paneBox">
+            <div class="pane" id="pane"><div class="doc" id="doc"></div></div>
+            <div class="readline" id="rline"><b>READING LINE</b></div>
+          </div>
+          <p class="note" id="liveNote"></p>
+        </div>
+      </div>
+      <div class="rule">
+        <p class="cap">THE SAME SCROLL POSITION, ALL NINE RULES</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>the one clause that differs</th><th>lights</th>
+            <th>line inside<br>that section</th><th>on screen</th>
+            <th>entries it can<br>never light</th></tr></thead>
+          <tbody id="liveTab"></tbody></table></div>
+        <p class="note"><span class="badge" id="selftest">self-check: running&hellip;</span></p>
+        <p class="note" id="assertline"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONLY THING YOU CAN SEE</p>
+      <p class="lead">
+        <em>One entry is lit, it never moves backwards while you scroll down, and the section it
+        names is on screen.</em> Those are the three things a scroll-spy test can assert without
+        knowing which document it is looking at, and they are what a screenshot, a snapshot test and
+        a bug report can all see. Every whole pixel of scroll, three real documents. Read the two
+        right-hand columns afterwards, not before.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the one clause that differs</th>
+          <th>one entry<br>lit</th><th>never moves<br>backwards</th><th>lit section<br>on screen</th>
+          <th>entries that<br>never light</th><th>and which<br>ones</th></tr></thead>
+        <tbody id="tSeen"></tbody></table></div>
+      <p class="note" id="seennote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SIX PROPERTIES, AND EXACTLY WHAT EACH ONE CAN SEE</p>
+      <p class="lead">
+        The same sweep asked six ways, in the order a team writes them. The first three are the blind
+        ones. None of the six is a superset of the others, two of them are
+        <strong>mutually unsatisfiable</strong> on these documents, and the last one is capped below
+        100% for every rule by an argument that has nothing to do with the rule.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th id="hProps" colspan="6"></th></tr>
+          <tr id="hProps2"></tr></thead>
+        <tbody id="tProps"></tbody></table></div>
+      <p class="note" id="propnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE TWO PROPERTIES THAT CANNOT BOTH HOLD</p>
+      <p class="lead">
+        The reading line sweeps the document from <code>off</code> to <code>M + off</code> and no
+        further, because <code>M = D &minus; view</code> is where the scroll ends. Any heading whose
+        top is past <code>M + off</code> can never have the line inside it, so a rule that insists on
+        <em>the line is inside the lit section</em> can never light that entry &mdash; on these three
+        documents that is <strong id="pColl">8</strong> entries, and they are the ones a reader
+        actually reaches for.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>document</th><th>entries</th><th>document<br>height</th><th>M</th>
+          <th>line reaches<br>as far as</th><th>entries past it</th><th>which entries</th></tr></thead>
+        <tbody id="tColl"></tbody></table></div>
+      <p class="note" id="collnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SO THE CLAMP IS NOT A HEURISTIC &mdash; IT IS THE ONLY PLACE LEFT</p>
+      <p class="lead">
+        Every entry needs a pixel of scroll, and entry <code>i</code> has to leave one for each of the
+        <code>n&minus;1&minus;i</code> entries after it, so its threshold cannot be later than
+        <code>M &minus; (n&minus;1&minus;i)</code>. Push any clamped threshold one pixel later and the
+        room runs out &mdash; checked one entry at a time, not asserted.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>document</th><th>thresholds<br>clamped</th><th>of those, provably<br>forced</th>
+          <th>total early<br>activation</th><th>worst single<br>entry</th><th>ceiling<br>view &minus; off</th>
+          <th>within it</th></tr></thead>
+        <tbody id="tClamp"></tbody></table></div>
+      <p class="note" id="clampnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND THE TEST EVERYBODY ACTUALLY WRITES IS CAPPED BEFORE IT STARTS</p>
+      <p class="lead">
+        <em>Click the entry, check the entry lights.</em> Every heading whose top sits inside the
+        final screen scrolls to the same place &mdash; the bottom &mdash; so a rule is handed one
+        scroll position and asked for several different answers. Whatever the rule,
+        <code>atBottom &minus; 1</code> of them must be wrong. The threshold table hits that bound
+        exactly on all three documents; nothing else does better, and the strict reading line manages
+        <strong id="pStrictRT">3</strong> of <strong id="pStrictRTof">34</strong>.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>document</th><th>entries</th><th>clamp to<br>the bottom</th>
+          <th>best possible<br>round trip</th><th>threshold<br>table</th><th>reading<br>line</th>
+          <th>strict<br>line</th><th>bound met</th></tr></thead>
+        <tbody id="tRT"></tbody></table></div>
+      <p class="note" id="rtnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND ONE PROPERTY THAT SEPARATES NOTHING, FOR A REASON</p>
+      <p class="lead">
+        <em>The highlight never jumps backwards.</em> It is the second thing anybody asserts and it
+        cannot fail. At any scroll pixel at most one section is entering the window at the bottom and
+        at most one is leaving at the top; every other section's visible height is unchanged. So
+        visible height rises then falls, in index order, and every rule here &mdash; including
+        &ldquo;pick the biggest&rdquo; and &ldquo;pick the largest fraction&rdquo; &mdash; is monotone
+        by construction. Measured, not assumed.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>document</th><th>pixels<br>checked</th><th>most sections<br>rising at once</th>
+          <th>most falling<br>at once</th><th>backward steps,<br>all nine rules</th></tr></thead>
+        <tbody id="tUni"></tbody></table></div>
+      <p class="note" id="uninote"></p>
+      <div class="rule">
+        <p class="cap">THE RULE THAT DOES GO WRONG, AND NOT IN THE WAY YOU EXPECT</p>
+        <p class="lead">
+          The canonical recipe is an <code>IntersectionObserver</code> over a band under the reading
+          line: take the last heading it reports inside the band, keep the previous answer when it
+          reports none. It carries state, so it is not a function of the scroll position &mdash; and
+          a test that only scrolls downward can never see that. Arrive at the same pixel going up
+          instead and the answer differs on most of the page, always by exactly one entry.
+        </p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>document</th><th>band</th><th>pixels where it<br>reports nothing</th>
+            <th>pixels whose answer<br>depends on direction</th><th>worst<br>disagreement</th>
+            <th>entries lit<br>going down</th><th>going up</th><th>backward steps<br>going down</th></tr></thead>
+          <tbody id="tBand"></tbody></table></div>
+        <p class="note" id="bandnote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONE-CHARACTER DIFFERENCE, AND EXACTLY HOW MANY PIXELS IT COSTS</p>
+      <p class="lead">
+        <code>top &le; s + off</code> and <code>top &lt; s + off</code> differ by one character, so
+        they can only disagree on the pixels where the line lands exactly on a heading top: one pixel
+        per reachable heading, and no others. That is a prediction with a closed form, and it holds
+        to the pixel &mdash; which is also why the defect is invisible to everything except the click
+        test, where it is fatal.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>document</th><th>reachable<br>headings</th><th>predicted<br>disagreements</th>
+          <th>measured</th><th>as a share of<br>the scroll</th><th>click round trip,<br>strict line</th></tr></thead>
+        <tbody id="tOB"></tbody></table></div>
+      <p class="note" id="obnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHAT A TEST FIXTURE CANNOT SEE, AND WHY IT IS ARITHMETIC</p>
+      <p class="lead">
+        The fixture is six identical 900px sections. Every heading's top reaches the reading line
+        long before the scroll ends, so <em>every entry lights</em> is free, and the click round trip
+        is free with it. Same nine rules, same sweep, three corpora: identical tall sections, real
+        documentation pages where a quarter of the sections are short, and changelogs where all of
+        them are.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the fixture<br><span class="dim" id="hFix"></span></th>
+          <th>fixture corpus<br><span class="dim" id="hCf"></span></th>
+          <th>documentation corpus<br><span class="dim" id="hCd"></span></th>
+          <th>changelog corpus<br><span class="dim" id="hCc"></span></th>
+          <th>three real<br>documents</th></tr></thead>
+        <tbody id="tCorp"></tbody></table></div>
+      <p class="note" id="corpnote"></p>
+      <div class="rule">
+        <p class="cap">THE SAME FIXTURE, ASKED FOR EVERY PROPERTY AT ONCE</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>one entry<br>lit</th><th>never<br>backwards</th><th>on<br>screen</th>
+            <th>line<br>inside</th><th>every entry<br>lights</th><th>click round<br>trip</th>
+            <th>all six</th></tr></thead>
+          <tbody id="tFix"></tbody></table></div>
+        <p class="note" id="fixnote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND IT GETS WORSE ON THE BIGGER MONITOR</p>
+      <p class="lead">
+        An entry goes dark when its top only reaches the line past the end of the scroll, and the end
+        of the scroll is <code>D &minus; view</code>. A taller window is a shorter scroll, so the
+        count can only go up &mdash; which makes this the rare defect the reviewer on the 27-inch
+        monitor sees and the 800-pixel test runner does not.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>window height</th><th>total scroll<br>across three docs</th>
+          <th>entries the reading<br>line can never light</th><th>as a share of 34</th>
+          <th>thresholds clamped</th><th>entries the table<br>can never light</th></tr></thead>
+        <tbody id="tView"></tbody></table></div>
+      <p class="note" id="viewnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND THE PAGE THAT DOES NOT SCROLL AT ALL</p>
+      <p class="lead">
+        Four entries, a document shorter than the window, one scroll position. A rule that is a
+        function of the scroll position visits at most <code>M + 1</code> values, so at most
+        <code>min(n, M+1)</code> entries can ever light. Here that is one. This is not a bug to fix,
+        it is the answer &mdash; and it is worth knowing that the bound exists before you go hunting
+        for the rule that beats it.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>entries</th><th>scroll positions</th><th>ceiling</th>
+          <th>entries lit</th><th>which one</th><th>within the bound</th></tr></thead>
+        <tbody id="tStub"></tbody></table></div>
+      <p class="note" id="stubnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THREE DOCUMENTS, WRITTEN OUT IN FULL</p>
+      <p class="lead">
+        Section heights, the scroll at which each heading's top reaches the reading line, and the
+        threshold the table actually uses. Where the two differ the threshold has been clamped, and
+        the clamped ones are always a run at the end.
+      </p>
+      <div id="tDocs"></div>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#129504; What is actually going on</h2>
+      <p>
+        A scroll-spy is the smallest interesting component on a documentation site: a list of
+        headings, and one of them lit. There is exactly one number to compute &mdash; the index of
+        the lit entry &mdash; and the obvious way to compute it is right about the middle of the
+        page and silently wrong about the end of it.
+      </p>
+
+      <h3>1. The rule everybody writes, and what it actually promises</h3>
+      <p>
+        Put a reading line a fixed distance below the top of the window, at
+        <code>s + off</code> where <code>s</code> is the scroll position. Light the last heading whose
+        top has passed it. It is three lines, it is monotone, the lit section is always on screen, and
+        the reading line is always inside it. Every property you would think to assert holds at every
+        single pixel.
+      </p>
+      <p>
+        What it promises, precisely, is: <em>the lit entry is the section the reading line is in.</em>
+        That promise is kept perfectly. The problem is that the line does not go everywhere.
+      </p>
+
+      <h3>2. The line stops before the document does</h3>
+      <p>
+        The scroll ends at <code>M = D &minus; view</code>, so the reading line sweeps from
+        <code>off</code> to <code>M + off</code> &mdash; which is <code>D &minus; (view &minus; off)</code>,
+        not <code>D</code>. Everything in the last <code>view &minus; off</code> pixels of the document
+        is below the line forever. If a heading starts in there, the line never reaches it, and the
+        rule that promises &ldquo;the section the line is in&rdquo; can never name it.
+      </p>
+      <p>
+        This is not a rare shape. It is what the end of a documentation page looks like:
+        <em>Browser compatibility</em>, <em>See also</em>, <em>License</em>. Three short sections in a
+        row and three entries in the table of contents that no amount of scrolling will ever light.
+      </p>
+
+      <h3>3. So the two properties collide, and one of them has to go</h3>
+      <p>
+        Write them down together:
+      </p>
+      <ul>
+        <li><strong>Inside:</strong> whenever entry <em>i</em> is lit, the reading line is inside section <em>i</em>.</li>
+        <li><strong>Reachable:</strong> for every entry <em>i</em> there is some scroll position where <em>i</em> is lit.</li>
+      </ul>
+      <p>
+        If <code>top_i &gt; M + off</code> then no scroll position puts the line inside section
+        <em>i</em>, so <em>Inside</em> forbids ever lighting it and <em>Reachable</em> demands it. The
+        two cannot both hold. Not &ldquo;usually conflict&rdquo; &mdash; cannot. And the choice is not
+        symmetric: violating <em>Inside</em> means an entry lights slightly early, which nobody
+        notices; violating <em>Reachable</em> means an entry in your navigation is dead, which is the
+        bug report.
+      </p>
+
+      <h3>4. Which turns the whole thing into a table, not a test</h3>
+      <p>
+        Once you accept that some entries must light early, you cannot answer the question from the
+        current scroll position alone &mdash; how early entry <em>i</em> has to be depends on how many
+        entries come after it. So compute the whole table once. Entry <em>i</em> takes over at scroll
+        <code>t_i</code>, and:
+      </p>
+      <pre><code>t_i = clamp(top_i - off,  i,  max(i, M - (n-1-i)))
+      natural value    lower    upper</code></pre>
+      <p>
+        The lower bound says every earlier entry already used a pixel. The upper bound says every
+        later entry still needs one. Clamping a strictly increasing sequence between two strictly
+        increasing bounds leaves it strictly increasing &mdash; that single sentence is the whole
+        correctness proof, and it gives you <em>Reachable</em> for free, because strictly increasing
+        thresholds means every entry owns a non-empty range of scroll.
+      </p>
+
+      <h3>5. And the clamp is the least you can pay</h3>
+      <p>
+        The upper bound is not a taste decision. If entry <em>i</em> took over even one pixel later
+        there would be fewer than <code>n&minus;1&minus;i</code> pixels left, and one of the entries
+        after it would have nowhere to live. So among all rules that are monotone and light every
+        entry, the clamped value is the <em>latest</em> possible, and therefore the early activation
+        it pays is the smallest any correct rule can pay. On these three documents that is
+        <strong id="uEarly">1,047</strong>, <strong>909</strong> and <strong>665</strong> pixels
+        spread across the clamped entries, worst case
+        <strong id="uWorst">608</strong>px &mdash; and it can never exceed
+        <code>view &minus; off</code>, which is <strong id="uBound">704</strong>.
+      </p>
+
+      <h3>6. The test everybody writes cannot pass, and that is arithmetic too</h3>
+      <p>
+        <em>Click the entry, assert the entry lights.</em> Clicking entry <em>i</em> scrolls to
+        <code>top_i &minus; off</code>, clamped into <code>[0, M]</code>. Every entry starting inside
+        the final screen clamps to the same value: <code>M</code>. So the rule is handed one input
+        and asked for <em>k</em> different outputs. At least <code>k &minus; 1</code> of them are
+        wrong for any rule at all. The threshold table is wrong on exactly
+        <code>k &minus; 1</code> &mdash; it hits the bound &mdash; and a test asserting 100% is
+        asserting something no implementation can deliver.
+      </p>
+      <p>
+        The same test is savage about a defect nobody would call important: change
+        <code>&le;</code> to <code>&lt;</code> and the click round trip collapses from
+        <strong id="uLineRT">26</strong> of 34 to <strong id="uStrictRT">3</strong>, because the click
+        lands the line exactly on the heading top, which is the one pixel where the two rules
+        disagree.
+      </p>
+
+      <h3>7. Nothing flickers, and the reason is worth knowing</h3>
+      <p>
+        The other thing everybody asserts is that the highlight does not jump around. It cannot. As
+        <code>s</code> grows by one pixel, at most one section gains a visible pixel (the one the
+        bottom edge is inside) and at most one loses one (the one the top edge is inside). Every other
+        section is unchanged. So each section's visible height rises then falls, they rise and fall in
+        index order, and the argument-maximum of an ordered family of unimodal functions moves
+        forward only. That covers &ldquo;most visible&rdquo;, &ldquo;largest fraction&rdquo;,
+        &ldquo;nearest&rdquo;, every threshold rule and the scroll-percentage rule &mdash;
+        <strong id="uBack">0</strong> backward steps in <strong id="uMonoOf">11,557,377</strong>
+        adjacent-pixel comparisons.
+      </p>
+      <p>
+        The flicker people write hysteresis to fix is real, but it comes from state, not from the
+        rule. The canonical <code>IntersectionObserver</code> band recipe keeps the previous answer
+        whenever the callback reports nothing &mdash; and it reports nothing for
+        <strong id="uHold">87.6%</strong> of the scroll on a long page. That makes it a function of
+        the path, not the position: reach the same pixel going up rather than down and the answer is
+        different on <strong id="uPath">87.6%</strong> of the page, always by exactly one entry. A
+        test that scrolls in one direction cannot see any of it.
+      </p>
+
+      <h3>8. What the fixture cannot see, and why that is computable</h3>
+      <p>
+        Six identical 900px sections. <code>M = 4,600</code>, and the last heading's top is at 4,500,
+        which reaches the line at 4,404 &mdash; comfortably inside the scroll. So on that fixture
+        <em>every entry lights</em> costs nothing, the click round trip costs nothing, and
+        <strong id="uFixPass">seven</strong> of the nine rules pass every test in the file, including
+        the one that maps scroll percentage straight onto the entry count and never looks at a section
+        height at all. The fixture separates exactly two rules, and both of them by the same
+        one-pixel boundary.
+      </p>
+      <p>
+        Generating more fixtures does not help: 80 random documents built the same way separate
+        <strong id="uCf">nothing</strong>. Change one thing &mdash; let a quarter of the sections be
+        short, the way a real page has a short &ldquo;See also&rdquo; &mdash; and the reading line
+        loses an entry on <strong id="uCd">56.3%</strong> of pages. Make every section short, the way
+        a changelog is, and it is <strong id="uCc">100.0%</strong>. Same code, same oracle, same
+        assertions. The corpus was the test.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#128296; How it is built</h2>
+
+      <h3>1. One block of pure functions, and no DOM in it</h3>
+      <p>
+        Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> is arithmetic over
+        pixel offsets. No <code>document</code>, no <code>window</code>, no clock, no
+        <code>Math.random</code>. The verifier lifts that block straight out of the file with a
+        regular expression, evaluates it, and refuses to run if it finds a DOM access &mdash; which
+        means the thing being checked is exactly the thing the page runs, not a copy of it.
+      </p>
+
+      <h3>2. The document model is three arrays</h3>
+      <p>
+        Section heights, prefix sums for the tops, and the document height. Sections tile the
+        document with no gaps, so section <em>i</em> owns <code>[top_i, top_i + h_i)</code> and the
+        last one ends at <code>D</code>. That is the only geometry on the page; everything else is
+        comparisons against <code>s + off</code>.
+      </p>
+
+      <h3>3. Nine rules, one clause apart</h3>
+      <p>
+        Each implementation is a single <code>active(P, view, off, s, pre)</code> that returns an
+        index. They are deliberately written as neighbours &mdash; <code>&le;</code> versus
+        <code>&lt;</code>, most pixels versus largest fraction, with and without the
+        force-the-last-one patch &mdash; so that a difference in the tables is a difference in one
+        clause and not in one program.
+      </p>
+
+      <h3>4. The threshold table is built with two clamps and no search</h3>
+      <p>
+        The lower bound is <code>i</code>; the upper is <code>max(i, M &minus; (n&minus;1&minus;i))</code>.
+        The <code>max</code> is not decoration: on a page too short to give every entry a pixel the
+        upper bound would fall below the lower one, and letting the lower one win keeps the table
+        strictly increasing so the reader is honest about which entries are unreachable rather than
+        silently returning the wrong one.
+      </p>
+
+      <h3>5. Every number is computed twice, from different shapes</h3>
+      <p>
+        The lit entry comes out of a binary search over the threshold table. The same answer is
+        rebuilt as explicit activation intervals <code>[t_i, t_{i+1} &minus; 1]</code>, checked to tile
+        <code>[0, M]</code> with no gap, no overlap and no empty range, and then read linearly at
+        every pixel. Both readings agree at <strong id="bIv">21,909</strong> of
+        <strong id="bIvOf">21,909</strong> scroll positions, every load.
+      </p>
+
+      <h3>6. A whole-pixel sweep, not a sample</h3>
+      <p>
+        Nothing here is sampled. The three real documents are swept at every integer scroll position
+        &mdash; 8,097, 11,471 and 2,341 of them &mdash; for all nine rules and six properties, and
+        the corpora add <strong id="bCorpus">1,255,497</strong> more scroll positions. Sampling would
+        have missed the one-character defect entirely: it lives on 23 pixels out of 21,909.
+      </p>
+
+      <h3>7. The stateful rule is swept twice, on purpose</h3>
+      <p>
+        The band rule is not a function of <code>s</code>, so a single sweep does not describe it.
+        It is run downward from 0 to <code>M</code> and upward from <code>M</code> to 0, both traces
+        kept, and the disagreement counted per pixel. That is the only way the path dependence shows
+        up as a number instead of a hunch.
+      </p>
+
+      <h3>8. What the verifier does differently</h3>
+      <p>
+        None of the oracles shares a representation with the page. The document set is restated as
+        literals and checked control by control. The lit entry is recomputed by a
+        <em>linear scan with no binary search</em>, and again from a fully expanded
+        <em>scroll-position &rarr; entry array</em> built once per document. The threshold table is
+        re-derived by <em>constraint propagation</em> &mdash; repeatedly tightening bounds until they
+        stop moving &mdash; rather than by clamping in one pass. Reachability is recomputed as a
+        <em>set of distinct values</em> in the expanded array. The click bound is re-derived by
+        <em>counting collisions among clamped targets</em>. And the monotonicity claim is checked by
+        an independent <em>unimodality argument</em> over per-section visible heights. Every
+        percentage the page prints is recomputed, not restated.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// Scroll-spy. A page of headings, a table of contents beside it, and one integer to settle: which
+// entry is lit while the reader sits at scroll position s. Everything here is arithmetic over pixel
+// offsets - no DOM, no clock, no Math.random - so the verifier can lift this block straight out of
+// the page and run it under node against oracles built on other representations.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- the documents
+// A section is a heading plus the prose under it, in CSS pixels. Sections tile the document with no
+// gaps, so section i owns [top_i, top_i + h_i) and the last one ends at the document height.
+const DOCS = {
+  api: { label:'an API reference page', view:800, off:96, sections:[
+    ['Overview', 640], ['Constructor', 980], ['Instance properties', 1520], ['Instance methods', 2240],
+    ['Static methods', 760], ['Events', 880], ['Examples', 1180], ['Browser compatibility', 420],
+    ['See also', 180], ['License', 96]
+  ]},
+  guide: { label:'a long tutorial', view:800, off:96, sections:[
+    ['Introduction', 720], ['Before you start', 460], ['Install the toolchain', 1340],
+    ['Your first component', 2180], ['State and effects', 1960], ['Routing', 1420],
+    ['Data fetching', 1680], ['Testing', 1240], ['Deploying', 900], ['Next steps', 240],
+    ['Feedback', 130]
+  ]},
+  changelog: { label:'a changelog', view:800, off:96, sections:[
+    ['v4.2.0', 260], ['v4.1.3', 210], ['v4.1.2', 190], ['v4.1.1', 240], ['v4.1.0', 320],
+    ['v4.0.2', 200], ['v4.0.1', 180], ['v4.0.0', 460], ['v3.9.4', 220], ['v3.9.3', 200],
+    ['v3.9.2', 170], ['v3.9.1', 190], ['v3.9.0', 300]
+  ]},
+  // The document in every scroll-spy test ever written: a handful of identical tall sections.
+  fixture: { label:'the test fixture', view:800, off:96, sections:[
+    ['Section one', 900], ['Section two', 900], ['Section three', 900], ['Section four', 900],
+    ['Section five', 900], ['Section six', 900]
+  ]},
+  // A page shorter than the window. There is nothing to scroll, so there is exactly one scroll
+  // position and four entries asking to be lit by it.
+  stub: { label:'a page that does not scroll', view:800, off:96, sections:[
+    ['Overview', 220], ['Usage', 180], ['Notes', 100], ['License', 60]
+  ]},
+  // The document the live pane renders, at its real pixel heights.
+  demo: { label:'the live pane', view:400, off:48, sections:[
+    ['Overview', 300], ['Installation', 480], ['Usage', 620], ['API', 540], ['Examples', 380],
+    ['Migrating', 240], ['FAQ', 120], ['See also', 70], ['License', 40]
+  ]}
+};
+const DOC_IDS = ['api', 'guide', 'changelog', 'fixture', 'stub', 'demo'];
+const REAL_IDS = ['api', 'guide', 'changelog'];
+const DEMO_ID = 'demo';
+
+// The analysis window and the reading line: a 64px sticky header plus 32px of air, which is what a
+// documentation site actually uses.
+const VIEW = 800, OFF = 96;
+// An IntersectionObserver written as rootMargin: '-96px 0px -70% 0px' watches a horizontal strip
+// this tall. It is not a constant, it is what is left of the window after the two margins.
+function bandHeight(view, off, tail){ return Math.max(1, view - off - Math.round(view * tail)); }
+const BAND_TAIL = 0.7;
+
+function prep(doc){
+  const n = doc.sections.length, h = new Array(n), top = new Array(n), name = new Array(n);
+  let acc = 0;
+  for (let i = 0; i < n; i++){
+    name[i] = doc.sections[i][0]; h[i] = doc.sections[i][1]; top[i] = acc; acc += h[i];
+  }
+  return { label:doc.label, n:n, h:h, top:top, name:name, D:acc,
+           view: doc.view || VIEW, off: doc.off || OFF };
+}
+function maxScroll(P, view){ return Math.max(0, P.D - view); }
+// raw_i = the scroll position at which heading i's top arrives at the reading line
+function rawThresholds(P, off){
+  const raw = new Array(P.n);
+  for (let i = 0; i < P.n; i++) raw[i] = P.top[i] - off;
+  return raw;
+}
+// where a table-of-contents click lands, after the browser clamps it to the scrollable range
+function clickTarget(P, view, off, i){
+  return Math.max(0, Math.min(maxScroll(P, view), P.top[i] - off));
+}
+
+// ---------------------------------------------------------------- the threshold table
+// The right rule is not a test you can apply to the current scroll position on its own. Build the
+// table once: t_i is the scroll at which entry i takes over. Three constraints, all forced:
+//   t_0 = 0                    the first entry is lit at the top of the page
+//   t_i >= t_{i-1} + 1         every entry owns at least one pixel of scroll, or it never lights
+//   t_i <= M - (n-1-i)         and it must leave one pixel for every entry after it
+// The value you want is raw_i. Clamping a strictly increasing sequence between two strictly
+// increasing bounds leaves it strictly increasing, and that is the whole proof.
+function thresholdTable(P, view, off){
+  const M = maxScroll(P, view), raw = rawThresholds(P, off), n = P.n;
+  const t = new Array(n), lo = new Array(n), hi = new Array(n),
+        capped = new Array(n).fill(false), floored = new Array(n).fill(false);
+  for (let i = 0; i < n; i++){
+    lo[i] = i;
+    // when the page is too short to give every entry a pixel the upper bound would fall below the
+    // lower one; the lower one wins, and the entries past pixel M are then honestly unreachable
+    hi[i] = Math.max(i, M - (n - 1 - i));
+    let v = raw[i];
+    if (v < lo[i]) { v = lo[i]; floored[i] = true; }
+    if (v > hi[i]) { v = hi[i]; capped[i] = true; }
+    t[i] = v;
+  }
+  return { t:t, lo:lo, hi:hi, capped:capped, floored:floored, M:M, raw:raw,
+           feasible: n - 1 <= M, ceiling: Math.min(n, M + 1) };
+}
+function lastAtMost(t, s){                 // last i with t[i] <= s, else 0
+  let a = 0, b = t.length - 1, r = 0;
+  while (a <= b){ const mid = (a + b) >> 1; if (t[mid] <= s){ r = mid; a = mid + 1; } else b = mid - 1; }
+  return r;
+}
+
+// ---------------------------------------------------------------- nine implementations
+function overlapPx(a0, a1, b0, b1){ return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0)); }
+
+const IMPLS = {
+  line: { id:'line', label:'reading line', clause:'last heading with top &le; s + off',
+    active(P, view, off, s, pre){ let r = 0; for (let i = 0; i < P.n; i++) if (P.top[i] <= s + off) r = i; return r; } },
+  lineBottom: { id:'lineBottom', label:'reading line with forced last', clause:'&hellip; and at the foot of the page, the last heading',
+    active(P, view, off, s, pre){ if (s >= pre.M) return P.n - 1;
+      let r = 0; for (let i = 0; i < P.n; i++) if (P.top[i] <= s + off) r = i; return r; } },
+  strict: { id:'strict', label:'strict reading line', clause:'last heading with top &lt; s + off',
+    active(P, view, off, s, pre){ let r = 0; for (let i = 0; i < P.n; i++) if (P.top[i] < s + off) r = i; return r; } },
+  nearest: { id:'nearest', label:'nearest heading', clause:'the heading whose top is closest to the line',
+    active(P, view, off, s, pre){
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < P.n; i++){ const d = Math.abs(P.top[i] - (s + off)); if (d < bd){ bd = d; best = i; } }
+      return best; } },
+  topmost: { id:'topmost', label:'topmost section on screen', clause:'first section with any pixel still in the window',
+    active(P, view, off, s, pre){ for (let i = 0; i < P.n; i++) if (P.top[i] + P.h[i] > s) return i; return P.n - 1; } },
+  biggest: { id:'biggest', label:'most visible section', clause:'the section with the most pixels on screen',
+    active(P, view, off, s, pre){
+      let best = 0, bo = -1;
+      for (let i = 0; i < P.n; i++){
+        const o = overlapPx(P.top[i], P.top[i] + P.h[i], s, s + view);
+        if (o > bo){ bo = o; best = i; }
+      }
+      return best; } },
+  ratio: { id:'ratio', label:'largest visible fraction', clause:'the section showing the largest fraction of itself',
+    active(P, view, off, s, pre){
+      let best = 0, br = -1;
+      for (let i = 0; i < P.n; i++){
+        const r = overlapPx(P.top[i], P.top[i] + P.h[i], s, s + view) / P.h[i];
+        if (r > br){ br = r; best = i; }
+      }
+      return best; } },
+  progress: { id:'progress', label:'scroll percentage', clause:'floor(n &middot; s / (M + 1)), heights ignored',
+    active(P, view, off, s, pre){ return Math.min(P.n - 1, Math.floor(P.n * s / (pre.M + 1))); } },
+  thresholds: { id:'thresholds', label:'threshold table', clause:'last entry with t_i &le; s, t built with both clamps',
+    active(P, view, off, s, pre){ return lastAtMost(pre.t, s); } }
+};
+const IMPL_IDS = ['line', 'lineBottom', 'strict', 'nearest', 'topmost', 'biggest', 'ratio',
+                  'progress', 'thresholds'];
+const CORRECT = 'thresholds';
+// the properties, in the order a team writes them. The first three are the ones a test can assert
+// without knowing anything about the document.
+const PROPS = [
+  { id:'inRange', label:'exactly one entry is lit', blind:true,
+    note:'true of anything that returns an index' },
+  { id:'mono',    label:'it never moves backwards as you scroll down', blind:true,
+    note:'provable for every rule that is a function of the scroll position' },
+  { id:'vis',     label:'the lit section is on screen', blind:true,
+    note:'the last thing you can assert without naming an entry' },
+  { id:'inside',  label:'the reading line is inside the lit section', blind:false,
+    note:'incompatible with the next one, on any page with a short tail' },
+  { id:'reached', label:'every entry lights at some scroll position', blind:false,
+    note:'the only property that sees the defect' },
+  { id:'roundTrip', label:'click an entry and that entry lights', blind:false,
+    note:'capped by a pigeonhole, so it cannot be all of them' }
+];
+const PROP_OF = { inRange:'scrolls', mono:'monoOf', vis:'scrolls', inside:'scrolls',
+                  reached:'reachOf', roundTrip:'roundTripOf' };
+
+// ---------------------------------------------------------------- the sweep
+// Every whole pixel of scroll, every implementation, five checks per pixel plus two per entry.
+function blankStat(){
+  return { scrolls:0, inRange:0, mono:0, monoOf:0, vis:0, inside:0, noEarly:0,
+           reached:0, reachOf:0, ceiling:0, roundTrip:0, roundTripOf:0,
+           back:0, worstBack:0, earlyPx:0, worstEarly:0, boundOk:0, boundOf:0, asserts:0 };
+}
+const STAT_KEYS = ['scrolls','inRange','mono','monoOf','vis','inside','noEarly','reached','reachOf',
+                   'ceiling','roundTrip','roundTripOf','back','earlyPx','boundOk','boundOf','asserts'];
+function addStat(a, s){
+  for (const k of STAT_KEYS) a[k] += s[k];
+  if (s.worstBack > a.worstBack) a.worstBack = s.worstBack;
+  if (s.worstEarly > a.worstEarly) a.worstEarly = s.worstEarly;
+}
+function sweep(P, view, off){
+  const pre = thresholdTable(P, view, off), M = pre.M, n = P.n;
+  const stat = {}, seen = {};
+  for (const id of IMPL_IDS){ stat[id] = blankStat(); seen[id] = new Uint8Array(n); }
+  let prev = null, asserts = 0;
+  for (let s = 0; s <= M; s++){
+    const now = {};
+    for (const id of IMPL_IDS){
+      const a = IMPLS[id].active(P, view, off, s, pre), st = stat[id];
+      now[id] = a; st.scrolls++;
+      if (a >= 0 && a < n) st.inRange++;
+      const ai = Math.max(0, Math.min(n - 1, a));
+      seen[id][ai] = 1;
+      if (overlapPx(P.top[ai], P.top[ai] + P.h[ai], s, s + view) > 0) st.vis++;
+      if (P.top[ai] <= s + off && s + off <= P.top[ai] + P.h[ai]) st.inside++;
+      if (P.top[ai] <= s + off) st.noEarly++;
+      else { const e = P.top[ai] - (s + off); st.earlyPx += e; if (e > st.worstEarly) st.worstEarly = e; }
+      st.asserts += 4;
+      if (prev){
+        st.monoOf++;
+        if (a >= prev[id]) st.mono++;
+        else { st.back++; const b = prev[id] - a; if (b > st.worstBack) st.worstBack = b; }
+        st.asserts++;
+      }
+    }
+    prev = now;
+  }
+  for (const id of IMPL_IDS){
+    const st = stat[id];
+    st.reachOf = n; st.ceiling = pre.ceiling;
+    for (let i = 0; i < n; i++) if (seen[id][i]) st.reached++;
+    st.asserts += n;
+    st.roundTripOf = n;
+    for (let i = 0; i < n; i++){
+      if (IMPLS[id].active(P, view, off, clickTarget(P, view, off, i), pre) === i) st.roundTrip++;
+      st.asserts++;
+    }
+    // a monotone rule visits at most M+1 values, so no rule can light more entries than that
+    st.boundOf = 1; st.asserts++;
+    if (st.reached <= pre.ceiling) st.boundOk = 1;
+    asserts += st.asserts;
+  }
+  return { stat:stat, seen:seen, pre:pre, M:M, scrolls:M + 1, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- second representation
+// Turn the threshold table into activation intervals, check they tile [0, M] with no gap and no
+// overlap, then read the interval at every pixel and compare against the binary search.
+function intervalCheck(P, view, off){
+  const pre = thresholdTable(P, view, off), n = P.n, iv = [];
+  for (let i = 0; i < n; i++) iv.push([pre.t[i], i === n - 1 ? Math.max(pre.t[i], pre.M) : pre.t[i + 1] - 1]);
+  let gaps = 0, overlaps = 0, empty = 0, agree = 0, asserts = 0;
+  if (iv[0][0] !== 0) gaps++;
+  for (let i = 0; i < n; i++){
+    if (iv[i][1] < iv[i][0]) empty++;
+    if (i){ if (iv[i][0] > iv[i - 1][1] + 1) gaps++; if (iv[i][0] <= iv[i - 1][1]) overlaps++; }
+    asserts += 2;
+  }
+  for (let s = 0; s <= pre.M; s++){
+    let byIv = -1;
+    for (let i = 0; i < n; i++) if (s >= iv[i][0] && s <= iv[i][1]) byIv = i;
+    if (byIv === lastAtMost(pre.t, s)) agree++;
+    asserts++;
+  }
+  return { iv:iv, gaps:gaps, overlaps:overlaps, empty:empty, agree:agree, of:pre.M + 1, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- why nothing ever flickers
+// At any scroll pixel at most one section is entering the window at the bottom and at most one is
+// leaving at the top; every other section's visible height is unchanged. So visible height as a
+// function of s rises then falls, and the sections rise and fall in index order - which makes any
+// "pick the biggest" rule monotone by construction rather than by luck.
+function unimodal(P, view){
+  const M = maxScroll(P, view);
+  let scrolls = 0, worstRising = 0, worstFalling = 0, asserts = 0;
+  for (let s = 0; s < M; s++){
+    let rising = 0, falling = 0;
+    for (let i = 0; i < P.n; i++){
+      const a = overlapPx(P.top[i], P.top[i] + P.h[i], s, s + view);
+      const b = overlapPx(P.top[i], P.top[i] + P.h[i], s + 1, s + 1 + view);
+      if (b > a) rising++; else if (b < a) falling++;
+    }
+    if (rising > worstRising) worstRising = rising;
+    if (falling > worstFalling) worstFalling = falling;
+    scrolls++; asserts += 2;
+  }
+  return { scrolls:scrolls, worstRising:worstRising, worstFalling:worstFalling, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the rule that carries state
+// The canonical recipe: an IntersectionObserver over a band under the reading line, take the last
+// heading it reports inside the band, keep the previous answer when it reports none. It is not a
+// function of the scroll position, so the same position has two answers - one if you arrived going
+// down, another if you arrived going up. A one-direction test cannot see that at all.
+function bandPick(P, off, band, s){
+  const lo = s + off, hi = s + off + band;
+  let last = -1, count = 0;
+  for (let i = 0; i < P.n; i++) if (P.top[i] >= lo && P.top[i] < hi){ last = i; count++; }
+  return { last:last, count:count };
+}
+function bandStudy(P, view, off, band){
+  const M = maxScroll(P, view), n = P.n;
+  const down = new Int32Array(M + 1), up = new Int32Array(M + 1);
+  let cur = 0, holds = 0, updates = 0, backDown = 0, twoInBand = 0, asserts = 0;
+  for (let s = 0; s <= M; s++){
+    const p = bandPick(P, off, band, s);
+    if (p.count > 1) twoInBand++;
+    if (p.last < 0) holds++;
+    else { updates++; if (p.last < cur) backDown++; cur = p.last; }
+    down[s] = cur; asserts += 2;
+  }
+  cur = down[M];
+  for (let s = M; s >= 0; s--){
+    const p = bandPick(P, off, band, s);
+    if (p.last >= 0) cur = p.last;
+    up[s] = cur; asserts++;
+  }
+  const seenDown = new Uint8Array(n), seenUp = new Uint8Array(n);
+  let differ = 0, worst = 0;
+  for (let s = 0; s <= M; s++){
+    seenDown[down[s]] = 1; seenUp[up[s]] = 1;
+    if (down[s] !== up[s]){ differ++; const d = Math.abs(down[s] - up[s]); if (d > worst) worst = d; }
+    asserts++;
+  }
+  let rd = 0, ru = 0;
+  for (let i = 0; i < n; i++){ if (seenDown[i]) rd++; if (seenUp[i]) ru++; }
+  return { scrolls:M + 1, holds:holds, updates:updates, backDown:backDown, twoInBand:twoInBand,
+           differ:differ, worstDiffer:worst, reachedDown:rd, reachedUp:ru, n:n, band:band,
+           asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the two properties collide
+// An entry can only be lit with the reading line inside its section if some scroll position puts the
+// line there, and the line only ever reaches top_i when top_i <= M + off. Any entry past that is
+// unreachable for every rule that insists the line be inside - so "the line is inside the lit
+// section" and "every entry lights" cannot both hold on that document. That is the whole story.
+function collision(P, view, off){
+  const M = maxScroll(P, view), out = [];
+  let asserts = 0;
+  for (let i = 0; i < P.n; i++){ if (P.top[i] > M + off) out.push(i); asserts++; }
+  return { unreachable:out, count:out.length, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the cap is forced
+// Among all monotone rules that light every entry, the capped threshold is the LATEST value that
+// entry can take, so the early activation the table pays is the least any correct rule can pay.
+// Proved per entry by pushing its threshold one pixel later and watching the room run out.
+function clampForced(P, view, off){
+  const pre = thresholdTable(P, view, off), n = P.n;
+  let capped = 0, forced = 0, early = 0, worst = 0, asserts = 0;
+  for (let i = 0; i < n; i++){
+    if (!pre.capped[i]) continue;
+    capped++;
+    if (pre.M - (pre.t[i] + 1) < n - 1 - i) forced++;
+    const e = pre.raw[i] - pre.t[i];
+    early += e; if (e > worst) worst = e;
+    asserts += 2;
+  }
+  return { capped:capped, forced:forced, earlyPx:early, worstEarly:worst, bound: view - off,
+           asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the click round trip is capped
+// Every heading whose top lies inside the final screen clamps to the same scroll position, so no
+// rule can answer differently for them. atBottom - 1 of them must be wrong, whatever the rule is.
+function roundTripLimit(P, view, off){
+  const M = maxScroll(P, view), n = P.n, seen = new Set();
+  let atBottom = 0, asserts = 0;
+  for (let i = 0; i < n; i++){
+    const s = clickTarget(P, view, off, i);
+    if (s === M) atBottom++;
+    seen.add(s); asserts++;
+  }
+  return { atBottom:atBottom, distinct:seen.size, n:n, best: n - Math.max(0, atBottom - 1),
+           asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the one-character defect
+// `line` and `strict` differ by one character, so they must disagree on exactly the pixels where the
+// reading line lands on a heading top - one pixel per reachable heading, and no others.
+function offByOne(P, view, off){
+  const pre = thresholdTable(P, view, off), M = pre.M;
+  let differ = 0, predicted = 0, asserts = 0;
+  for (let i = 1; i < P.n; i++) if (pre.raw[i] >= 0 && pre.raw[i] <= M) predicted++;
+  for (let s = 0; s <= M; s++){
+    if (IMPLS.line.active(P, view, off, s, pre) !== IMPLS.strict.active(P, view, off, s, pre)) differ++;
+    asserts++;
+  }
+  return { differ:differ, predicted:predicted, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the defect grows with the window
+// An entry goes dark when its top only reaches the line past the end of the scroll, and the end of
+// the scroll is D - view. Give the reader a taller window and more of the tail goes dark - so the
+// count is non-decreasing in the window height, which is worth checking rather than asserting.
+function viewportStudy(off, views){
+  const rows = [];
+  let asserts = 0, mono = 0, monoOf = 0, prev = -1;
+  for (const v of views){
+    let dark = 0, darkT = 0, capped = 0, entries = 0, M = 0;
+    for (const d of REAL_IDS){
+      const P = prep(DOCS[d]), c = collision(P, v, off), tt = thresholdTable(P, v, off);
+      dark += c.count; entries += P.n; M += tt.M;
+      capped += tt.capped.filter(Boolean).length;
+      darkT += Math.max(0, P.n - tt.ceiling);
+      asserts += c.asserts + 2;
+    }
+    rows.push({ view:v, M:M, dark:dark, darkT:darkT, capped:capped, entries:entries });
+    if (prev >= 0){ monoOf++; if (dark >= prev) mono++; asserts++; }
+    prev = dark;
+  }
+  return { rows:rows, mono:mono, monoOf:monoOf, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- corpora
+// Three generators. The first is what a test fixture is: identical tall sections. The second is what
+// a real documentation page is - a quarter of the sections are short, and some of those land at the
+// end. The third is a changelog: one short section per release.
+function genDoc(rnd, kind, n){
+  const sections = [];
+  for (let i = 0; i < n; i++){
+    let h;
+    if (kind === 'fixture') h = 900;
+    else if (kind === 'changelog') h = 150 + Math.floor(rnd() * 260);
+    else h = rnd() < 0.25 ? 80 + Math.floor(rnd() * 240) : 320 + Math.floor(rnd() * 1200);
+    sections.push(['s' + i, h]);
+  }
+  return { label:kind, sections:sections, view:VIEW, off:OFF };
+}
+function corpusSweep(kind, cases, nlo, nhi, seed, view, off){
+  const rnd = mulberry32(seed), agg = {};
+  for (const id of IMPL_IDS) agg[id] = blankStat();
+  let docs = 0, scrolls = 0, asserts = 0, infeasible = 0, entries = 0;
+  const dark = { docs:0, of:0, entries:0, lastDark:0 };
+  for (let c = 0; c < cases; c++){
+    const n = nlo + Math.floor(rnd() * (nhi - nlo + 1));
+    const P = prep(genDoc(rnd, kind, n)), r = sweep(P, view, off);
+    docs++; scrolls += r.scrolls; asserts += r.asserts; entries += n;
+    if (!r.pre.feasible) infeasible++;
+    for (const id of IMPL_IDS) addStat(agg[id], r.stat[id]);
+    const st = r.stat.line;
+    dark.of++;
+    if (st.reached < st.reachOf){
+      dark.docs++; dark.entries += st.reachOf - st.reached;
+      if (r.pre.raw[P.n - 1] > r.pre.M) dark.lastDark++;
+    }
+  }
+  return { kind:kind, docs:docs, scrolls:scrolls, agg:agg, asserts:asserts, dark:dark,
+           infeasible:infeasible, entries:entries };
+}
+function realSweep(view, off){
+  const per = {}, agg = {};
+  for (const id of IMPL_IDS) agg[id] = blankStat();
+  let scrolls = 0, asserts = 0, entries = 0;
+  for (const d of REAL_IDS){
+    const P = prep(DOCS[d]), r = sweep(P, view, off);
+    per[d] = r; scrolls += r.scrolls; asserts += r.asserts; entries += P.n;
+    for (const id of IMPL_IDS) addStat(agg[id], r.stat[id]);
+  }
+  return { per:per, agg:agg, scrolls:scrolls, asserts:asserts, entries:entries };
+}
+
+// The property a scroll-spy test can assert without knowing the document: one entry lit, it never
+// moves backwards, and it is on screen. Nothing at all about WHICH entry.
+function blindSet(agg){
+  return IMPL_IDS.filter(id => { const a = agg[id];
+    return a.inRange === a.scrolls && a.mono === a.monoOf && a.vis === a.scrolls; });
+}
+function darkSet(agg){
+  return IMPL_IDS.filter(id => agg[id].reached !== agg[id].reachOf);
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own prose
+// and "11,557,377" must not come back as "1,15,57,377" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const p100 = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + pct(x, n) + "</span>";
+const yn = b => b ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>";
+const cnt = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + x + " / " + n + "</span>";
+// small counts read as words in the prose, so the markup's fallback text and the rendered text are
+// the same string and the verifier can check one against the other.
+const WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+const word = n => (n >= 0 && n < WORDS.length) ? WORDS[n] : String(n);
+
+// The exact workload. Every figure this page prints comes out of these calls, and the verifier
+// replays the same counts and seeds through its own oracles before it checks the prose.
+const CASES = { fix: 80, docs: 80, chg: 80 };
+const SEEDS = { fix: 7401, docs: 7402, chg: 7403 };
+const NRANGE = { fix: [5, 12], docs: [5, 14], chg: [8, 20] };
+const VIEWS = [500, 600, 700, 800, 900, 1000, 1100, 1200, 1400, 1600];
+const BAND = bandHeight(VIEW, OFF, BAND_TAIL);
+
+let RS = null, IV = null, CF = null, RL = null, OB = null, UN = null, CO = null, BS = null;
+let FIX = null, STUB = null, DEMO = null, VS = null, CS = null;
+let TOTAL = 0, SCROLLS = 0, MONO = 0, MONO_OF = 0, BACKS = 0, MS = 0;
+
+function measure(){
+  const t0 = Date.now();
+  RS = realSweep(VIEW, OFF);
+  TOTAL = RS.asserts; SCROLLS = RS.scrolls;
+  IV = {}; CF = {}; RL = {}; OB = {}; UN = {}; CO = {}; BS = {};
+  for (const d of REAL_IDS){
+    const P = prep(DOCS[d]);
+    IV[d] = intervalCheck(P, VIEW, OFF);
+    CF[d] = clampForced(P, VIEW, OFF);
+    RL[d] = roundTripLimit(P, VIEW, OFF);
+    OB[d] = offByOne(P, VIEW, OFF);
+    UN[d] = unimodal(P, VIEW);
+    CO[d] = collision(P, VIEW, OFF);
+    BS[d] = bandStudy(P, VIEW, OFF, BAND);
+    TOTAL += IV[d].asserts + CF[d].asserts + RL[d].asserts + OB[d].asserts + UN[d].asserts +
+             CO[d].asserts + BS[d].asserts;
+  }
+  FIX = sweep(prep(DOCS.fixture), VIEW, OFF);
+  STUB = sweep(prep(DOCS.stub), VIEW, OFF);
+  const PD = prep(DOCS[DEMO_ID]);
+  DEMO = sweep(PD, PD.view, PD.off);
+  TOTAL += FIX.asserts + STUB.asserts + DEMO.asserts;
+  SCROLLS += FIX.scrolls + STUB.scrolls + DEMO.scrolls;
+  VS = viewportStudy(OFF, VIEWS);
+  TOTAL += VS.asserts;
+  CS = {
+    fix: corpusSweep('fixture', CASES.fix, NRANGE.fix[0], NRANGE.fix[1], SEEDS.fix, VIEW, OFF),
+    docs: corpusSweep('docs', CASES.docs, NRANGE.docs[0], NRANGE.docs[1], SEEDS.docs, VIEW, OFF),
+    chg: corpusSweep('changelog', CASES.chg, NRANGE.chg[0], NRANGE.chg[1], SEEDS.chg, VIEW, OFF)
+  };
+  for (const k in CS){ TOTAL += CS[k].asserts; SCROLLS += CS[k].scrolls; }
+  MONO = 0; MONO_OF = 0; BACKS = 0;
+  for (const id of IMPL_IDS){
+    for (const r of [RS.agg, FIX.stat, STUB.stat, DEMO.stat]){
+      MONO += r[id].mono; MONO_OF += r[id].monoOf; BACKS += r[id].back;
+    }
+    for (const k in CS){ MONO += CS[k].agg[id].mono; MONO_OF += CS[k].agg[id].monoOf; BACKS += CS[k].agg[id].back; }
+  }
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- self-check
+let SC = { n: 0, bad: [] };
+function chk(label, got, expected){
+  SC.n++;
+  const okv = got === expected;
+  if (!okv) SC.bad.push({ label: label, got: String(got), expected: String(expected) });
+}
+function selfCheck(){
+  SC = { n: 0, bad: [] };
+  const docs = REAL_IDS.concat(['fixture', 'stub', DEMO_ID]);
+  // 1. the two representations of the lit entry never disagree, and the intervals tile the scroll
+  for (const d of REAL_IDS){
+    chk('intervals ' + d + ': binary search == interval read', IV[d].agree, IV[d].of);
+    chk('intervals ' + d + ': no gaps', IV[d].gaps, 0);
+    chk('intervals ' + d + ': no overlaps', IV[d].overlaps, 0);
+    chk('intervals ' + d + ': no empty range', IV[d].empty, 0);
+  }
+  // 2. the threshold table is strictly increasing, starts at 0 and ends inside the scroll
+  for (const d of docs){
+    const P = prep(DOCS[d]), tt = thresholdTable(P, P.view, P.off);
+    chk('table ' + d + ': starts at zero', tt.t[0], 0);
+    let inc = 0;
+    for (let i = 1; i < P.n; i++) if (tt.t[i] > tt.t[i - 1]) inc++;
+    chk('table ' + d + ': strictly increasing', inc, P.n - 1);
+    chk('table ' + d + ': last threshold within the scroll',
+        tt.t[P.n - 1] <= Math.max(tt.M, P.n - 1), true);
+    // clamped thresholds are a suffix, never a hole in the middle
+    let flips = 0;
+    for (let i = 1; i < P.n; i++) if (!tt.capped[i] && tt.capped[i - 1]) flips++;
+    chk('table ' + d + ': clamped thresholds are a run at the end', flips, 0);
+  }
+  // 3. the correct rule lights every entry the page has room for, everywhere
+  for (const d of REAL_IDS){
+    const a = RS.per[d].stat[CORRECT];
+    chk('correct/' + d + ': every entry lights', a.reached, a.reachOf);
+    chk('correct/' + d + ': one index at every pixel', a.inRange, a.scrolls);
+    chk('correct/' + d + ': lit section on screen', a.vis, a.scrolls);
+    chk('correct/' + d + ': never moves backwards', a.mono, a.monoOf);
+  }
+  chk('correct/fixture: every entry lights', FIX.stat[CORRECT].reached, FIX.stat[CORRECT].reachOf);
+  chk('correct/demo: every entry lights', DEMO.stat[CORRECT].reached, DEMO.stat[CORRECT].reachOf);
+  // 4. the universal bound: no rule lights more entries than there are scroll positions
+  let bo = 0, boOf = 0;
+  for (const d of docs){
+    const r = d === DEMO_ID ? DEMO : d === 'fixture' ? FIX : d === 'stub' ? STUB : RS.per[d];
+    for (const id of IMPL_IDS){ boOf++; if (r.stat[id].reached <= r.pre.ceiling) bo++; }
+  }
+  chk('the ceiling holds for every rule on every document', bo, boOf);
+  chk('the short page can only light one entry', STUB.pre.ceiling, 1);
+  for (const id of IMPL_IDS) chk('short page/' + id + ': lights exactly one', STUB.stat[id].reached, 1);
+  // 5. the clamp is forced, and the price is inside the ceiling it must be inside
+  for (const d of REAL_IDS){
+    chk('clamp ' + d + ': every clamped threshold is forced', CF[d].forced, CF[d].capped);
+    chk('clamp ' + d + ': worst early activation within view - off',
+        CF[d].worstEarly <= CF[d].bound, true);
+  }
+  // 6. the collision is exactly the reading line's dark set
+  for (const d of REAL_IDS){
+    const a = RS.per[d].stat.line;
+    chk('collision ' + d + ': line-unreachable == entries the line never lights',
+        CO[d].count, a.reachOf - a.reached);
+  }
+  // 7. the click round trip is capped, and the correct rule meets the cap
+  for (const d of REAL_IDS){
+    const a = RS.per[d].stat[CORRECT];
+    chk('round trip ' + d + ': correct rule meets the pigeonhole bound', a.roundTrip, RL[d].best);
+    for (const id of IMPL_IDS)
+      chk('round trip ' + d + '/' + id + ': nobody beats the bound',
+          RS.per[d].stat[id].roundTrip <= RL[d].best, true);
+  }
+  // 8. the one-character defect costs exactly the predicted number of pixels
+  for (const d of REAL_IDS) chk('off-by-one ' + d + ': measured == closed form', OB[d].differ, OB[d].predicted);
+  // 9. nothing ever moves backwards, and the unimodality that explains it
+  chk('no rule ever moves the highlight backwards', BACKS, 0);
+  chk('every comparison was monotone', MONO, MONO_OF);
+  for (const d of REAL_IDS){
+    chk('unimodal ' + d + ': at most one section rising', UN[d].worstRising <= 1, true);
+    chk('unimodal ' + d + ': at most one section falling', UN[d].worstFalling <= 1, true);
+  }
+  // 10. the stateful rule disagrees with itself, and only ever by one entry
+  for (const d of REAL_IDS){
+    chk('band ' + d + ': direction disagreement is at most one entry', BS[d].worstDiffer <= 1, true);
+    chk('band ' + d + ': it is path dependent at all', BS[d].differ > 0, true);
+    chk('band ' + d + ': monotone going down', BS[d].backDown, 0);
+  }
+  // 11. the dark count can only grow with the window, and the table never goes dark
+  chk('dark entries are non-decreasing in the window height', VS.mono, VS.monoOf);
+  let tdark = 0;
+  for (const row of VS.rows) tdark += row.darkT;
+  chk('the threshold table loses nothing at any window height', tdark, 0);
+  // 12. the corpora: the fixture corpus separates nothing, the others do
+  chk('the fixture corpus never loses an entry', CS.fix.dark.docs, 0);
+  chk('the documentation corpus does', CS.docs.dark.docs > 0, true);
+  chk('the changelog corpus loses one on every page', CS.chg.dark.docs, CS.chg.docs);
+  for (const k in CS)
+    chk('corpus ' + k + ': correct rule lights every entry', CS[k].agg[CORRECT].reached,
+        CS[k].agg[CORRECT].reachOf);
+  // 13. and the workload actually ran
+  chk('the studies produced assertions', TOTAL > 1000000, true);
+  chk('every real document was swept whole', RS.scrolls,
+      REAL_IDS.reduce((a, d) => a + RS.per[d].scrolls, 0));
+  if (SC.bad.length){
+    for (const f of SC.bad)
+      console.error('ASSERT FAIL: ' + f.label + ' (got ' + f.got + ', expected ' + f.expected + ')');
+  }
+  const el = $('selftest');
+  el.className = 'badge ' + (SC.bad.length ? 'fail' : 'pass');
+  el.innerHTML = SC.bad.length
+    ? 'self-check: ' + SC.bad.length + ' of ' + SC.n + ' FAILING'
+    : 'self-check: ' + SC.n + ' structural checks, 0 failing';
+  return SC;
+}
+
+// ---------------------------------------------------------------- the live pane
+const PD = prep(DOCS[DEMO_ID]);
+const PDPRE = thresholdTable(PD, PD.view, PD.off);
+const PDM = maxScroll(PD, PD.view);
+let implId = CORRECT, liveS = 0, walking = null;
+const everLit = {};
+for (const id of IMPL_IDS) everLit[id] = new Uint8Array(PD.n);
+// a full sweep of the pane is 2,391 pixels, so the NEVER tags are computed once rather than
+// accumulated as the reader happens to drag - dragging only confirms them.
+const PDSWEEP = sweep(PD, PD.view, PD.off);
+
+const FILLER = [
+  'Every section here is an exact pixel height, so the arithmetic and the layout are the same numbers.',
+  'The reading line is the dashed rule; the entry beside it is what the current rule chose.',
+  'Nothing on this page is sampled - the sweep visits every whole pixel of scroll.',
+  'Short sections at the end of a document are the entire subject of this page.'
+];
+
+function buildPane(){
+  const sel = $('selImpl');
+  sel.innerHTML = IMPL_IDS.map(id =>
+    "<option value='" + id + "'" + (id === implId ? " selected" : "") + ">" +
+    esc(IMPLS[id].label) + (id === CORRECT ? " (correct)" : "") + "</option>").join('');
+  $('doc').innerHTML = PD.name.map((nm, i) =>
+    "<div class='sec' id='sec" + i + "' style='height:" + PD.h[i] + "px'><h4>" + esc(nm) +
+    "</h4><p>" + esc(FILLER[i % FILLER.length]) + "</p></div>").join('');
+  $('rline').style.top = PD.off + 'px';
+  const sl = $('slS');
+  sl.max = String(PDM);
+  paintLive();
+}
+function paintLive(){
+  const a = IMPLS[implId].active(PD, PD.view, PD.off, liveS, PDPRE);
+  const dark = [];
+  for (let i = 0; i < PD.n; i++) if (!PDSWEEP.seen[implId][i]) dark.push(i);
+  $('toc').innerHTML = PD.name.map((nm, i) => {
+    const isDark = dark.indexOf(i) >= 0;
+    return "<li><button data-i='" + i + "' class='" + (i === a ? 'on ' : '') + (isDark ? 'dark' : '') +
+      "'>" + esc(nm) + (isDark ? "<span class='never'>NEVER</span>" : "") + "</button></li>";
+  }).join('');
+  for (let i = 0; i < PD.n; i++){
+    const e = $('sec' + i);
+    if (e) e.className = 'sec' + (i === a ? ' lit' : '');
+  }
+  $('sNum').textContent = liveS + 'px';
+  $('slS').value = String(liveS);
+  const pane = $('pane');
+  if (Math.abs(pane.scrollTop - liveS) > 1) pane.scrollTop = liveS;
+  // the browser's own numbers next to the model's. If these ever diverge the model is describing a
+  // layout that is not on the screen, and every figure below it would be fiction.
+  let offOk = 0;
+  for (let i = 0; i < PD.n; i++){ const e = $('sec' + i); if (e && e.offsetTop === PD.top[i]) offOk++; }
+  const ch = pane.clientHeight;
+  $('liveNote').innerHTML =
+    "modelled window <strong>" + PD.view + "px</strong>, browser <strong>" + ch + "px</strong> " +
+    (ch === PD.view ? "<span class='ok'>agree</span>" : "<span class='bad'>differ</span>") +
+    " &middot; section offsets matching the model <strong>" + offOk + " / " + PD.n + "</strong>" +
+    " &middot; document <strong>" + fmt(PD.D) + "px</strong>, scroll range <strong>0&hellip;" +
+    fmt(PDM) + "</strong> &middot; reading line at <strong>" + (liveS + PD.off) + "px</strong> into the document" +
+    " &middot; lit entry <strong>" + esc(PD.name[a]) + "</strong>" +
+    (dark.length ? " &middot; <span class='bad'>" + dark.length + " entr" + (dark.length === 1 ? "y" : "ies") +
+     " this rule can never light</span>" : " &middot; <span class='ok'>every entry lights somewhere</span>");
+  paintLiveTable();
+}
+function paintLiveTable(){
+  $('liveTab').innerHTML = IMPL_IDS.map(id => {
+    const a = IMPLS[id].active(PD, PD.view, PD.off, liveS, PDPRE);
+    const inside = PD.top[a] <= liveS + PD.off && liveS + PD.off <= PD.top[a] + PD.h[a];
+    const onscreen = overlapPx(PD.top[a], PD.top[a] + PD.h[a], liveS, liveS + PD.view) > 0;
+    let dark = 0, names = [];
+    for (let i = 0; i < PD.n; i++) if (!PDSWEEP.seen[id][i]){ dark++; names.push(PD.name[i]); }
+    return "<tr" + (id === implId ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) +
+      (id === CORRECT ? " <span class='ok'>&#10003;</span>" : "") + "</td><td class='dim' style='text-align:left'>" +
+      IMPLS[id].clause + "</td><td>" + esc(PD.name[a]) + "</td><td>" + yn(inside) + "</td><td>" +
+      yn(onscreen) + "</td><td>" + (dark ? "<span class='bad'>" + dark + "</span> <span class='dim'>" +
+      esc(names.join(', ')) + "</span>" : "<span class='ok'>none</span>") + "</td></tr>";
+  }).join('');
+}
+
+// ---------------------------------------------------------------- tables
+function fillSeen(){
+  const rows = IMPL_IDS.map(id => {
+    const a = RS.agg[id];
+    let names = [];
+    for (const d of REAL_IDS){
+      const P = prep(DOCS[d]), sn = RS.per[d].seen[id];
+      for (let i = 0; i < P.n; i++) if (!sn[i]) names.push(P.name[i]);
+    }
+    return "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>" +
+      "<td class='dim' style='text-align:left'>" + IMPLS[id].clause + "</td>" +
+      "<td>" + p100(a.inRange, a.scrolls) + "</td><td>" + p100(a.mono, a.monoOf) + "</td>" +
+      "<td>" + p100(a.vis, a.scrolls) + "</td>" +
+      "<td>" + (a.reached === a.reachOf ? "<span class='ok'>0</span>" :
+                "<span class='bad'>" + (a.reachOf - a.reached) + "</span>") + "</td>" +
+      "<td class='dim' style='text-align:left'>" + (names.length ? esc(names.join(', ')) : "&mdash;") +
+      "</td></tr>";
+  });
+  $('tSeen').innerHTML = rows.join('');
+  const B = blindSet(RS.agg), Dk = darkSet(RS.agg), BW = B.filter(x => Dk.indexOf(x) >= 0);
+  $('seennote').innerHTML =
+    "<strong>" + word(B.length) + " of " + word(IMPL_IDS.length) + "</strong> rules satisfy all three " +
+    "blind columns at every one of <strong>" + fmt(RS.scrolls) + "</strong> whole pixels, and <strong>" +
+    word(BW.length) + "</strong> of those " + word(B.length) + " are wrong. The property rejects only " +
+    "<strong>" + IMPL_IDS.filter(x => B.indexOf(x) < 0).map(x => IMPLS[x].label).join("</strong> and <strong>") +
+    "</strong>, so it is not vacuous &mdash; it just cannot see the thing that matters. " +
+    "Total entries that never light: <strong>" + (RS.agg.line.reachOf - RS.agg.line.reached) +
+    "</strong> under the reading line, <strong>" + (RS.agg.biggest.reachOf - RS.agg.biggest.reached) +
+    "</strong> under most-visible, <strong class='ok'>0</strong> under the table.";
+}
+
+function fillProps(){
+  $('hProps').innerHTML = "the six properties, in the order a team writes them &mdash; " +
+    "<span class='ok'>the first three are the blind ones</span>";
+  $('hProps2').innerHTML = "<th></th>" + PROPS.map(p =>
+    "<th>" + p.label.replace(/ /g, "&nbsp;").replace(/&nbsp;/g, " ") +
+    "<br><span class='dim'>" + (p.blind ? "blind" : "sees something") + "</span></th>").join('');
+  $('tProps').innerHTML = IMPL_IDS.map(id => {
+    const a = RS.agg[id];
+    return "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>" +
+      PROPS.map(p => "<td>" + p100(a[p.id], a[PROP_OF[p.id]]) + "</td>").join('') + "</tr>";
+  }).join('');
+  let inside100 = 0, reach100 = 0, both = 0;
+  for (const id of IMPL_IDS){
+    const a = RS.agg[id];
+    const i1 = a.inside === a.scrolls, r1 = a.reached === a.reachOf;
+    if (i1) inside100++; if (r1) reach100++; if (i1 && r1) both++;
+  }
+  $('propnote').innerHTML =
+    "<strong>" + inside100 + "</strong> rules keep the reading line inside the lit section at every " +
+    "pixel and <strong>" + reach100 + "</strong> light every entry, and <strong class='bad'>" + both +
+    "</strong> do both &mdash; not because nobody has written the clever one, but because on these " +
+    "documents the two are unsatisfiable together. Column six is capped for everyone: the best any " +
+    "rule can do is <strong>" + REAL_IDS.reduce((a, d) => a + RL[d].best, 0) + " of " +
+    fmt(RS.entries) + "</strong>, and the table gets <strong>" + RS.agg[CORRECT].roundTrip +
+    "</strong>.";
+}
+
+function fillColl(){
+  $('tColl').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), r = RS.per[d];
+    return "<tr><td>" + esc(P.label) + "</td><td>" + P.n + "</td><td>" + fmt(P.D) + "</td><td>" +
+      fmt(r.M) + "</td><td>" + fmt(r.M + OFF) + "</td><td>" +
+      (CO[d].count ? "<span class='bad'>" + CO[d].count + "</span>" : "<span class='ok'>0</span>") +
+      "</td><td class='dim' style='text-align:left'>" +
+      CO[d].unreachable.map(i => esc(P.name[i]) + " <span class='pill dark'>top " + fmt(P.top[i]) +
+        "</span>").join(' ') + "</td></tr>";
+  }).join('');
+  const tot = REAL_IDS.reduce((a, d) => a + CO[d].count, 0);
+  $('collnote').innerHTML =
+    "<strong>" + tot + "</strong> of <strong>" + fmt(RS.entries) + "</strong> entries have a top past " +
+    "<code>M + off</code>, so no rule that keeps the reading line inside the lit section can ever " +
+    "name them &mdash; and that count is exactly the number of entries the reading line never lights " +
+    "(<strong>" + (RS.agg.line.reachOf - RS.agg.line.reached) + "</strong>), which is the identity " +
+    "rather than a coincidence. The last <code>view &minus; off</code> = <strong>" + (VIEW - OFF) +
+    "</strong> pixels of every document are below the line forever.";
+}
+
+function fillClamp(){
+  $('tClamp').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), c = CF[d];
+    return "<tr><td>" + esc(P.label) + "</td><td>" + c.capped + "</td><td>" + cnt(c.forced, c.capped) +
+      "</td><td>" + fmt(c.earlyPx) + "px</td><td>" + fmt(c.worstEarly) + "px</td><td>" + c.bound +
+      "px</td><td>" + yn(c.worstEarly <= c.bound) + "</td></tr>";
+  }).join('');
+  const cap = REAL_IDS.reduce((a, d) => a + CF[d].capped, 0),
+        fr = REAL_IDS.reduce((a, d) => a + CF[d].forced, 0),
+        wo = REAL_IDS.reduce((a, d) => Math.max(a, CF[d].worstEarly), 0);
+  $('clampnote').innerHTML =
+    "All <strong>" + fr + "</strong> of <strong>" + cap + "</strong> clamped thresholds are forced: " +
+    "moving any of them one pixel later leaves fewer pixels than there are entries after it. So the " +
+    "early activation is not a fudge factor, it is the minimum any rule that lights every entry has " +
+    "to pay &mdash; worst case <strong>" + wo + "px</strong> against a hard ceiling of <strong>" +
+    (VIEW - OFF) + "px</strong>, and the clamped thresholds are always a run at the end of the table, " +
+    "never a hole in the middle.";
+}
+
+function fillRT(){
+  $('tRT').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), r = RS.per[d], l = RL[d];
+    return "<tr><td>" + esc(P.label) + "</td><td>" + P.n + "</td><td>" + l.atBottom + "</td><td>" +
+      l.best + "</td><td>" + cnt(r.stat[CORRECT].roundTrip, l.best) + "</td><td>" +
+      r.stat.line.roundTrip + "</td><td><span class='bad'>" + r.stat.strict.roundTrip + "</span></td>" +
+      "<td>" + yn(r.stat[CORRECT].roundTrip === l.best) + "</td></tr>";
+  }).join('');
+  const best = REAL_IDS.reduce((a, d) => a + RL[d].best, 0);
+  $('rtnote').innerHTML =
+    "The bound is <strong>" + best + " of " + fmt(RS.entries) + "</strong> and the table gets exactly " +
+    "<strong>" + RS.agg[CORRECT].roundTrip + "</strong>, so the <strong>" +
+    (RS.entries - RS.agg[CORRECT].roundTrip) + "</strong> it misses are the ones nobody can get. " +
+    "Meanwhile the one-character change to a strict comparison drops the same test to <strong class='bad'>" +
+    RS.agg.strict.roundTrip + "</strong> &mdash; a defect that changes nothing a reader can see, " +
+    "measured by the only test that is savage about it.";
+  $('pStrictRT').textContent = String(RS.agg.strict.roundTrip);
+  $('pStrictRTof').textContent = fmt(RS.entries);
+}
+
+function fillUni(){
+  $('tUni').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), u = UN[d];
+    let back = 0;
+    for (const id of IMPL_IDS) back += RS.per[d].stat[id].back;
+    return "<tr><td>" + esc(P.label) + "</td><td>" + fmt(u.scrolls) + "</td><td>" +
+      cnt(u.worstRising, 1) + "</td><td>" + cnt(u.worstFalling, 1) + "</td><td>" +
+      (back ? "<span class='bad'>" + back + "</span>" : "<span class='ok'>0</span>") + "</td></tr>";
+  }).join('');
+  $('uninote').innerHTML =
+    "<strong class='ok'>" + BACKS + "</strong> backward steps in <strong>" + fmt(MONO_OF) +
+    "</strong> adjacent-pixel comparisons, over nine rules, six documents and " +
+    fmt(CASES.fix + CASES.docs + CASES.chg) + " generated ones. That is not nine careful " +
+    "implementations, it is a theorem: at most one section is rising and one falling at any pixel, so " +
+    "visible height is unimodal in scroll and the sections peak in index order. Asserting it in a " +
+    "test suite is asserting arithmetic.";
+  $('tBand').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), b = BS[d];
+    return "<tr><td>" + esc(P.label) + "</td><td>" + b.band + "px</td><td>" + fmt(b.holds) + " <span class='dim'>(" +
+      pct(b.holds, b.scrolls) + ")</span></td><td><span class='bad'>" + fmt(b.differ) + "</span> <span class='dim'>(" +
+      pct(b.differ, b.scrolls) + ")</span></td><td>" + b.worstDiffer + " entr" +
+      (b.worstDiffer === 1 ? "y" : "ies") + "</td><td>" + b.reachedDown + " / " + P.n + "</td><td>" +
+      b.reachedUp + " / " + P.n + "</td><td>" + (b.backDown ? "<span class='bad'>" + b.backDown +
+      "</span>" : "<span class='ok'>0</span>") + "</td></tr>";
+  }).join('');
+  $('bandnote').innerHTML =
+    "The band is <strong>" + BAND + "px</strong>, which is what is left of an " + VIEW +
+    "-pixel window after <code>rootMargin: '-" + OFF + "px 0px -" + Math.round(BAND_TAIL * 100) +
+    "% 0px'</code> &mdash; a derived number, not a chosen one. Going down it never moves backwards, so " +
+    "a downward test suite sees a clean component. It also reports nothing at all for most of the " +
+    "page, and because it keeps the last answer through those pixels, the same scroll position has " +
+    "two answers: on the API page they differ on <strong class='bad'>" + pct(BS.api.differ, BS.api.scrolls) +
+    "</strong> of the scroll, always by exactly one entry, and it does not even light the same set of " +
+    "entries in the two directions (<strong>" + BS.api.reachedDown + "</strong> going down, <strong>" +
+    BS.api.reachedUp + "</strong> going up).";
+}
+
+function fillOB(){
+  $('tOB').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), o = OB[d], r = RS.per[d];
+    return "<tr><td>" + esc(P.label) + "</td><td>" + o.predicted + "</td><td>" + o.predicted +
+      "</td><td>" + cnt(o.differ, o.predicted) + "</td><td>" + pct(o.differ, r.scrolls) + "</td><td>" +
+      "<span class='bad'>" + r.stat.strict.roundTrip + " / " + P.n + "</span></td></tr>";
+  }).join('');
+  const dif = REAL_IDS.reduce((a, d) => a + OB[d].differ, 0);
+  $('obnote').innerHTML =
+    "<strong>" + dif + "</strong> pixels out of <strong>" + fmt(RS.scrolls) + "</strong> &mdash; " +
+    "<strong>" + pct(dif, RS.scrolls) + "</strong> of the scroll &mdash; and the count matches the " +
+    "closed form on all three documents. A test that samples the scroll every 10 pixels has roughly " +
+    "one chance in ten of noticing per heading; the click test notices every time, because the click " +
+    "lands on exactly the disputed pixel.";
+}
+
+function fillCorp(){
+  $('hFix').innerHTML = FIX.stat.line.reachOf + " entries, " + fmt(FIX.scrolls) + " px";
+  $('hCf').innerHTML = CS.fix.docs + " docs, " + fmt(CS.fix.entries) + " entries";
+  $('hCd').innerHTML = CS.docs.docs + " docs, " + fmt(CS.docs.entries) + " entries";
+  $('hCc').innerHTML = CS.chg.docs + " docs, " + fmt(CS.chg.entries) + " entries";
+  $('tCorp').innerHTML = IMPL_IDS.map(id => {
+    const f = FIX.stat[id];
+    const cell = a => p100(a.reached, a.reachOf);
+    return "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>" +
+      "<td>" + cell(f) + "</td><td>" + cell(CS.fix.agg[id]) + "</td><td>" + cell(CS.docs.agg[id]) +
+      "</td><td>" + cell(CS.chg.agg[id]) + "</td><td>" + cell(RS.agg[id]) + "</td></tr>";
+  }).join('');
+  const bf = blindSet(CS.fix.agg), df = darkSet(CS.fix.agg);
+  const bd = blindSet(CS.docs.agg), dd = darkSet(CS.docs.agg);
+  const bc = blindSet(CS.chg.agg), dc = darkSet(CS.chg.agg);
+  $('corpnote').innerHTML =
+    "On the fixture corpus the blind property is satisfied by <strong>" + bf.length + " of " +
+    IMPL_IDS.length + "</strong> rules and <strong class='ok'>" +
+    bf.filter(x => df.indexOf(x) >= 0).length + "</strong> of them are wrong &mdash; the corpus " +
+    "separates nothing at all. On the documentation corpus it is <strong>" + bd.length + " of " +
+    IMPL_IDS.length + "</strong> with <strong class='bad'>" + bd.filter(x => dd.indexOf(x) >= 0).length +
+    "</strong> wrong, and on the changelog corpus <strong>" + bc.length + " of " + IMPL_IDS.length +
+    "</strong> with <strong class='bad'>" + bc.filter(x => dc.indexOf(x) >= 0).length + "</strong>. " +
+    "The reading line loses at least one entry on <strong>" + pct(CS.fix.dark.docs, CS.fix.docs) +
+    "</strong> of fixture pages, <strong>" + pct(CS.docs.dark.docs, CS.docs.docs) +
+    "</strong> of documentation pages and <strong>" + pct(CS.chg.dark.docs, CS.chg.docs) +
+    "</strong> of changelogs &mdash; and the very last entry, the one a reader scrolls to the bottom " +
+    "for, is dark on <strong>" + CS.docs.dark.lastDark + "</strong> and <strong>" +
+    CS.chg.dark.lastDark + "</strong> of those 80.";
+  $('tFix').innerHTML = IMPL_IDS.map(id => {
+    const a = FIX.stat[id];
+    const all = PROPS.every(p => a[p.id] === a[PROP_OF[p.id]]);
+    return "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td>" +
+      PROPS.map(p => "<td>" + p100(a[p.id], a[PROP_OF[p.id]]) + "</td>").join('') +
+      "<td>" + yn(all) + "</td></tr>";
+  }).join('');
+  const allPass = IMPL_IDS.filter(id => { const a = FIX.stat[id];
+    return a.inRange === a.scrolls && a.mono === a.monoOf && a.vis === a.scrolls &&
+           a.reached === a.reachOf && a.roundTrip === a.roundTripOf; });
+  $('fixnote').innerHTML =
+    "<strong>" + word(allPass.length) + " of " + word(IMPL_IDS.length) + "</strong> rules pass every " +
+    "property a fixture test would assert &mdash; one entry lit, never backwards, on screen, every " +
+    "entry lights, click round trip &mdash; including <strong>" + esc(IMPLS.progress.label) +
+    "</strong>, which never looks at a section height. The fixture separates <strong>" +
+    IMPL_IDS.filter(x => allPass.indexOf(x) < 0).map(x => esc(IMPLS[x].label)).join("</strong> and <strong>") +
+    "</strong>, and it separates both of them by the same single pixel where the line lands on a " +
+    "heading top.";
+  $('pFixPass').textContent = word(allPass.length);
+}
+
+function fillView(){
+  $('tView').innerHTML = VS.rows.map(r =>
+    "<tr" + (r.view === VIEW ? " class='me'" : "") + "><td>" + fmt(r.view) + "px</td><td>" + fmt(r.M) +
+    "</td><td>" + (r.dark ? "<span class='bad'>" + r.dark + "</span>" : "<span class='ok'>0</span>") +
+    "</td><td>" + pct(r.dark, r.entries) + "</td><td>" + r.capped + "</td><td>" +
+    (r.darkT ? "<span class='bad'>" + r.darkT + "</span>" : "<span class='ok'>0</span>") +
+    "</td></tr>").join('');
+  const first = VS.rows[0], last = VS.rows[VS.rows.length - 1];
+  $('viewnote').innerHTML =
+    "From <strong>" + first.dark + "</strong> dark entries at a " + fmt(first.view) +
+    "-pixel window to <strong>" + last.dark + "</strong> at " + fmt(last.view) + " &mdash; " +
+    "non-decreasing at all <strong>" + VS.monoOf + "</strong> steps, because a taller window is a " +
+    "shorter scroll and the reading line stops <code>view &minus; off</code> pixels short of the end. " +
+    "The threshold table loses <strong class='ok'>" + VS.rows.reduce((a, r) => a + r.darkT, 0) +
+    "</strong> entries at every window height on the list.";
+}
+
+function fillStub(){
+  const P = prep(DOCS.stub);
+  $('tStub').innerHTML = IMPL_IDS.map(id => {
+    const a = STUB.stat[id], lit = [];
+    for (let i = 0; i < P.n; i++) if (STUB.seen[id][i]) lit.push(P.name[i]);
+    return "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + esc(IMPLS[id].label) + "</td><td>" +
+      P.n + "</td><td>" + STUB.scrolls + "</td><td>" + STUB.pre.ceiling + "</td><td>" + a.reached +
+      "</td><td class='dim' style='text-align:left'>" + esc(lit.join(', ')) + "</td><td>" +
+      yn(a.reached <= STUB.pre.ceiling) + "</td></tr>";
+  }).join('');
+  $('stubnote').innerHTML =
+    "Document <strong>" + P.D + "px</strong>, window <strong>" + VIEW + "px</strong>, so <code>M = 0</code> " +
+    "and there is exactly <strong>" + STUB.scrolls + "</strong> scroll position for <strong>" + P.n +
+    "</strong> entries. Every rule lights <strong>" + STUB.stat[CORRECT].reached + "</strong>, all nine " +
+    "are inside the bound, and the honest table makes the other three unreachable rather than " +
+    "pretending. Any test asserting all four light is asserting a rule that cannot exist.";
+}
+
+function fillDocs(){
+  $('tDocs').innerHTML = REAL_IDS.map(d => {
+    const P = prep(DOCS[d]), tt = RS.per[d].pre;
+    return "<div class='rule'><p class='cap'>" + esc(P.label).toUpperCase() + " &middot; " + P.n +
+      " ENTRIES &middot; " + fmt(P.D) + "PX &middot; M = " + fmt(tt.M) + "</p><div class='scroll'>" +
+      "<table class='num'><thead><tr><th>#</th><th>heading</th><th>height</th><th>top</th>" +
+      "<th>top &minus; off<br><span class='dim'>the natural threshold</span></th>" +
+      "<th>upper bound<br><span class='dim'>M &minus; (n&minus;1&minus;i)</span></th>" +
+      "<th>threshold used</th><th>clamped</th><th>lights</th></tr></thead><tbody>" +
+      P.name.map((nm, i) =>
+        "<tr" + (tt.capped[i] ? " class='me'" : "") + "><td>" + i + "</td><td>" + esc(nm) + "</td><td>" +
+        fmt(P.h[i]) + "</td><td>" + fmt(P.top[i]) + "</td><td>" + fmt(tt.raw[i]) + "</td><td>" +
+        fmt(tt.hi[i]) + "</td><td>" + fmt(tt.t[i]) + "</td><td>" +
+        (tt.capped[i] ? "<span class='warn'>yes, by " + fmt(tt.raw[i] - tt.t[i]) + "px</span>" :
+         "<span class='dim'>no</span>") + "</td><td>" +
+        (RS.per[d].seen.line[i] ? "<span class='ok'>yes</span>" :
+         "<span class='bad'>never, under the reading line</span>") + "</td></tr>").join('') +
+      "</tbody></table></div></div>";
+  }).join('');
+}
+
+function fillProse(){
+  const set = (id, v) => { const e = $(id); if (e) e.innerHTML = v; };
+  const B = blindSet(RS.agg), Dk = darkSet(RS.agg), BW = B.filter(x => Dk.indexOf(x) >= 0);
+  const cap = REAL_IDS.reduce((a, d) => a + CF[d].capped, 0),
+        fr = REAL_IDS.reduce((a, d) => a + CF[d].forced, 0),
+        wo = REAL_IDS.reduce((a, d) => Math.max(a, CF[d].worstEarly), 0);
+  set('pPixels', fmt(RS.scrolls));
+  set('pBlind', word(B.length));
+  set('pImpls', word(IMPL_IDS.length));
+  set('pWrong', word(BW.length));
+  set('pDark', String(RS.agg.line.reachOf - RS.agg.line.reached));
+  set('pEntries', fmt(RS.entries));
+  set('pCapped', String(cap));
+  set('pForced', String(fr));
+  set('pWorstEarly', String(wo));
+  set('pEarlyBound', String(VIEW - OFF));
+  set('pBack', String(BACKS));
+  set('pMonoOf', fmt(MONO_OF));
+  set('pTotal', fmt(TOTAL) + " assertions");
+  set('pColl', String(REAL_IDS.reduce((a, d) => a + CO[d].count, 0)));
+  // UNDERSTAND figures
+  set('uEarly', fmt(CF.api.earlyPx));
+  set('uWorst', fmt(wo));
+  set('uBound', fmt(VIEW - OFF));
+  set('uLineRT', String(RS.agg.line.roundTrip));
+  set('uStrictRT', String(RS.agg.strict.roundTrip));
+  set('uBack', String(BACKS));
+  set('uMonoOf', fmt(MONO_OF));
+  set('uHold', pct(BS.api.holds, BS.api.scrolls));
+  set('uPath', pct(BS.api.differ, BS.api.scrolls));
+  set('uCf', CS.fix.dark.docs === 0 ? 'nothing' : pct(CS.fix.dark.docs, CS.fix.docs));
+  set('uCd', pct(CS.docs.dark.docs, CS.docs.docs));
+  set('uCc', pct(CS.chg.dark.docs, CS.chg.docs));
+  const allPass = IMPL_IDS.filter(id => { const a = FIX.stat[id];
+    return a.inRange === a.scrolls && a.mono === a.monoOf && a.vis === a.scrolls &&
+           a.reached === a.reachOf && a.roundTrip === a.roundTripOf; });
+  set('uFixPass', word(allPass.length));
+  // BUILD figures
+  set('bIv', fmt(REAL_IDS.reduce((a, d) => a + IV[d].agree, 0)));
+  set('bIvOf', fmt(REAL_IDS.reduce((a, d) => a + IV[d].of, 0)));
+  set('bCorpus', fmt(CS.fix.scrolls + CS.docs.scrolls + CS.chg.scrolls));
+  set('assertline',
+    "Everything on this page is measured on load: <strong>" + fmt(TOTAL) + " assertions</strong> over " +
+    "<strong>" + fmt(SCROLLS) + " scroll positions</strong> in " + (MS / 1000).toFixed(1) + "&nbsp;s, " +
+    "with the lit entry computed twice on every real document &mdash; once by binary search over the " +
+    "threshold table and once by reading explicit activation intervals &mdash; and the two agreeing on " +
+    "<strong>" + fmt(REAL_IDS.reduce((a, d) => a + IV[d].agree, 0)) + " of " +
+    fmt(REAL_IDS.reduce((a, d) => a + IV[d].of, 0)) + "</strong>. " +
+    (SC.bad.length ? "<span class='bad'>" + SC.bad.length + " self-checks FAILING</span>."
+                   : "<span class='ok'>" + SC.n + " structural self-checks, 0 failing</span>."));
+}
+
+// ---------------------------------------------------------------- wiring
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const x of $('tabs').querySelectorAll('button')) x.classList.toggle('on', x === b);
+  for (const id of ['look', 'understand', 'build']) $(id).classList.toggle('off', id !== b.dataset.tab);
+  window.scrollTo(0, 0);
+});
+$('selImpl').addEventListener('change', () => { implId = $('selImpl').value; paintLive(); });
+$('slS').addEventListener('input', () => { liveS = Number($('slS').value); paintLive(); });
+$('pane').addEventListener('scroll', () => {
+  const v = Math.round($('pane').scrollTop);
+  if (v !== liveS){ liveS = v; paintLive(); }
+});
+$('toc').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  liveS = clickTarget(PD, PD.view, PD.off, Number(b.dataset.i));
+  paintLive();
+});
+$('bBottom').addEventListener('click', () => { liveS = PDM; paintLive(); });
+$('bWalk').addEventListener('click', () => {
+  if (walking){ clearInterval(walking); walking = null; $('bWalk').textContent = 'walk the whole scroll'; return; }
+  $('bWalk').textContent = 'stop';
+  liveS = 0;
+  walking = setInterval(() => {
+    liveS += 17;
+    if (liveS >= PDM){ liveS = PDM; paintLive(); clearInterval(walking); walking = null;
+                       $('bWalk').textContent = 'walk the whole scroll'; return; }
+    paintLive();
+  }, 30);
+});
+
+buildPane();
+// Fifty-eight million assertions is a couple of seconds of arithmetic, so the pane is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing here is skipped -
+// every figure on this page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  selfCheck();
+  fillSeen(); fillProps(); fillColl(); fillClamp(); fillRT(); fillUni(); fillOB();
+  fillCorp(); fillView(); fillStub(); fillDocs(); fillProse();
+}, 30);
+</script>
+</body>
+</html>

@@ -1,0 +1,2005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 73 &mdash; Toolbar overflow</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1f5f9; color:#0f172a; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e8edf5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#a16207; }
+
+  header { background:#fff; border-bottom:1px solid #e2e8f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#a16207; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e8edf5; color:#0f172a; }
+  .tabs button.on { background:#0f172a; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e8edf5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#475569; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#64748b; margin:0 0 12px; }
+  .note { font-size:12px; color:#64748b; margin:12px 0 0; }
+  .rule { border-top:1px solid #e2e8f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; }
+  .prose ul { font-size:14.5px; color:#1e2a3b; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e2e8f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num tr.me td { background:#fefce8; font-weight:700; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#94a3b8; }
+  .scroll { overflow-x:auto; }
+
+  .ctl2 { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+          font-size:13px; max-width:100%; }
+  /* the fitting-pass select carries a whole sentence of option text; without a cap it sets its own
+     width from the longest option and drags a phone-width page sideways. */
+  .ctl2 label { display:flex; flex-direction:column; gap:3px; min-width:0; max-width:100%; }
+  .ctl2 select { max-width:100%; }
+  .ctl2 span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#64748b; }
+  .ctl2 select, .ctl2 button, .ctl2 input[type=range] { font:inherit; font-size:13px; padding:6px 10px;
+          border-radius:8px; border:1px solid #cbd5e1; background:#fff; }
+  .ctl2 input[type=range] { padding:0; width:220px; }
+  .ctl2 button { cursor:pointer; font-weight:700; background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl2 button.ghost { background:#fff; color:#0f172a; }
+
+  .split { display:grid; gap:22px; align-items:start; }
+  @media (min-width:1024px) { .split { grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); } }
+
+  /* the toolbar itself. Every box carries an explicit pixel width, so the row the browser lays out
+     is the row the engine reasons about - the demo prints both numbers and they must agree. */
+  .tbouter { background:#f6f8fb; border:1px solid #e2e8f0; border-radius:10px; padding:18px 14px;
+             overflow-x:auto; }
+  .tbwrap { position:relative; height:44px; min-width:1px; }
+  .tbedge { position:absolute; top:-10px; bottom:-10px; right:0; width:0; border-right:2px dashed #f59e0b; }
+  .tbwrap::before { content:''; position:absolute; top:-10px; bottom:-10px; left:0; width:0;
+                    border-left:2px dashed #f59e0b; }
+  .tbrow { display:flex; gap:8px; align-items:center; height:32px; margin-top:6px; white-space:nowrap; }
+  .ctl { flex:0 0 auto; height:32px; line-height:30px; border:1px solid #cbd5e1; background:#fff;
+         border-radius:7px; font-size:11.5px; font-weight:700; color:#334155; text-align:center;
+         overflow:hidden; text-overflow:clip; padding:0 2px; }
+  .ctl.icon { background:#f1f5f9; color:#475569; font-size:10px; letter-spacing:-.2px; }
+  .chip { flex:0 0 auto; height:32px; line-height:30px; border:1px solid #a16207; background:#fef3c7;
+          color:#78350f; border-radius:7px; font-size:11.5px; font-weight:800; text-align:center;
+          overflow:hidden; padding:0 2px; }
+  .pill { display:inline-block; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px;
+          border:1px solid #cbd5e1; background:#f6f8fb; color:#475569; border-radius:6px;
+          padding:1px 7px; margin:0 5px 5px 0; }
+  .menuline { margin:12px 0 0; display:flex; flex-wrap:wrap; align-items:center; }
+  .seq { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px; color:#334155; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 73</p>
+    <h1>
+      &#9654;&#9654; Toolbar overflow &mdash; the row of controls that does not fit, and the
+      <code>+3</code> chip standing in for the ones that came off it. There is exactly one number to
+      compute, how many controls come off, and the space you must set aside for the chip is a
+      <em>function of that number</em>, so the fit test is self-referential and no single forward pass
+      over the row can be right. That is the part everyone gets wrong, and it is not the interesting
+      part. The interesting part is that <strong>overflow</strong> &mdash; the only thing you can see,
+      and the only thing anybody tests &mdash; is satisfied at <strong>every one</strong> of
+      <strong id="pWidths">2,309</strong> whole-pixel container widths by <strong id="pNever">five</strong>
+      of these <strong id="pImpls">eight</strong> implementations, and <strong id="pWrongNever">three</strong>
+      of those five are wrong: one permanently gives up a control that fits, on
+      <strong id="pLostPct">10.3%</strong> of widths; one hides <em>the wrong controls</em> on
+      <strong id="pDomWrong">78.5%</strong> of them while its count is right on
+      <strong id="pDomMin">47.7%</strong>; and one is right on all five properties at every single
+      width and <strong>never stops repainting</strong> &mdash;
+      <strong id="pFlickCycle">688</strong> of <strong id="pFlickWidths">759</strong> widths are a
+      two-cycle, because it measures the row it just changed. Also here: the
+      <strong id="pHole">3</strong> pixels of container width where hiding <em>one</em> control makes
+      the row <em>wider</em> than showing everything, which is the chip minus the control it stands in
+      for and nothing else &mdash; an identity with
+      <strong id="pHoleViol">0</strong> violations in <strong id="pHoleTested">3,600</strong> checks,
+      and the reason a bisection is not entitled to an answer.
+      <strong id="pTotal">6,461,761 assertions</strong> on load. Pure vanilla JavaScript, one file,
+      no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9654;&#9654; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Drag the container width.</strong> The dashed lines are the container edges; the boxes
+        are laid out by the browser at exactly the pixel widths the arithmetic uses, so the row you
+        see is the row in the model &mdash; the note under it prints the browser's own measurement
+        next to the modelled one. Switch <em>fitting pass</em> to watch a different implementation
+        answer the same question, and switch <em>the chip</em> to change what the overflow control
+        looks like, which turns out to change the arithmetic. <strong>Take me to the hole</strong>
+        parks you on the three pixels where hiding one control makes the row wider.
+      </p>
+      <div class="ctl2">
+        <label><span>TOOLBAR</span><select id="selBar"></select></label>
+        <label><span>THE CHIP</span><select id="selTrig"></select></label>
+        <label><span>FITTING PASS</span><select id="selImpl"></select></label>
+        <label><span>CONTAINER &middot; <b id="wNum">655px</b></span>
+          <input type="range" id="slW" min="120" max="900" value="655" /></label>
+        <label><span>&nbsp;</span><button id="bWalk" class="ghost">walk the width</button></label>
+        <label><span>&nbsp;</span><button id="bHole">take me to the hole</button></label>
+      </div>
+      <div class="tbouter"><div id="liveRow"></div></div>
+      <div class="menuline" id="liveMenu"></div>
+      <p class="note" id="liveNote"></p>
+      <div class="rule">
+        <p class="cap">THE SAME CONTAINER, ALL EIGHT PASSES</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>fitting pass</th><th>hides</th><th>row<br>width</th><th>does it<br>fit</th>
+            <th>smallest<br>count</th><th>right<br>controls</th><th>what it put behind the chip</th></tr></thead>
+          <tbody id="liveTab"></tbody></table></div>
+        <p class="note" id="assertline"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONLY THING YOU CAN SEE</p>
+      <p class="lead">
+        <em>Does the row stay inside the container.</em> That is the assertion in essentially every
+        overflow test ever written, it is the only thing a screenshot can check, and it is the only
+        symptom anybody files a ticket about. Every whole pixel of container width, three real
+        toolbars, and then the same question on a hand-written fixture. Read the two right-hand
+        columns afterwards, not before.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>fitting pass</th><th>the one clause that differs</th>
+          <th>never overflows<br>three real toolbars<br><span class="dim" id="hReal"></span></th>
+          <th>never overflows<br>the fixture<br><span class="dim" id="hFix"></span></th>
+          <th>hides the smallest<br>count that fits</th>
+          <th>controls given up<br>that would have fit</th>
+          <th>worst<br>overflow</th></tr></thead>
+        <tbody id="tSeen"></tbody></table></div>
+      <p class="note" id="seennote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FIVE PROPERTIES, AND EXACTLY WHAT EACH ONE CAN SEE</p>
+      <p class="lead">
+        The same sweep, asked five ways, in the order a team writes them. None of these is a superset
+        of the one before it, and only the last one is the specification: a toolbar is not a packing
+        problem with a tidy answer, it is a product decision about which controls a person can still
+        reach.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>fitting pass</th><th>family</th><th>row stays<br>inside</th>
+          <th>chip shown<br>exactly when<br>needed</th><th>could not bring<br>one more back</th>
+          <th>smallest count<br>that fits</th><th>and the controls<br>the product chose</th></tr></thead>
+        <tbody id="tProps"></tbody></table></div>
+      <p class="note" id="propsnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE THREE PIXELS WHERE HIDING ONE THING MAKES THE ROW WIDER</p>
+      <p class="lead">
+        A row of ten controls is <strong id="pHoleLo">476</strong>px wide. Hide the least important one
+        and put a <code>+1</code> chip in its place and the row is <strong id="pHoleHi">479</strong>px
+        wide, because <em id="pLeast">More at 32px</em> came off and a
+        <strong id="pChip1">35</strong>px chip went on, and the number of boxes on the row did not
+        change, so no gap was removed to pay for it. Between those two numbers is a window of
+        container widths in which <em>everything fits</em> and <em>hiding exactly one thing does
+        not</em>, so the hidden counts that fit are not a contiguous run and a binary search over
+        them is not entitled to an answer.
+      </p>
+      <pre id="artHole"></pre>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>the chip</th><th>toolbar</th><th>chip at<br>one hidden</th>
+          <th>least important<br>control</th><th>the hole</th><th>chip minus<br>control</th>
+          <th>hidden counts that<br>fit are a contiguous run</th><th>widths<br>with a hole</th></tr></thead>
+        <tbody id="tHole"></tbody></table></div>
+      <p class="note" id="holenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SO THE SHAPE OF THE CHIP DECIDES THE ARITHMETIC</p>
+      <p class="lead">
+        Three overflow controls that a designer would treat as interchangeable: a round
+        <code>&middot;&middot;&middot;</code> button, a <code>+3</code> chip, and a
+        <code>+3 more</code> pill. Same eight implementations, same toolbars, same sweep. The only
+        thing that changed is whether the label counts what it is hiding.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>the chip</th><th>width at<br>one hidden</th><th>width at<br>ten hidden</th>
+          <th>toolbars with<br>a hole</th><th>hidden counts that fit<br>are a contiguous run</th>
+          <th>a bisection is<br>exactly right</th><th>a one-digit reserve<br>never overflows</th>
+          <th>are the two reserves<br>the same program</th></tr></thead>
+        <tbody id="tChip"></tbody></table></div>
+      <p class="note" id="chipnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND THE ROW THAT NEVER STOPS</p>
+      <p class="lead">
+        The last implementation does the arithmetic correctly and takes its widths from the row as it
+        is rendered <em>right now</em>, which is what <code>getBoundingClientRect</code> in a
+        <code>ResizeObserver</code> gives you. A hidden control is <code>display:none</code>, so it
+        measures zero. Press <strong>measure and re-fit</strong> to run one pass, then press it again.
+      </p>
+      <div class="ctl2">
+        <label><span>CONTAINER &middot; <b id="flNum"></b></span>
+          <input type="range" id="slFl" min="150" max="880" value="400" /></label>
+        <label><span>&nbsp;</span><button id="bStep">measure and re-fit</button></label>
+        <label><span>&nbsp;</span><button id="bSpin" class="ghost">let it run</button></label>
+      </div>
+      <div class="tbouter"><div id="flRow"></div></div>
+      <p class="note" id="flNote"></p>
+      <div class="rule">
+        <pre id="artFlick"></pre>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>toolbar</th><th>container widths<br>swept</th>
+            <th>widths needing<br>something hidden</th><th>widths where it<br>settles at all</th>
+            <th>&hellip;while actually<br>hiding something</th><th>widths that are<br>a two-cycle</th>
+            <th>longer<br>orbits</th></tr></thead>
+          <tbody id="tFlick"></tbody></table></div>
+        <p class="note">
+          It settles only where the container is narrow enough that even the collapsed row does not
+          fit &mdash; the bottom end of the sweep. Everywhere else it alternates between two toolbars
+          for as long as the tab is open, and the browser has a name for the symptom:
+          <code>ResizeObserver loop completed with undelivered notifications</code>. Nothing above
+          this is a fault in the arithmetic. The widths came from the wrong place.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHAT A TEST FIXTURE CANNOT SEE, AND WHY IT IS ARITHMETIC</p>
+      <p class="lead">
+        Four corpora and the real toolbars, all asked <em>did it hide the smallest count that fits</em>.
+        The fixture is the toolbar in every test: a handful of identical text buttons with priority
+        running left to right. The two generated corpora after it isolate its two habits &mdash; one
+        keeps identical widths, one keeps only the left-to-right priority and randomises the widths.
+        Nothing here is about realism. All eight passes hand back the identical hidden count on
+        <strong id="pFixAgree">52.9%</strong> of the fixture's container widths against
+        <strong id="pAgree">19.7%</strong> of the real toolbars', so more than half of that corpus
+        cannot tell a correct fitting pass from any of the seven broken ones.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>fitting pass</th>
+          <th>the fixture<br><span class="dim" id="hBlindFix"></span></th>
+          <th>identical widths,<br>priority left to right<br><span class="dim" id="hBlindFC"></span></th>
+          <th>random widths,<br>priority left to right<br><span class="dim" id="hBlindLtr"></span></th>
+          <th>random widths,<br>priority shuffled<br><span class="dim" id="hBlindRand"></span></th>
+          <th>three real toolbars<br><span class="dim" id="hBlindReal"></span></th>
+          <th>and the right controls,<br>real toolbars</th></tr></thead>
+        <tbody id="tBlind"></tbody></table></div>
+      <p class="note" id="blindnote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE PRICE OF RESPECTING PRIORITY</p>
+      <p class="lead">
+        A toolbar hides its least important controls, which is a product rule. <em>Fit as many
+        controls as possible</em> is a different problem with a different answer, and here it is,
+        computed by enumerating all <code>2^n</code> subsets of the row and keeping the largest one
+        that fits. The gap is what the product rule costs, and it is a number worth knowing before
+        someone reports it as a bug.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>toolbar</th><th>controls</th><th>widths<br>sampled</th>
+          <th>controls shown<br>by priority</th><th>controls the row<br>could have carried</th>
+          <th>difference</th><th>widths where packing<br>shows more</th>
+          <th>worst gap at<br>one width</th></tr></thead>
+        <tbody id="tPrice"></tbody></table></div>
+      <p class="note" id="pricenote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND ONE MORE PROPERTY THAT SEPARATES NOTHING</p>
+      <p class="lead">
+        <em>Widening the window never takes a control away.</em> That is the property a user has
+        rather than one a suite has, it is the one complaint that would actually reach you, and it is
+        checked here at every pair of neighbouring pixels: the number in each cell is how many times
+        one more pixel of container made that implementation hide <em>more</em>.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead id="tWidenHead"></thead>
+        <tbody id="tWiden"></tbody></table></div>
+      <p class="note" id="widennote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FOUR ROWS, WRITTEN OUT IN FULL</p>
+      <pre id="artEx1"></pre>
+      <pre id="artEx2"></pre>
+      <pre id="artEx3"></pre>
+      <pre id="artEx4" style="margin-bottom:0"></pre>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#129504; What is actually going on</h2>
+      <p>
+        A toolbar is a row of controls in a container that is sometimes narrower than the row. When
+        that happens some controls have to come off and go into a menu, and something has to be on
+        the row to open that menu &mdash; a <code>&middot;&middot;&middot;</code> button, or a
+        <code>+3</code> chip that says how many went away. The pattern has a name, <em>priority
+        plus</em>, and the whole component is one integer: how many controls come off.
+      </p>
+      <p>
+        It looks like the easiest layout problem there is. Add up the widths until you run out of
+        room. It is not, and the reason is one sentence long.
+      </p>
+
+      <h3>1. The space you must reserve is a function of the answer</h3>
+      <p>
+        The chip is a box on the row, so it costs width, so you have to leave room for it before you
+        decide how many controls fit. But its label is <code>+3</code>, and <code>3</code> is the
+        number you are trying to compute &mdash; and <code>+3</code> and <code>+12</code> are not the
+        same width, because a digit is about seven pixels. The reserve depends on the answer and the
+        answer depends on the reserve.
+      </p>
+      <p>
+        This is why the loop everybody writes cannot be right. It walks the controls, keeps a running
+        total, subtracts some constant for the chip, and stops. Whatever constant it picks is wrong
+        somewhere: pick the width of <code>+1</code> and the row overflows as soon as ten controls are
+        hidden; pick the width of <code>+14</code> and you permanently hold back seven pixels you did
+        not need, which on a real toolbar means one whole button that fitted.
+      </p>
+      <p>
+        The way out is to stop trying to compute it forwards. There are only <code>n + 1</code>
+        possible answers &mdash; hide none of them, hide one, hide two, up to hide all of them &mdash;
+        and each one has a width you can evaluate exactly, chip and all, because at that point you
+        <em>know</em> how many are hidden. So you do not compute the answer, you <em>check the
+        candidates</em> and take the smallest one that fits. That is the entire correct
+        implementation, and it is shorter than the loop it replaces.
+      </p>
+
+      <h3>2. Count the boxes, not the controls</h3>
+      <p>
+        The row's width is the sum of the visible controls, plus the chip if there is one, plus one
+        gap between every pair of neighbours. The number of gaps is <em>boxes minus one</em>, and the
+        chip is a box. Write <code>gap &times; (shown &minus; 1)</code> instead of
+        <code>gap &times; shown</code> when the chip is present and you are exactly one gap short: on
+        the sweep in the first tab that is an eight-pixel overflow on
+        <strong id="pGapOver">9.9%</strong> of container widths, never more and never less than
+        <strong id="pGapMax">8</strong>px. Eight pixels is not enough to see and is more than enough
+        to push a rounded corner under the edge of a panel.
+      </p>
+      <p>
+        Leaving the chip out of the budget altogether is the loud version of the same mistake:
+        <strong id="pNoneOver">1,232 of 2,309</strong> widths overflow, by up to
+        <strong id="pNoneMax">50</strong>px, which is a whole control hanging outside the container.
+        That one gets caught the first time anyone looks at the page. The eight-pixel one does not.
+      </p>
+
+      <h3>3. Which controls, not just how many</h3>
+      <p>
+        The count is half the component. The other half is <em>which</em> controls come off, and the
+        answer is not &ldquo;the ones on the right&rdquo;. A document toolbar's least important
+        control is the checklist toggle, which sits in the middle; a mail toolbar's is
+        <em>Add task</em>. Priority is a product decision that has nothing to do with source order,
+        and it is stored as a number on each control.
+      </p>
+      <p>
+        Hiding right-to-left instead is the single most common implementation of this component, and
+        on the real toolbars in the first tab it produces the smallest count that fits on
+        <strong id="pDomMin2">47.7%</strong> of widths and the correct set of controls on
+        <strong id="pDomSet">21.5%</strong> of them &mdash; while never once overflowing the
+        container. There is no packing property that can see it, because it is not a packing error:
+        the count is often exactly right and the controls are the wrong ones. On the one generated
+        corpus that can see it at all &mdash; random widths with priority shuffled &mdash; its count
+        is right on <strong id="pDomRand">43.8%</strong> of widths and its set on
+        <strong id="pDomRandSet">5.3%</strong>.
+      </p>
+
+      <h3>4. Hiding one thing can make the row wider</h3>
+      <p>
+        Every step of &ldquo;hide one more&rdquo; removes a control and removes the gap that was next
+        to it. Every step except the first, because going from <em>nothing hidden</em> to <em>one
+        thing hidden</em> swaps a control for a chip and leaves the number of boxes on the row exactly
+        the same. So that one step has no gap to pay with, and if the chip is wider than the control
+        it stands in for, the row gets <em>wider</em>.
+      </p>
+      <p>
+        The size of the effect is an identity, not an estimate: the window of container widths in
+        which everything fits but hiding one thing does not is
+        <code>chip(1) &minus; width of the least important control</code> pixels wide, clamped at
+        zero. That is checked against <strong id="pHoleTested2">3,600</strong> generated
+        toolbar-and-chip pairs on load, with <strong id="pHoleViol2">0</strong> violations and zero
+        cases of the row getting wider at any other step.
+      </p>
+      <p>
+        On the mail toolbar with a <code>+N</code> chip that window is three pixels wide, which sounds
+        like nothing until you notice what it does to the search. The hidden counts that fit are
+        <em>not a contiguous run</em> any more &mdash; nought fits, one does not, two does &mdash; and
+        a binary search over a predicate with a hole in it returns whichever side it happened to land
+        on. In those three pixels it hides <strong>two</strong> controls where <strong>nought</strong>
+        was correct. Bisecting the hidden count is a real optimisation, because each candidate you
+        evaluate can cost a forced reflow, and it is exactly right
+        <strong id="pBisectDots2">100.0%</strong> of the time with a round
+        <code>&middot;&middot;&middot;</code> button and <strong id="pBisect2">99.7%</strong> with a
+        <code>+N</code> chip.
+      </p>
+      <p>
+        Which is the sentence worth taking away: whether your overflow control shows a count is a copy
+        decision, and it decides whether the layout problem underneath it is monotone.
+      </p>
+
+      <h3>5. Where the widths come from is not a detail</h3>
+      <p>
+        Every number above assumes you know how wide each control is. Getting those numbers is the
+        part that goes wrong in production, because the obvious way is to measure the DOM &mdash;
+        <code>ResizeObserver</code> fires, you read <code>getBoundingClientRect</code> on each
+        control, you re-fit.
+      </p>
+      <p>
+        A hidden control is <code>display:none</code> and measures zero. So the pass that runs after
+        you hide three controls adds up the widths of the ones that are left, concludes that the row
+        has become small enough to show everything, un-hides them, measures again, finds the row too
+        wide, and hides them again. The arithmetic was never wrong. On the document toolbar
+        <strong id="pFlickCycle2">688</strong> of <strong id="pFlickWidths2">759</strong> container
+        widths have <em>no fixed point at all</em> under that rule, and the ones that do are the ones
+        where the container is too narrow to show anything either way.
+      </p>
+      <p>
+        The fix is not in the fitting pass. Measure the controls once from a layout where they are all
+        visible &mdash; a copy of the row kept off-screen, or a single measurement pass before the
+        first hide &mdash; and cache the widths against the font and the text, not against the current
+        state of the row.
+      </p>
+
+      <h3>6. Priority is not the packing optimum, on purpose</h3>
+      <p>
+        If you wanted to fit as many controls as possible you would drop the widest ones first, and on
+        the project board toolbar that shows <strong id="pPack2">+32.1%</strong> more controls than
+        the priority rule does. The subsets that win are the ones that throw away the search field and
+        the primary button to keep three icons. A toolbar that does that is worse in every way that
+        matters and better on the only metric someone thought to measure, which is a good description
+        of most layout bugs.
+      </p>
+
+      <h3>7. What the fixture cannot see, and why that is computable</h3>
+      <p>
+        The corpus almost every test of this component runs on is four to six identical text buttons
+        with priority left to right. Two of the seven defects on this page are not unlikely on that
+        corpus, they are <em>impossible</em>, and both reasons are arithmetic:
+      </p>
+      <ul>
+        <li>
+          <code>digits(1)</code> and <code>digits(n)</code> are the same number for every
+          <code>n</code> below ten, so on a toolbar with fewer than ten controls the one-digit reserve
+          and the widest reserve are the <em>same function</em> &mdash; identical on
+          <strong id="pTwinSmall2">41,122 of 41,122</strong> container widths, and different on
+          <strong id="pTwinBig2">8.0%</strong> of the widths of toolbars that have ten or more.
+        </li>
+        <li>
+          When priority runs left to right, &ldquo;give up the last controls&rdquo; and &ldquo;give up
+          the least important controls&rdquo; are the same instruction &mdash; identical on
+          <strong id="pDomTwin2">102,592 of 102,592</strong> widths <em>with random widths
+          throughout</em>. So the blindness is not about the widths at all. It is about the priority
+          order, and a fixture author has no reason to shuffle it.
+        </li>
+      </ul>
+      <p>
+        Which means you can work out in advance which defects a corpus is capable of finding, and that
+        is a more useful thing to know about a corpus than whether it looks like production.
+      </p>
+
+      <h3>8. Five properties and what each one is worth</h3>
+      <p>
+        <em>The row stays inside the container</em> is the one everybody writes, and over-hiding never
+        overflows, so it is satisfied by <strong id="pNever2">five</strong> of the eight
+        implementations at every width. <em>The chip appears exactly when something is behind it</em>
+        is <strong>100.0%</strong> for all eight, because every one of them derives the chip from its
+        own answer; it is a property of the render, not of the fit. <em>Widening the window never
+        takes a control away</em> is <strong id="pWiden2">0</strong> violations for all eight, for a
+        structural reason: each pass minimises over candidates whose widths do not depend on the
+        container, so widening it can only add candidates.
+      </p>
+      <p>
+        <em>You could not bring one more control back</em> is the cheap version of the real property
+        and it is nearly as strong &mdash; it is what you would write if you did not want to
+        reimplement the fit inside the test. And <em>it hid the smallest count that fits, and it hid
+        the controls the product chose</em> is the specification. It is the only column that separates
+        the safe-looking mistakes from the correct answer, and it is the only one nobody writes,
+        because writing it means writing the implementation twice.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <div class="card">
+      <h2>&#128296; How it is built</h2>
+
+      <h3>1. One block of pure functions and no DOM</h3>
+      <p>
+        Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> is arithmetic over
+        numbers. The three chip shapes are <code>TRIGGERS</code>; the toolbars are
+        <code>TOOLBARS</code> plus three generators; the eight fitting passes are <code>IMPLS</code>,
+        each a single <code>fit(P, W, gap, trig)</code>; the studies are <code>sweep</code>,
+        <code>realSweep</code>, <code>corpusSweep</code>, <code>holeAt</code>,
+        <code>feasibleShape</code>, <code>holeIdentity</code>, <code>reserveTwins</code>,
+        <code>domTwins</code>, <code>widenStudy</code>, <code>flickerStudy</code> and
+        <code>priceOfPriority</code>. The verifier lifts that block out of the page with a regular
+        expression, refuses it if it so much as mentions <code>document</code>, and runs it under node
+        against oracles written separately from it.
+      </p>
+
+      <h3>2. Prefix sums over the order things are given up in</h3>
+      <p>
+        <code>prep()</code> runs once per toolbar and fixes two things. The first is the order controls
+        are surrendered in &mdash; least important first, and among equals the rightmost first,
+        because that is the one the eye misses. The second is the running total of the widths given up
+        along that order, so <code>rowWidth(P, h, gap, trig)</code> is a subtraction and two
+        multiplications rather than a loop. A whole-pixel sweep over a thousand container widths times
+        eight implementations times five properties is only affordable because the width of a
+        candidate is <code>O(1)</code>.
+      </p>
+
+      <h3>3. Two representations of the same width</h3>
+      <p>
+        <code>rowWidth</code> is the closed form: total, minus what is hidden, plus the chip, plus
+        <code>gap &times; (boxes &minus; 1)</code>. <code>placeWidth</code> is the other one: walk the
+        controls, skip the hidden ones, advance a cursor by a gap and a width for each, and read the
+        right edge. No prefix sums, no formula, and it is what the browser does. Every property check
+        in the sweep goes through <code>placeWidth</code>, and every toolbar additionally has all
+        <code>n + 1</code> of its candidate widths checked both ways. The page prints that agreement
+        count under the live table.
+      </p>
+      <p>
+        The demo adds a third: after the row is laid out it reads the real
+        <code>getBoundingClientRect</code> of the first and last boxes and prints the difference next
+        to the modelled number. The boxes carry explicit pixel widths and the row is a flex row with
+        an integer <code>gap</code>, so the two are the same integer and the page says so on every
+        repaint.
+      </p>
+
+      <h3>4. Eight passes, one clause apart</h3>
+      <p>
+        Every implementation answers the same question with the same signature, and the difference is
+        named in its <code>note</code>. Four of them differ only in what they reserve for the chip
+        (the right amount, the widest, one digit, nothing at all, or the right amount but one gap
+        short). One differs only in how it searches the candidates (bisection instead of a scan). One
+        differs only in which controls it gives up (right to left instead of by priority). One differs
+        only in where the widths come from. Keeping them all one clause apart is what makes the
+        property tables mean anything &mdash; each column change is attributable to one line.
+      </p>
+
+      <h3>5. A whole-pixel sweep, not a sample</h3>
+      <p>
+        Container width is an integer number of pixels, and the useful range is a few hundred of them,
+        so there is no reason to sample: <code>sweep</code> walks every whole pixel from the narrowest
+        width the chip alone fits in up to a width that holds the entire row, and the percentages on
+        this page are counts of pixels. That is why a three-pixel window shows up at all, and why the
+        numbers do not move between reloads.
+      </p>
+
+      <h3>6. The re-measuring pass as a dynamical system</h3>
+      <p>
+        <code>liveStep(P, W, gap, trig, hCur)</code> is the implementation that reads the DOM,
+        expressed as a map from the current hidden count to the next one: hidden controls contribute
+        zero to the measured total, everything else is the same arithmetic.
+        <code>liveOrbit</code> then iterates it from a fully expanded row, keeping a
+        <code>Map</code> of the states it has seen, and classifies the orbit as a fixed point, a
+        two-cycle or something longer. That is the only honest way to ask whether a toolbar settles,
+        because a single call to this implementation is <em>exactly correct</em> &mdash; the defect
+        does not exist in one pass, only in the sequence.
+      </p>
+
+      <h3>7. Exhaustive subsets, deliberately</h3>
+      <p>
+        <code>priceOfPriority</code> enumerates all <code>2^n</code> subsets of the row and keeps the
+        largest that fits. At fourteen controls that is 16,384 subsets per container width, so it runs
+        on a stride rather than every pixel, and it is the one study on the page that is a sample. It
+        earns its cost by answering a question none of the fitting passes can: not <em>did this
+        implementation do what it was told</em> but <em>what was the most this row could ever have
+        carried</em>.
+      </p>
+
+      <h3>8. What the verifier does differently</h3>
+      <p>
+        It shares no line with the engine. Row widths are recomputed as <strong>integer
+        placement</strong> over a rebuilt item list; the giving-up order is rebuilt by a
+        <strong>counting argument</strong> over priorities rather than a comparator sort; the smallest
+        feasible count is found by building the whole feasibility <strong>bitmask</strong> and reading
+        its lowest set bit; the hole identity is re-derived from the chip and the item widths with no
+        sweep at all; and the price of priority is recomputed by a
+        <strong>dynamic program over widths</strong> instead of subset enumeration, which is a
+        completely different algorithm that has to produce the same integer. Every percentage the page
+        prints is recomputed from the same seeds through those oracles rather than restated.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// Toolbar overflow. A row of controls, a container narrower than the row, and one number to decide:
+// how many controls come off the row and go into the menu behind the chip. Everything here is
+// arithmetic over widths in CSS pixels and nothing here touches the DOM, so the verifier can lift
+// this block straight out of the page and run it under node against oracles of its own.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function shuffle(rnd, arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(rnd() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+// ---------------------------------------------------------------- the overflow control
+// A "+3" chip is padding, a plus sign and one glyph per digit, so its width is a function of the
+// number of controls it stands in for - which is the number the fitting pass is trying to work out.
+// A round "..." button is a constant. That difference is most of this page.
+function digits(n){ return n < 10 ? 1 : n < 100 ? 2 : 3; }
+const TRIGGERS = {
+  dots:  { id:'dots',  label:'a round ... button', pad:30, glyph:0,
+           w(h){ return this.pad + this.glyph * digits(h); } },
+  count: { id:'count', label:'a +3 chip',          pad:28, glyph:7,
+           w(h){ return this.pad + this.glyph * digits(h); } },
+  more:  { id:'more',  label:'a +3 more pill',     pad:65, glyph:7,
+           w(h){ return this.pad + this.glyph * digits(h); } }
+};
+const TRIGGER_IDS = ['dots', 'count', 'more'];
+
+// ---------------------------------------------------------------- the toolbars
+// Widths are the ones a browser reports for these controls at 13px/500 in a 32px row: an icon
+// button is 32, an icon button with a caret is 46, a text button is its label plus 22 of padding.
+// Priority is what the product decided, and in a real toolbar it is never left to right.
+const TOOLBARS = {
+  docs: { label:'a document toolbar', items:[
+    { name:'Undo',         tag:'Undo', w:32,  prio:6 },
+    { name:'Redo',         tag:'Redo', w:32,  prio:9 },
+    { name:'Zoom 100%',    tag:'Zoom 100%', w:88,  prio:11 },
+    { name:'Styles',       tag:'Styles', w:104, prio:4 },
+    { name:'Font',         tag:'Font', w:126, prio:5 },
+    { name:'Size',         tag:'Size', w:56,  prio:8 },
+    { name:'Bold',         tag:'Bold', w:32,  prio:1 },
+    { name:'Italic',       tag:'Ital', w:32,  prio:2 },
+    { name:'Underline',    tag:'Undl', w:32,  prio:3 },
+    { name:'Text colour',  tag:'Colr', w:46,  prio:7 },
+    { name:'Align',        tag:'Algn', w:46,  prio:10 },
+    { name:'Line spacing', tag:'Line', w:46,  prio:12 },
+    { name:'Checklist',    tag:'List', w:46,  prio:14 },
+    { name:'Link',         tag:'Link', w:32,  prio:13 }
+  ]},
+  mail: { label:'a mail toolbar', items:[
+    { name:'Archive',     tag:'Arch', w:32, prio:2 },
+    { name:'Report spam', tag:'Spam', w:32, prio:6 },
+    { name:'Delete',      tag:'Del', w:32, prio:1 },
+    { name:'Mark unread', tag:'Unrd', w:32, prio:4 },
+    { name:'Snooze',      tag:'Snze', w:32, prio:5 },
+    { name:'Add task',    tag:'Task', w:32, prio:9 },
+    { name:'Move to',     tag:'Move', w:46, prio:7 },
+    { name:'Labels',      tag:'Labl', w:46, prio:8 },
+    { name:'Reply',       tag:'Reply', w:88, prio:3 },
+    { name:'More',        tag:'More', w:32, prio:10 }
+  ]},
+  board: { label:'a project board toolbar', items:[
+    { name:'New issue',  tag:'New issue', w:112, prio:1 },
+    { name:'Filter',     tag:'Filter', w:84,  prio:2 },
+    { name:'Group by',   tag:'Group by', w:104, prio:5 },
+    { name:'Sort',       tag:'Sort', w:70,  prio:6 },
+    { name:'Fields',     tag:'Fields', w:82,  prio:8 },
+    { name:'Sub-issues', tag:'Sub-issues', w:118, prio:9 },
+    { name:'Display',    tag:'Display', w:96,  prio:4 },
+    { name:'Search',     tag:'Search', w:180, prio:3 },
+    { name:'Import',     tag:'Import', w:88,  prio:10 },
+    { name:'Automation', tag:'Automation', w:126, prio:7 },
+    { name:'Share',      tag:'Share', w:84,  prio:11 },
+    { name:'Settings',   tag:'Set', w:32,  prio:12 }
+  ]},
+  // The toolbar in every test: a handful of identical text buttons, priority left to right.
+  fixture: { label:'the test fixture', items:[
+    { name:'One',   tag:'One', w:80, prio:1 },
+    { name:'Two',   tag:'Two', w:80, prio:2 },
+    { name:'Three', tag:'Three', w:80, prio:3 },
+    { name:'Four',  tag:'Four', w:80, prio:4 },
+    { name:'Five',  tag:'Five', w:80, prio:5 },
+    { name:'Six',   tag:'Six', w:80, prio:6 }
+  ]}
+};
+const TOOLBAR_IDS = ['docs', 'mail', 'board', 'fixture'];
+const REAL_IDS = ['docs', 'mail', 'board'];
+const GAP = 8;
+
+// A generated toolbar: widths drawn from the same four control shapes, priority a permutation.
+const WPOOL = [32, 32, 32, 46, 46, 56, 70, 82, 84, 88, 96, 104, 112, 126, 180];
+function genToolbar(rnd, n){
+  const items = [];
+  for (let i = 0; i < n; i++) items.push({ name:'c' + i, tag:'c' + i, w: WPOOL[Math.floor(rnd() * WPOOL.length)], prio:0 });
+  const perm = shuffle(rnd, items.map((_, i) => i));
+  for (let i = 0; i < n; i++) items[perm[i]].prio = i + 1;
+  return { label:'generated', items:items };
+}
+// A generated toolbar held to the FIXTURE's own habits: every control the same width, priority left
+// to right, and few enough of them to be readable. Nothing about it is less random - it is random
+// inside narrower rules, which is what a test fixture is.
+function genFixtureLike(rnd, n){
+  const w = WPOOL[Math.floor(rnd() * WPOOL.length)];
+  const items = [];
+  for (let i = 0; i < n; i++) items.push({ name:'c' + i, tag:'c' + i, w:w, prio:i + 1 });
+  return { label:'fixture-like', items:items };
+}
+// Random widths, but priority still left to right - one habit isolated from the other.
+function genLtr(rnd, n){
+  const items = [];
+  for (let i = 0; i < n; i++) items.push({ name:'c' + i, tag:'c' + i, w: WPOOL[Math.floor(rnd() * WPOOL.length)], prio:i + 1 });
+  return { label:'left-to-right priority', items:items };
+}
+
+// ---------------------------------------------------------------- prepared toolbar
+// prep() runs once per toolbar. It fixes the order in which controls are given up - least important
+// first, and among equals the rightmost first, because that is the one the eye misses - and the
+// prefix sums that turn every width below into an O(1) subtraction instead of a loop.
+function prep(tb){
+  const items = tb.items, n = items.length;
+  const give = items.map((it, i) => i).sort((a, b) => {
+    const pa = items[a].prio, pb = items[b].prio;
+    if (pa !== pb) return pb - pa;
+    return b - a;
+  });
+  let total = 0;
+  for (const it of items) total += it.w;
+  const gone = new Array(n + 1).fill(0);       // width given up by hiding the first h of give
+  for (let h = 1; h <= n; h++) gone[h] = gone[h - 1] + items[give[h - 1]].w;
+  const domGone = new Array(n + 1).fill(0);    // ... by hiding the last h in DOM order instead
+  for (let h = 1; h <= n; h++) domGone[h] = domGone[h - 1] + items[n - h].w;
+  return { tb:tb, items:items, n:n, give:give, total:total, gone:gone, domGone:domGone,
+           label:tb.label };
+}
+
+// The width of the row when h controls are hidden. boxes-1 gaps, and the chip is a box.
+function rowWidth(P, h, gap, trig){
+  const shown = P.n - h;
+  const boxes = shown + (h > 0 ? 1 : 0);
+  if (boxes === 0) return 0;
+  return (P.total - P.gone[h]) + (h > 0 ? trig.w(h) : 0) + gap * (boxes - 1);
+}
+function rowWidthDom(P, h, gap, trig){
+  const shown = P.n - h;
+  const boxes = shown + (h > 0 ? 1 : 0);
+  if (boxes === 0) return 0;
+  return (P.total - P.domGone[h]) + (h > 0 ? trig.w(h) : 0) + gap * (boxes - 1);
+}
+// The same number reached the other way: put every visible box down at a cursor and read the right
+// edge of the last one. No prefix sums, no closed form, and it is what a browser does.
+function placeWidth(P, hidden, gap, trig){
+  let x = 0, first = true;
+  for (let i = 0; i < P.n; i++){
+    if (hidden.has(i)) continue;
+    if (!first) x += gap;
+    x += P.items[i].w;
+    first = false;
+  }
+  if (hidden.size > 0){
+    if (!first) x += gap;
+    x += trig.w(hidden.size);
+  }
+  return x;
+}
+function hiddenPrio(P, h){ const s = new Set(); for (let k = 0; k < h; k++) s.add(P.give[k]); return s; }
+function hiddenDom(P, h){ const s = new Set(); for (let k = 0; k < h; k++) s.add(P.n - 1 - k); return s; }
+
+// ---------------------------------------------------------------- the eight fitting passes
+// Every one answers "how many controls do I hide". They differ by one clause, named in .note, and
+// that clause is the only thing that differs.
+const IMPLS = {
+  exact: {
+    label:'every candidate count', byDom:false, family:'correct',
+    note:'tries every hidden count and takes the smallest one that fits',
+    fit(P, W, gap, trig){
+      for (let h = 0; h <= P.n; h++) if (rowWidth(P, h, gap, trig) <= W) return h;
+      return P.n;
+    }
+  },
+  reserveMax: {
+    label:'reserve the widest chip', byDom:false, family:'reserve',
+    note:'always keeps room for the chip, sized as if every control were hidden',
+    fit(P, W, gap, trig){
+      const R = trig.w(P.n);
+      for (let h = 0; h <= P.n; h++){
+        const boxes = (P.n - h) + 1;
+        if ((P.total - P.gone[h]) + R + gap * (boxes - 1) <= W) return h;
+      }
+      return P.n;
+    }
+  },
+  reserveOne: {
+    label:'reserve a one-digit chip', byDom:false, family:'reserve',
+    note:'always keeps room for the chip, sized as if one control were hidden',
+    fit(P, W, gap, trig){
+      const R = trig.w(1);
+      for (let h = 0; h <= P.n; h++){
+        const boxes = (P.n - h) + 1;
+        if ((P.total - P.gone[h]) + R + gap * (boxes - 1) <= W) return h;
+      }
+      return P.n;
+    }
+  },
+  reserveNone: {
+    label:'fit the controls, then add the chip', byDom:false, family:'reserve',
+    note:'the chip is not in the budget at all',
+    fit(P, W, gap, trig){
+      for (let h = 0; h <= P.n; h++){
+        const shown = P.n - h;
+        if (shown === 0) return h;
+        if ((P.total - P.gone[h]) + gap * (shown - 1) <= W) return h;
+      }
+      return P.n;
+    }
+  },
+  gapless: {
+    label:'forget the gap before the chip', byDom:false, family:'reserve',
+    note:'right chip width, one gap short',
+    fit(P, W, gap, trig){
+      for (let h = 0; h <= P.n; h++){
+        const boxes = (P.n - h) + (h > 0 ? 1 : 0);
+        if (boxes === 0) return h;
+        const g = h > 0 ? Math.max(0, boxes - 2) : boxes - 1;
+        if ((P.total - P.gone[h]) + (h > 0 ? trig.w(h) : 0) + gap * g <= W) return h;
+      }
+      return P.n;
+    }
+  },
+  bisect: {
+    label:'bisect the hidden count', byDom:false, family:'search',
+    note:'right fit test, binary search instead of a scan',
+    fit(P, W, gap, trig){
+      let lo = 0, hi = P.n;
+      while (lo < hi){
+        const mid = (lo + hi) >> 1;
+        if (rowWidth(P, mid, gap, trig) <= W) hi = mid; else lo = mid + 1;
+      }
+      return lo;
+    }
+  },
+  domOrder: {
+    label:'give up the last controls', byDom:true, family:'set',
+    note:'right count search, hides right to left instead of by priority',
+    fit(P, W, gap, trig){
+      for (let h = 0; h <= P.n; h++) if (rowWidthDom(P, h, gap, trig) <= W) return h;
+      return P.n;
+    }
+  },
+  liveMeasure: {
+    label:'measure what is on screen', byDom:false, family:'measure',
+    note:'right arithmetic, widths read from the row as it is rendered right now',
+    fit(P, W, gap, trig){ return liveStep(P, W, gap, trig, 0); }
+  }
+};
+const IMPL_IDS = ['exact', 'reserveMax', 'reserveOne', 'reserveNone', 'gapless', 'bisect',
+                  'domOrder', 'liveMeasure'];
+const DEFECT_IDS = IMPL_IDS.slice(1);
+
+// One pass of the implementation that re-measures. Hidden controls are display:none, so they
+// measure ZERO - and a zero-width box is still a box as far as the row's own gap accounting goes.
+function liveStep(P, W, gap, trig, hCur){
+  const hid = hiddenPrio(P, hCur);
+  let mTotal = 0;
+  for (let i = 0; i < P.n; i++) if (!hid.has(i)) mTotal += P.items[i].w;
+  const mGone = new Array(P.n + 1).fill(0);
+  let cum = 0;
+  for (let h = 1; h <= P.n; h++){
+    const idx = P.give[h - 1];
+    cum += hid.has(idx) ? 0 : P.items[idx].w;
+    mGone[h] = cum;
+  }
+  for (let h = 0; h <= P.n; h++){
+    const boxes = (P.n - h) + (h > 0 ? 1 : 0);
+    if (boxes === 0) return h;
+    if ((mTotal - mGone[h]) + (h > 0 ? trig.w(h) : 0) + gap * (boxes - 1) <= W) return h;
+  }
+  return P.n;
+}
+// Where the re-measuring pass settles. A fixed point is a still toolbar; anything else is a toolbar
+// that repaints for as long as the tab is open.
+function liveOrbit(P, W, gap, trig, h0, cap){
+  const seen = new Map();
+  let h = h0, steps = 0;
+  while (steps < cap){
+    if (seen.has(h)) return { cycle: steps - seen.get(h), enter: seen.get(h), fixed:false, at:h };
+    seen.set(h, steps);
+    const nh = liveStep(P, W, gap, trig, h);
+    if (nh === h) return { cycle:1, enter:steps, fixed:true, at:h };
+    h = nh; steps++;
+  }
+  return { cycle:-1, enter:-1, fixed:false, at:h };
+}
+function orbitTrace(P, W, gap, trig, steps){
+  const seq = [0];
+  let h = 0;
+  for (let i = 0; i < steps; i++){ h = liveStep(P, W, gap, trig, h); seq.push(h); }
+  return seq;
+}
+
+// ---------------------------------------------------------------- what each pass produced
+// A result is a hidden COUNT and a hidden SET, because two of the passes agree on the count and
+// disagree about which controls it is.
+function runImpl(id, P, W, gap, trig){
+  const h = IMPLS[id].fit(P, W, gap, trig);
+  return { h:h, hidden: IMPLS[id].byDom ? hiddenDom(P, h) : hiddenPrio(P, h) };
+}
+
+// The five properties, in the order a team writes them.
+//   fits      - the row does not stick out of the container. The only one a screenshot can see.
+//   chipRight - the chip is on screen exactly when something is behind it.
+//   localOpt  - you could not bring one more control back and still fit.
+//   minimal   - the hidden count is the smallest one that fits at all.
+//   sameSet   - and it is hiding the controls the product asked it to hide.
+function properties(P, W, gap, trig, res, exactRes){
+  const wid = placeWidth(P, res.hidden, gap, trig);
+  const fits = wid <= W;
+  const chipRight = (res.hidden.size > 0) === (res.h > 0);
+  let localOpt = true;
+  if (res.h > 0){
+    let best = -1, bestPrio = Infinity;
+    for (const i of res.hidden) if (P.items[i].prio < bestPrio){ bestPrio = P.items[i].prio; best = i; }
+    const back = new Set(res.hidden);
+    back.delete(best);
+    if (placeWidth(P, back, gap, trig) <= W) localOpt = false;
+  }
+  const minimal = res.h === exactRes.h;
+  let sameSet = res.hidden.size === exactRes.hidden.size;
+  if (sameSet) for (const i of res.hidden){ if (!exactRes.hidden.has(i)){ sameSet = false; break; } }
+  return { fits:fits, chipRight:chipRight, localOpt:localOpt, minimal:minimal, sameSet:sameSet,
+           width:wid, over: Math.max(0, wid - W), lost: res.h - exactRes.h };
+}
+
+function blankStat(){
+  return { widths:0, fits:0, chipRight:0, localOpt:0, minimal:0, sameSet:0, lost:0, lostMax:0,
+           over:0, overMax:0, overWidths:0, lostWidths:0, shown:0 };
+}
+function addStat(a, b){
+  a.widths += b.widths; a.fits += b.fits; a.chipRight += b.chipRight; a.localOpt += b.localOpt;
+  a.minimal += b.minimal; a.sameSet += b.sameSet; a.lost += b.lost; a.over += b.over;
+  a.overWidths += b.overWidths; a.lostWidths += b.lostWidths; a.shown += b.shown;
+  if (b.lostMax > a.lostMax) a.lostMax = b.lostMax;
+  if (b.overMax > a.overMax) a.overMax = b.overMax;
+}
+
+// ---------------------------------------------------------------- the width sweep
+// Not a sample: every whole pixel of container width from the narrowest useful one up to one that
+// fits the whole row, so every percentage below is a count of pixels rather than an estimate.
+function widthRange(P, gap, trig){
+  return { lo: Math.max(120, trig.w(P.n)), hi: rowWidth(P, 0, gap, trig) + 24 };
+}
+function sweep(P, gap, trig, lo, hi){
+  const stat = {};
+  for (const id of IMPL_IDS) stat[id] = blankStat();
+  let widths = 0, asserts = 0, agree = 0, cross = 0;
+  let firstOver = null, firstLost = null, firstWrongSet = null;
+  // the two representations of a row width must agree at every hidden count, once per toolbar
+  for (let h = 0; h <= P.n; h++){
+    cross++; asserts++;
+    if (rowWidth(P, h, gap, trig) !== placeWidth(P, hiddenPrio(P, h), gap, trig)) cross--;
+  }
+  for (let W = lo; W <= hi; W++){
+    widths++;
+    const ex = runImpl('exact', P, W, gap, trig);
+    let same = true;
+    for (const id of IMPL_IDS){
+      const r = id === 'exact' ? ex : runImpl(id, P, W, gap, trig);
+      const p = properties(P, W, gap, trig, r, ex);
+      const s = stat[id];
+      s.widths++; asserts += 5;
+      if (p.fits) s.fits++;
+      if (p.chipRight) s.chipRight++;
+      if (p.localOpt) s.localOpt++;
+      if (p.minimal) s.minimal++;
+      if (p.sameSet) s.sameSet++;
+      s.shown += P.n - r.h;
+      if (p.over > 0){
+        s.over += p.over; s.overWidths++;
+        if (p.over > s.overMax) s.overMax = p.over;
+        if (!firstOver) firstOver = { id:id, W:W, over:p.over, h:r.h };
+      }
+      if (p.lost > 0){
+        s.lost += p.lost; s.lostWidths++;
+        if (p.lost > s.lostMax) s.lostMax = p.lost;
+        if (!firstLost) firstLost = { id:id, W:W, lost:p.lost, h:r.h, exact:ex.h };
+      }
+      if (!p.sameSet && p.minimal && !firstWrongSet) firstWrongSet = { id:id, W:W, h:r.h };
+      if (r.h !== ex.h) same = false;
+    }
+    if (same) agree++;
+    asserts++;
+  }
+  return { widths:widths, asserts:asserts, agree:agree, stat:stat, lo:lo, hi:hi, cross:cross,
+           crossOf:P.n + 1, firstOver:firstOver, firstLost:firstLost, firstWrongSet:firstWrongSet };
+}
+
+// ---------------------------------------------------------------- the hole
+// rowWidth(1) - rowWidth(0) is the chip minus the control it stands in for and nothing else, because
+// the box count is identical either way and so the gap count is identical too. When the chip is the
+// wider of the two, hiding ONE control makes the row WIDER, and the set of hidden counts that fit
+// stops being an up-set.
+function holeAt(P, gap, trig){
+  const d = [];
+  for (let h = 0; h < P.n; h++) d.push(rowWidth(P, h + 1, gap, trig) - rowWidth(P, h, gap, trig));
+  const rises = [];
+  for (let h = 0; h < P.n; h++) if (d[h] > 0) rises.push({ from:h, to:h + 1, by:d[h] });
+  const w0 = rowWidth(P, 0, gap, trig), w1 = rowWidth(P, 1, gap, trig);
+  const least = P.items[P.give[0]];
+  return { deltas:d, rises:rises, w0:w0, w1:w1, holeLo:w0, holeHi:w1 - 1,
+           holePixels: Math.max(0, w1 - w0), monotone: rises.length === 0,
+           least:least, predicted: Math.max(0, trig.w(1) - least.w) };
+}
+// Is the set of hidden counts that fit an up-set - everything from some h onwards? A binary search
+// is only entitled to an answer when it is.
+function feasibleShape(P, gap, trig, lo, hi){
+  let widths = 0, upset = 0, holes = 0, maxHole = 0, asserts = 0;
+  let example = null;
+  for (let W = lo; W <= hi; W++){
+    widths++;
+    const fitAt = [];
+    for (let h = 0; h <= P.n; h++) fitAt.push(rowWidth(P, h, gap, trig) <= W);
+    let first = -1;
+    for (let h = 0; h <= P.n; h++) if (fitAt[h]){ first = h; break; }
+    let bad = 0;
+    if (first >= 0) for (let h = first; h <= P.n; h++) if (!fitAt[h]) bad++;
+    asserts += P.n + 2;
+    if (bad === 0) upset++;
+    else {
+      holes++;
+      if (bad > maxHole) maxHole = bad;
+      if (!example) example = { W:W, fitAt:fitAt.slice(), first:first,
+                                bisect: IMPLS.bisect.fit(P, W, gap, trig) };
+    }
+  }
+  return { widths:widths, upset:upset, holes:holes, maxHole:maxHole, asserts:asserts,
+           example:example };
+}
+// The identity, over generated toolbars and all three chip shapes: the hole is exactly as many
+// pixels wide as the chip is wider than the least important control, and the only place the row can
+// ever get wider is the step from nothing hidden to one thing hidden.
+function holeIdentity(count, seed, gap){
+  const rnd = mulberry32(seed);
+  let tested = 0, violations = 0, withHole = 0, riseElsewhere = 0, asserts = 0;
+  for (let c = 0; c < count; c++){
+    const P = prep(genToolbar(rnd, 3 + Math.floor(rnd() * 14)));
+    for (const tid of TRIGGER_IDS){
+      const h = holeAt(P, gap, TRIGGERS[tid]);
+      tested++; asserts += 2;
+      if (h.holePixels !== h.predicted) violations++;
+      if (h.holePixels > 0) withHole++;
+      for (const r of h.rises){ asserts++; if (r.from !== 0) riseElsewhere++; }
+    }
+  }
+  return { tested:tested, violations:violations, withHole:withHole,
+           riseElsewhere:riseElsewhere, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- two blindness identities
+// Below ten controls the one-digit reserve and the widest reserve are the SAME PROGRAM, because
+// digits(1) === digits(n). A toolbar needs ten controls before those two implementations differ at
+// any container width at all - and ten controls is roughly where overflow starts to matter.
+function reserveTwins(count, seed, gap, trig){
+  const rnd = mulberry32(seed);
+  const out = { small:{ widths:0, same:0, bars:0 }, big:{ widths:0, same:0, bars:0 }, asserts:0 };
+  for (let c = 0; c < count; c++){
+    const n = 3 + Math.floor(rnd() * 14);
+    const P = prep(genToolbar(rnd, n));
+    const r = widthRange(P, gap, trig);
+    const b = n < 10 ? out.small : out.big;
+    b.bars++;
+    for (let W = r.lo; W <= r.hi; W++){
+      b.widths++; out.asserts++;
+      if (IMPLS.reserveOne.fit(P, W, gap, trig) === IMPLS.reserveMax.fit(P, W, gap, trig)) b.same++;
+    }
+  }
+  return out;
+}
+// And when priority IS left to right, giving up the last controls and giving up the least important
+// controls are the same instruction, whatever the widths happen to be.
+function domTwins(count, seed, gap, trig){
+  const rnd = mulberry32(seed);
+  const out = { ltr:{ widths:0, same:0 }, perm:{ widths:0, same:0 }, asserts:0 };
+  for (let c = 0; c < count; c++){
+    const n = 4 + Math.floor(rnd() * 11);
+    for (const kind of ['ltr', 'perm']){
+      const P = prep(kind === 'ltr' ? genLtr(rnd, n) : genToolbar(rnd, n));
+      const r = widthRange(P, gap, trig);
+      const b = out[kind];
+      for (let W = r.lo; W <= r.hi; W++){
+        b.widths++; out.asserts++;
+        if (IMPLS.domOrder.fit(P, W, gap, trig) === IMPLS.exact.fit(P, W, gap, trig)) b.same++;
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- widen the window
+// The property a user has rather than one a suite has: dragging the window wider must never take a
+// control away. Monotone in the CONTAINER width, which is a different question from monotone in the
+// hidden count.
+function widenStudy(P, gap, trig, lo, hi){
+  const out = {};
+  for (const id of IMPL_IDS){
+    let inv = 0, worst = 0, asserts = 0, first = null;
+    let prev = IMPLS[id].fit(P, lo, gap, trig);
+    for (let W = lo + 1; W <= hi; W++){
+      const h = IMPLS[id].fit(P, W, gap, trig);
+      asserts++;
+      if (h > prev){
+        inv++;
+        if (h - prev > worst) worst = h - prev;
+        if (!first) first = { W:W, from:prev, to:h };
+      }
+      prev = h;
+    }
+    out[id] = { inversions:inv, worst:worst, first:first, asserts:asserts };
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the re-measuring pass
+function flickerStudy(P, gap, trig, lo, hi){
+  let widths = 0, needHide = 0, fixed = 0, twoCycle = 0, longer = 0, asserts = 0;
+  let fixedWhileHiding = 0, example = null;
+  for (let W = lo; W <= hi; W++){
+    widths++;
+    const need = IMPLS.exact.fit(P, W, gap, trig) > 0;
+    if (need) needHide++;
+    const orb = liveOrbit(P, W, gap, trig, 0, 64);
+    asserts += 2;
+    if (orb.fixed){ fixed++; if (need) fixedWhileHiding++; }
+    else if (orb.cycle === 2){
+      twoCycle++;
+      if (!example && need){
+        const a = liveStep(P, W, gap, trig, 0);
+        example = { W:W, a:a, b: liveStep(P, W, gap, trig, a),
+                    correct: IMPLS.exact.fit(P, W, gap, trig) };
+      }
+    } else longer++;
+  }
+  return { widths:widths, needHide:needHide, fixed:fixed, twoCycle:twoCycle, longer:longer,
+           fixedWhileHiding:fixedWhileHiding, asserts:asserts, example:example };
+}
+
+// ---------------------------------------------------------------- the price of priority
+// Hiding by priority is a product rule, not a packing rule. Enumerating every subset of controls
+// says how many the row COULD have carried at that width, which is a different number, and refusing
+// it is a decision rather than an oversight.
+function priceOfPriority(P, gap, trig, lo, hi, stride){
+  if (P.n > 20) return null;
+  let widths = 0, byPrio = 0, byPack = 0, worse = 0, worstGap = 0, asserts = 0;
+  let example = null;
+  const wArr = P.items.map(it => it.w), n = P.n;
+  for (let W = lo; W <= hi; W += stride){
+    widths++;
+    const shownP = n - IMPLS.exact.fit(P, W, gap, trig);
+    let best = 0;
+    for (let mask = 0; mask < (1 << n); mask++){
+      let sum = 0, boxes = 0;
+      for (let i = 0; i < n; i++) if (mask & (1 << i)){ sum += wArr[i]; boxes++; }
+      if (boxes <= best) continue;
+      const hid = n - boxes, bx = boxes + (hid > 0 ? 1 : 0);
+      if (sum + (hid > 0 ? trig.w(hid) : 0) + gap * (bx - 1) <= W) best = boxes;
+    }
+    asserts += 2;
+    byPrio += shownP; byPack += best;
+    if (best > shownP){
+      worse++;
+      if (best - shownP > worstGap) worstGap = best - shownP;
+      if (!example) example = { W:W, prio:shownP, pack:best };
+    }
+  }
+  return { widths:widths, byPrio:byPrio, byPack:byPack, worse:worse, worstGap:worstGap,
+           asserts:asserts, example:example };
+}
+
+// ---------------------------------------------------------------- corpora
+function corpusSweep(kind, count, n0, n1, seed, gap, trig){
+  const rnd = mulberry32(seed);
+  const stat = {};
+  for (const id of IMPL_IDS) stat[id] = blankStat();
+  let widths = 0, asserts = 0, agree = 0, toolbars = 0, holePixels = 0, holeBars = 0;
+  let cross = 0, crossOf = 0;
+  for (let c = 0; c < count; c++){
+    const n = n0 + Math.floor(rnd() * (n1 - n0 + 1));
+    const tb = kind === 'fixtureLike' ? genFixtureLike(rnd, n)
+             : kind === 'ltr' ? genLtr(rnd, n) : genToolbar(rnd, n);
+    const P = prep(tb);
+    toolbars++;
+    const r = widthRange(P, gap, trig);
+    const s = sweep(P, gap, trig, r.lo, r.hi);
+    const hh = holeAt(P, gap, trig);
+    if (!hh.monotone) holeBars++;
+    holePixels += hh.holePixels;
+    widths += s.widths; asserts += s.asserts; agree += s.agree;
+    cross += s.cross; crossOf += s.crossOf;
+    for (const id of IMPL_IDS) addStat(stat[id], s.stat[id]);
+  }
+  return { toolbars:toolbars, widths:widths, asserts:asserts, agree:agree, stat:stat,
+           holePixels:holePixels, holeBars:holeBars, cross:cross, crossOf:crossOf };
+}
+// The three real toolbars swept together, which is the number the page quotes most often.
+function realSweep(gap, trig){
+  const stat = {};
+  for (const id of IMPL_IDS) stat[id] = blankStat();
+  let widths = 0, asserts = 0, agree = 0, cross = 0, crossOf = 0;
+  const per = {};
+  for (const id of REAL_IDS){
+    const P = prep(TOOLBARS[id]);
+    const r = widthRange(P, gap, trig);
+    const s = sweep(P, gap, trig, r.lo, r.hi);
+    per[id] = s;
+    widths += s.widths; asserts += s.asserts; agree += s.agree;
+    cross += s.cross; crossOf += s.crossOf;
+    for (const i of IMPL_IDS) addStat(stat[i], s.stat[i]);
+  }
+  return { widths:widths, asserts:asserts, agree:agree, stat:stat, per:per,
+           cross:cross, crossOf:crossOf };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own prose
+// and "12,845,133" must not come back as "1,28,45,133" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const cls = (b, s) => "<span class='" + (b ? "ok" : "bad") + "'>" + s + "</span>";
+const p100 = (x, n) => { const s = pct(x, n); return "<span class='" + (x === n ? "ok" : "bad") + "'>" + s + "</span>"; };
+const yn = b => b ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>";
+// small counts read as words in the prose, so the markup's fallback text and the rendered text are
+// the same string and the verifier can check the one against the other.
+const WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+const word = n => (n >= 0 && n < WORDS.length) ? WORDS[n] : String(n);
+
+// The exact workload. Every figure this page prints comes out of these calls, and the verifier
+// replays the same counts and seeds from the extracted engine block before it checks the prose.
+const CASES = { rand: 60, fix: 60, ltr: 60 };
+const SEEDS = { rand: 9101, fix: 9102, ltr: 9103 };
+const NRANGE = { rand: [6, 16], fix: [4, 8], ltr: [6, 16] };
+const HOLE_CASES = 1200, HOLE_SEED = 4242;
+const TWIN_CASES = 220, TWIN_SEED = 777;
+const DOM_CASES = 160, DOM_SEED = 31;
+const PP_STRIDE = 11;
+const DEF_TRIG = 'count';
+
+let RS = null, FIXB = null, CS = null, HL = null, FSH = null, WD = null, FK = null, PP = null;
+let HI = null, RT = null, DT = null;
+let TOTAL = 0, MS = 0, WIDTHS = 0;
+
+function measure(){
+  const t0 = Date.now();
+  RS = {}; HL = {}; FSH = {}; WD = {}; FK = {}; PP = {};
+  for (const tid of TRIGGER_IDS){
+    const trig = TRIGGERS[tid];
+    RS[tid] = realSweep(GAP, trig);
+    HL[tid] = {}; FSH[tid] = {}; WD[tid] = {}; FK[tid] = {}; PP[tid] = {};
+    for (const b of TOOLBAR_IDS){
+      const P = prep(TOOLBARS[b]), r = widthRange(P, GAP, trig);
+      HL[tid][b] = holeAt(P, GAP, trig);
+      FSH[tid][b] = feasibleShape(P, GAP, trig, r.lo, r.hi);
+      WD[tid][b] = widenStudy(P, GAP, trig, r.lo, r.hi);
+      FK[tid][b] = flickerStudy(P, GAP, trig, r.lo, r.hi);
+      // the only study here that enumerates subsets, so it runs for the chip the page tables
+      PP[tid][b] = tid === DEF_TRIG ? priceOfPriority(P, GAP, trig, r.lo, r.hi, PP_STRIDE) : null;
+    }
+  }
+  const T = TRIGGERS[DEF_TRIG];
+  const PF = prep(TOOLBARS.fixture), rf = widthRange(PF, GAP, T);
+  FIXB = sweep(PF, GAP, T, rf.lo, rf.hi);
+  CS = {};
+  CS.rand = corpusSweep('random', CASES.rand, NRANGE.rand[0], NRANGE.rand[1], SEEDS.rand, GAP, T);
+  CS.fix  = corpusSweep('fixtureLike', CASES.fix, NRANGE.fix[0], NRANGE.fix[1], SEEDS.fix, GAP, T);
+  CS.ltr  = corpusSweep('ltr', CASES.ltr, NRANGE.ltr[0], NRANGE.ltr[1], SEEDS.ltr, GAP, T);
+  HI = holeIdentity(HOLE_CASES, HOLE_SEED, GAP);
+  RT = reserveTwins(TWIN_CASES, TWIN_SEED, GAP, T);
+  DT = domTwins(DOM_CASES, DOM_SEED, GAP, T);
+
+  TOTAL = 0; WIDTHS = 0;
+  for (const tid of TRIGGER_IDS){
+    TOTAL += RS[tid].asserts;
+    for (const b of TOOLBAR_IDS){
+      TOTAL += FSH[tid][b].asserts + FK[tid][b].asserts + (PP[tid][b] ? PP[tid][b].asserts : 0);
+      for (const i of IMPL_IDS) TOTAL += WD[tid][b][i].asserts;
+    }
+  }
+  TOTAL += FIXB.asserts + CS.rand.asserts + CS.fix.asserts + CS.ltr.asserts
+         + HI.asserts + RT.asserts + DT.asserts;
+  WIDTHS = RS[DEF_TRIG].widths + FIXB.widths + CS.rand.widths + CS.fix.widths + CS.ltr.widths;
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- the live toolbar
+// The boxes are laid out by the browser at the widths the engine reasons about, so the row on
+// screen is the row in the arithmetic. The demo prints the browser's own measurement next to the
+// modelled one, and they have to be the same number.
+function chipText(trig, h){
+  if (trig.id === 'dots') return '···';
+  if (trig.id === 'more') return '+' + h + ' more';
+  return '+' + h;
+}
+function rowHtml(P, hidden, trig, W, rowId){
+  let s = "<div class='tbwrap' style='width:" + W + "px'><div class='tbedge'></div>" +
+          "<div class='tbrow'" + (rowId ? " id='" + rowId + "'" : "") + ">";
+  for (let i = 0; i < P.n; i++){
+    if (hidden.has(i)) continue;
+    const it = P.items[i];
+    s += "<span class='ctl" + (it.w <= 46 ? " icon" : "") + "' style='width:" + it.w + "px' " +
+         "title='" + esc(it.name) + " &middot; " + it.w + "px &middot; priority " + it.prio + "'>" +
+         esc(it.tag || it.name) + "</span>";
+  }
+  if (hidden.size > 0)
+    s += "<span class='chip' style='width:" + trig.w(hidden.size) + "px'>" +
+         esc(chipText(trig, hidden.size)) + "</span>";
+  s += "</div></div>";
+  return s;
+}
+function hiddenList(P, hidden){
+  const names = [];
+  for (let i = 0; i < P.n; i++) if (hidden.has(i)) names.push(P.items[i].name);
+  return names;
+}
+
+let barId = 'docs', trigId = DEF_TRIG, implId = 'reserveMax', W = 655, walking = null;
+
+function curP(){ return prep(TOOLBARS[barId]); }
+function paintLive(){
+  const P = curP(), trig = TRIGGERS[trigId];
+  const r = widthRange(P, GAP, trig);
+  const sl = $('slW');
+  sl.min = String(r.lo); sl.max = String(r.hi + 60);
+  if (W < r.lo) W = r.lo;
+  if (W > r.hi + 60) W = r.hi + 60;
+  sl.value = String(W);
+  $('wNum').textContent = W + 'px';
+
+  const ex = runImpl('exact', P, W, GAP, trig);
+  const res = runImpl(implId, P, W, GAP, trig);
+  const wid = placeWidth(P, res.hidden, GAP, trig);
+  $('liveRow').innerHTML = rowHtml(P, res.hidden, trig, W, 'measRow');
+  const hid = hiddenList(P, res.hidden);
+  $('liveMenu').innerHTML = hid.length
+    ? "<span class='cap' style='margin:0 8px 0 0'>BEHIND THE CHIP</span>" +
+      hid.map(n => "<span class='pill'>" + esc(n) + "</span>").join('')
+    : "<span class='cap' style='margin:0'>NOTHING IS HIDDEN</span>";
+
+  const over = wid - W;
+  $('liveNote').innerHTML =
+    "container <strong>" + W + "px</strong> &middot; row <strong>" + wid + "px</strong> &middot; " +
+    (over > 0 ? "<span class='bad'>" + over + "px over the edge</span>"
+              : "<span class='ok'>" + (-over) + "px to spare</span>") +
+    " &middot; hides <strong>" + res.h + "</strong> of " + P.n +
+    " &middot; the smallest count that fits here is <strong>" + ex.h + "</strong>" +
+    (res.h === ex.h ? "" : " <span class='bad'>(this pass gives up " + (res.h - ex.h) +
+      (res.h - ex.h === 1 ? " control that fits)" : " controls that fit)") + "</span>") +
+    " &middot; <span id='measOut' class='dim'></span>";
+
+  let t = "";
+  for (const id of IMPL_IDS){
+    const rr = runImpl(id, P, W, GAP, trig);
+    const pp = properties(P, W, GAP, trig, rr, ex);
+    t += "<tr" + (id === implId ? " class='me'" : "") + "><td style='text-align:left'>" +
+      esc(IMPLS[id].label) + "</td><td>" + rr.h + "</td><td>" + pp.width + "</td><td>" +
+      (pp.fits ? "<span class='ok'>fits</span>" : "<span class='bad'>" + pp.over + "px over</span>") +
+      "</td><td>" + (pp.minimal ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>") +
+      "</td><td>" + (pp.sameSet ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>") +
+      "</td><td style='text-align:left' class='seq'>" +
+      (rr.h ? esc(hiddenList(P, rr.hidden).join(', ')) : "<span class='dim'>&mdash;</span>") +
+      "</td></tr>";
+  }
+  $('liveTab').innerHTML = t;
+
+  // the browser's own answer, read back off the row it just laid out
+  const rowEl = $('measRow');
+  if (rowEl){
+    const kids = rowEl.children;
+    let real = 0;
+    if (kids.length){
+      const a = kids[0].getBoundingClientRect(), b = kids[kids.length - 1].getBoundingClientRect();
+      real = Math.round(b.right - a.left);
+    }
+    const out = $('measOut');
+    if (out) out.innerHTML = "the browser lays that row out at <strong>" + real + "px</strong>" +
+      (real === wid ? " <span class='ok'>&#10003;</span>" : " <span class='bad'>&#8800; " + wid + "</span>");
+  }
+}
+
+// ---------------------------------------------------------------- card 2 and 3
+function fillSeen(){
+  const T = TRIGGERS[DEF_TRIG], A = RS[DEF_TRIG];
+  $('hReal').textContent = fmt(A.widths) + " widths";
+  $('hFix').textContent = fmt(FIXB.widths) + " widths";
+  let t = "";
+  for (const id of IMPL_IDS){
+    const b = A.stat[id], f = FIXB.stat[id];
+    t += "<tr" + (id === 'exact' ? " class='me'" : "") + "><td style='text-align:left'>" +
+      esc(IMPLS[id].label) + "</td><td style='text-align:left' class='dim'>" + esc(IMPLS[id].note) +
+      "</td><td>" + p100(b.fits, b.widths) + "</td><td>" + p100(f.fits, f.widths) + "</td><td>" +
+      p100(b.minimal, b.widths) + "</td><td>" + (b.lost ? "<span class='bad'>" + fmt(b.lost) +
+      "</span>" : "<span class='ok'>0</span>") + "</td><td>" + (b.overMax ?
+      "<span class='bad'>" + b.overMax + "px</span>" : "<span class='ok'>0</span>") + "</td></tr>";
+  }
+  $('tSeen').innerHTML = t;
+  const never = IMPL_IDS.filter(id => A.stat[id].fits === A.stat[id].widths);
+  const wrong = never.filter(id => A.stat[id].minimal !== A.stat[id].widths);
+  $('seennote').innerHTML =
+    "<strong>" + word(never.length) + " of the " + word(IMPL_IDS.length) + "</strong> implementations never put a " +
+    "single pixel outside the container, at any of the <strong>" + fmt(A.widths) + "</strong> whole " +
+    "pixels of container width the three real toolbars are swept over &mdash; and <strong>" +
+    word(wrong.length) + " of those " + word(never.length) + "</strong> are wrong. Over-hiding cannot overflow, " +
+    "which is the whole reason the safe-looking mistakes survive: <em>" +
+    esc(IMPLS.reserveMax.label) + "</em> gives up a control that fits on <strong>" +
+    fmt(A.stat.reserveMax.lostWidths) + "</strong> of those widths and <em>" +
+    esc(IMPLS.domOrder.label) + "</em> hides the wrong controls on <strong>" +
+    pct(A.stat.domOrder.widths - A.stat.domOrder.sameSet, A.stat.domOrder.widths) + "</strong> of them. " +
+    "The three that do overflow are loud about it: " +
+    IMPL_IDS.filter(id => A.stat[id].fits !== A.stat[id].widths).map(id =>
+      "<em>" + esc(IMPLS[id].label) + "</em> on " + fmt(A.stat[id].overWidths) + " widths by up to " +
+      A.stat[id].overMax + "px").join(", ") + ".";
+}
+function fillProps(){
+  const A = RS[DEF_TRIG];
+  let t = "";
+  for (const id of IMPL_IDS){
+    const b = A.stat[id];
+    t += "<tr" + (id === 'exact' ? " class='me'" : "") + "><td style='text-align:left'>" +
+      esc(IMPLS[id].label) + "</td><td class='dim' style='text-align:left'>" + IMPLS[id].family +
+      "</td><td>" + p100(b.fits, b.widths) + "</td><td>" + p100(b.chipRight, b.widths) + "</td><td>" +
+      p100(b.localOpt, b.widths) + "</td><td>" + p100(b.minimal, b.widths) + "</td><td>" +
+      p100(b.sameSet, b.widths) + "</td></tr>";
+  }
+  $('tProps').innerHTML = t;
+  const A2 = RS[DEF_TRIG].stat;
+  const chipAll = IMPL_IDS.every(id => A2[id].chipRight === A2[id].widths);
+  $('propsnote').innerHTML =
+    "The columns are not nested, and only the last one is the specification. <em>The chip appears " +
+    "exactly when something is behind it</em> is " + (chipAll ? "<strong>100.0%</strong> for all " +
+    word(IMPL_IDS.length) + " of them" : "not universal") + ", because every pass here derives the chip " +
+    "from its own answer &mdash; it is a property of the render, not of the fit. <em>You could not " +
+    "bring one more control back</em> is the cheap version of minimality and it is nearly as strong: " +
+    "it catches <em>" + esc(IMPLS.reserveMax.label) + "</em> at " +
+    pct(A2.reserveMax.localOpt, A2.reserveMax.widths) + " against " +
+    pct(A2.reserveMax.minimal, A2.reserveMax.widths) + " for the real thing. But it reports " +
+    "<strong>100.0%</strong> for the two that overflow, since a row that is already too wide can " +
+    "hardly take another control, and it reads <strong>" +
+    pct(A2.domOrder.localOpt, A2.domOrder.widths) + "</strong> for the pass whose count is right on " +
+    pct(A2.domOrder.minimal, A2.domOrder.widths) + " and whose controls are right on <strong>" +
+    pct(A2.domOrder.sameSet, A2.domOrder.widths) + "</strong>. Hiding the wrong things is not a " +
+    "packing error and no packing property can see it.";
+}
+
+// ---------------------------------------------------------------- card 4: the hole
+function fillHole(){
+  const T = TRIGGERS[DEF_TRIG];
+  const P = prep(TOOLBARS.mail), h = HL[DEF_TRIG].mail;
+  let a = "";
+  a += "the mail toolbar, ten controls, a " + chipText(T, 1) + " chip that is " + T.w(1) + "px wide\n";
+  a += "the least important control is \"" + h.least.name + "\", an icon button " + h.least.w + "px wide\n\n";
+  a += "  hidden   row width   what is on the row\n";
+  for (let k = 0; k <= 3; k++){
+    a += "  " + String(k).padStart(6) + "   " + String(rowWidth(P, k, GAP, T)).padStart(5) + "px" +
+      "   " + (k === 0 ? String(P.n) + " controls, no chip"
+                       : String(P.n - k) + " controls + the " + chipText(T, k) + " chip") + "\n";
+  }
+  a += "\n  container   which hidden counts fit          smallest that fits   a bisection returns\n";
+  for (let w = h.w0 - 1; w <= h.w1 + 1; w++){
+    let f = "";
+    for (let k = 0; k <= P.n; k++) f += rowWidth(P, k, GAP, T) <= w ? "#" : ".";
+    const exh = IMPLS.exact.fit(P, w, GAP, T), bi = IMPLS.bisect.fit(P, w, GAP, T);
+    a += "  " + String(w).padStart(6) + "px   " + f.padEnd(30) + "   " + String(exh).padStart(10) +
+      "   " + String(bi).padStart(17) + (exh === bi ? "" : "   <- wrong") + "\n";
+  }
+  a += "\n  # = that many hidden fits in the container, . = it does not.\n";
+  a += "  At " + h.w0 + "px all " + P.n + " controls fit. Hiding ONE needs " + h.w1 +
+    "px, so it fits nowhere from " + h.holeLo + "px to " + h.holeHi + "px.\n" +
+    "  The hole is " + h.holePixels + " pixels wide because the chip is " + T.w(1) +
+    " and the control it stands in for is " + h.least.w + ".";
+  $('artHole').textContent = a;
+
+  let t = "";
+  for (const tid of TRIGGER_IDS){
+    const trig = TRIGGERS[tid];
+    for (const b of TOOLBAR_IDS){
+      const hh = HL[tid][b], f = FSH[tid][b];
+      t += "<tr><td style='text-align:left'>" + esc(trig.label) + "</td><td style='text-align:left'>" +
+        esc(TOOLBARS[b].label) + "</td><td>" + trig.w(1) + "px</td><td>" + hh.least.w + "px</td><td>" +
+        (hh.holePixels ? "<span class='warn'>" + hh.holePixels + "px</span>"
+                       : "<span class='ok'>none</span>") + "</td><td>" + hh.predicted + "px</td><td>" +
+        p100(f.upset, f.widths) + "</td><td>" + f.holes + "</td></tr>";
+    }
+  }
+  $('tHole').innerHTML = t;
+  $('holenote').innerHTML =
+    "The prediction column is not a fit, it is the identity <code>chip(1) &minus; width of the least " +
+    "important control</code>, clamped at zero, and it is exact in every row above. Over <strong>" +
+    fmt(HI.tested) + "</strong> generated toolbar-and-chip pairs it holds with <strong>" +
+    (HI.violations ? "<span class='bad'>" + HI.violations + " violations</span>"
+                   : "<span class='ok'>0 violations</span>") + "</strong>, <strong>" +
+    fmt(HI.withHole) + "</strong> of them having a hole at all, and the row gets wider at some other " +
+    "step <strong>" + (HI.riseElsewhere ? "<span class='bad'>" + HI.riseElsewhere + "</span>"
+                                        : "<span class='ok'>0</span>") + "</strong> times. That is " +
+    "structural rather than lucky: going from nothing hidden to one thing hidden is the only step " +
+    "that does not change the number of boxes on the row, so it is the only step whose gap count " +
+    "does not change, so it is the only step where a wide chip is not paid for by a gap it removes.";
+}
+
+// ---------------------------------------------------------------- card 5: the chip decides
+function fillChip(){
+  let t = "";
+  for (const tid of TRIGGER_IDS){
+    const trig = TRIGGERS[tid], A = RS[tid];
+    let holeBars = 0, upW = 0, upTot = 0;
+    for (const b of TOOLBAR_IDS){
+      if (!HL[tid][b].monotone) holeBars++;
+      upW += FSH[tid][b].upset; upTot += FSH[tid][b].widths;
+    }
+    const twin = trig.glyph === 0;
+    t += "<tr" + (tid === DEF_TRIG ? " class='me'" : "") + "><td style='text-align:left'>" +
+      esc(trig.label) + "</td><td>" + trig.w(1) + "px</td><td>" + trig.w(10) + "px</td><td>" +
+      holeBars + " of " + TOOLBAR_IDS.length + "</td><td>" + p100(upW, upTot) + "</td><td>" +
+      p100(A.stat.bisect.minimal, A.stat.bisect.widths) + "</td><td>" +
+      p100(A.stat.reserveOne.fits, A.stat.reserveOne.widths) + "</td><td>" +
+      (twin ? "<span class='ok'>always</span>"
+            : "<span class='bad'>only below ten controls</span>") + "</td></tr>";
+  }
+  $('tChip').innerHTML = t;
+  const dots = RS.dots.stat, cnt = RS[DEF_TRIG].stat, more = RS.more.stat;
+  $('chipnote').innerHTML =
+    "A round <code>···</code> button is a constant, and a constant narrower than every " +
+    "control on the row makes the arithmetic monotone: the hidden counts that fit are always an " +
+    "up-set, a bisection is entitled to its answer and gets <strong>" +
+    pct(dots.bisect.minimal, dots.bisect.widths) + "</strong> of widths exactly right, and the " +
+    "one-digit reserve and the widest reserve are literally the same function. Put the number in the " +
+    "chip and none of that is true any more: the same bisection drops to <strong>" +
+    pct(cnt.bisect.minimal, cnt.bisect.widths) + "</strong> with a <code>+N</code> chip and <strong>" +
+    pct(more.bisect.minimal, more.bisect.widths) + "</strong> with a <code>+N more</code> pill, and " +
+    "the reserve that is sized for one hidden control starts overflowing the container as soon as ten " +
+    "are hidden &mdash; <strong>" + pct(cnt.reserveOne.fits, cnt.reserveOne.widths) + "</strong> and " +
+    "<strong>" + pct(more.reserveOne.fits, more.reserveOne.widths) + "</strong> of widths clean. " +
+    "Whether the label counts what it hides is a copy decision, and it decides the complexity of the " +
+    "layout pass underneath it.";
+}
+
+// ---------------------------------------------------------------- card 6: the flicker
+let liveH = 0, liveW = 400, spinning = null;
+function paintFlicker(){
+  const P = prep(TOOLBARS.docs), T = TRIGGERS[DEF_TRIG];
+  const hid = hiddenPrio(P, liveH);
+  $('flNum').textContent = liveW + 'px';
+  $('flRow').innerHTML = rowHtml(P, hid, T, liveW, null);
+  const next = liveStep(P, liveW, GAP, T, liveH);
+  const truth = IMPLS.exact.fit(P, liveW, GAP, T);
+  $('flNote').innerHTML =
+    "container <strong>" + liveW + "px</strong> &middot; showing <strong>" + (P.n - liveH) +
+    "</strong> of " + P.n + " &middot; this row is <strong>" + placeWidth(P, hid, GAP, T) +
+    "px</strong> wide &middot; the correct answer here is to hide <strong>" + truth +
+    "</strong> &middot; measuring THIS row and re-fitting gives <strong>" + next + "</strong>" +
+    (next === liveH ? " <span class='ok'>&mdash; it has settled</span>"
+                    : " <span class='bad'>&mdash; so it changes again</span>");
+  if (!FK) return;
+  let t = "";
+  for (const b of TOOLBAR_IDS){
+    const f = FK[DEF_TRIG][b];
+    t += "<tr><td style='text-align:left'>" + esc(TOOLBARS[b].label) + "</td><td>" + fmt(f.widths) +
+      "</td><td>" + fmt(f.needHide) + "</td><td>" + fmt(f.fixed) + "</td><td>" +
+      fmt(f.fixedWhileHiding) + "</td><td><span class='bad'>" + fmt(f.twoCycle) + "</span></td><td>" +
+      f.longer + "</td></tr>";
+  }
+  $('tFlick').innerHTML = t;
+  let a = "the document toolbar, fourteen controls, widths read off the row as it is rendered\n\n";
+  for (const w of [400, 520, 640, 780]){
+    const seq = orbitTrace(P, w, GAP, T, 6);
+    a += "  " + String(w).padStart(4) + "px   correct answer " +
+      String(IMPLS.exact.fit(P, w, GAP, T)).padStart(2) + " hidden   " +
+      seq.map(x => String(x)).join(' -> ') + " ...\n";
+  }
+  a += "\nEvery hidden control measures zero, so the pass that follows a hide thinks the whole row\n" +
+       "has become narrow enough to show everything, un-hides, measures again, and hides again.";
+  $('artFlick').textContent = a;
+}
+
+// ---------------------------------------------------------------- card 7: the fixture
+function fillBlind(){
+  const A = RS[DEF_TRIG];
+  let t = "";
+  for (const id of IMPL_IDS){
+    const f = FIXB.stat[id], fc = CS.fix.stat[id], lc = CS.ltr.stat[id], rc = CS.rand.stat[id],
+          rr = A.stat[id];
+    t += "<tr" + (id === 'exact' ? " class='me'" : "") + "><td style='text-align:left'>" +
+      esc(IMPLS[id].label) + "</td><td>" + p100(f.minimal, f.widths) + "</td><td>" +
+      p100(fc.minimal, fc.widths) + "</td><td>" + p100(lc.minimal, lc.widths) + "</td><td>" +
+      p100(rc.minimal, rc.widths) + "</td><td>" + p100(rr.minimal, rr.widths) + "</td><td>" +
+      p100(rr.sameSet, rr.widths) + "</td></tr>";
+  }
+  $('tBlind').innerHTML = t;
+  $('hBlindFix').textContent = fmt(FIXB.widths) + " widths";
+  $('hBlindFC').textContent = CS.fix.toolbars + " bars, " + fmt(CS.fix.widths) + " widths";
+  $('hBlindLtr').textContent = CS.ltr.toolbars + " bars, " + fmt(CS.ltr.widths) + " widths";
+  $('hBlindRand').textContent = CS.rand.toolbars + " bars, " + fmt(CS.rand.widths) + " widths";
+  $('hBlindReal').textContent = fmt(A.widths) + " widths";
+  $('blindnote').innerHTML =
+    "Two of the seven defects are not merely unlikely on the fixture, they are <em>unreachable</em>, " +
+    "and both for reasons you can work out on paper before running anything. " +
+    "<strong>One.</strong> <code>digits(1)</code> and <code>digits(n)</code> are the same number for " +
+    "every n below ten, so on a toolbar with fewer than ten controls the one-digit reserve and the " +
+    "widest reserve are the same program: identical on <strong>" + fmt(RT.small.same) + " of " +
+    fmt(RT.small.widths) + "</strong> container widths across " + RT.small.bars + " generated " +
+    "toolbars, and different on <strong>" +
+    pct(RT.big.widths - RT.big.same, RT.big.widths) + "</strong> of the widths of the " +
+    RT.big.bars + " toolbars that have ten or more. A toolbar needs ten controls before those two " +
+    "implementations are distinguishable at all, and ten controls is roughly where overflow starts " +
+    "to matter. <strong>Two.</strong> When priority runs left to right, giving up the last controls " +
+    "and giving up the least important controls are the same instruction: identical on <strong>" +
+    fmt(DT.ltr.same) + " of " + fmt(DT.ltr.widths) + "</strong> widths with random widths " +
+    "throughout, against <strong>" + pct(DT.perm.same, DT.perm.widths) + "</strong> once priority is " +
+    "a real permutation. So the fixture's blindness to that one is nothing to do with its widths " +
+    "&mdash; the corpus of random widths with left-to-right priority is blind to it too, at " +
+    "<strong>" + pct(CS.ltr.stat.domOrder.minimal, CS.ltr.stat.domOrder.widths) + "</strong>. " +
+    "It is the priority order, and a fixture author has no reason to shuffle it.";
+}
+
+// ---------------------------------------------------------------- card 8: the price of priority
+function fillPrice(){
+  let t = "";
+  for (const b of TOOLBAR_IDS){
+    const p = PP[DEF_TRIG][b];
+    if (!p) continue;
+    t += "<tr><td style='text-align:left'>" + esc(TOOLBARS[b].label) + "</td><td>" +
+      prep(TOOLBARS[b]).n + "</td><td>" + p.widths + "</td><td>" + fmt(p.byPrio) + "</td><td>" +
+      fmt(p.byPack) + "</td><td>" + (p.byPack > p.byPrio ? "<span class='warn'>+" +
+      (100 * (p.byPack - p.byPrio) / p.byPrio).toFixed(1) + "%</span>" : "<span class='ok'>0.0%</span>") +
+      "</td><td>" + p.worse + " of " + p.widths + "</td><td>" + p.worstGap + "</td></tr>";
+  }
+  $('tPrice').innerHTML = t;
+  const bd = PP[DEF_TRIG].board, fx = PP[DEF_TRIG].fixture;
+  $('pricenote').innerHTML =
+    "The right-hand columns come from enumerating every one of the <code>2^n</code> subsets of the " +
+    "row and keeping the largest one that fits, which is a different question from the one the " +
+    "component answers. On the project board it would carry <strong>" + fmt(bd.byPack) +
+    "</strong> controls against the <strong>" + fmt(bd.byPrio) + "</strong> the priority rule shows " +
+    "&mdash; <strong>+" + (100 * (bd.byPack - bd.byPrio) / bd.byPrio).toFixed(1) + "%</strong> " +
+    "&mdash; and it beats the priority rule on <strong>" + bd.worse + " of " + bd.widths +
+    "</strong> sampled widths, by up to " + bd.worstGap + " controls at once, because it is free to " +
+    "drop the one wide control and keep three narrow ones. That is the correct answer to " +
+    "<em>fit as many buttons as possible</em> and the wrong answer to <em>build a toolbar</em>: the " +
+    "control it drops first is the widest one, which on this row is the search field and then " +
+    "<em>New issue</em>. The number to take from this table is not the gap but that the gap has to be " +
+    "<em>refused</em> &mdash; and that the fixture cannot even show it to you, at <strong>+0.0%</strong> " +
+    "on " + fx.widths + " widths, since identical widths make packing and priority the same problem.";
+}
+
+// ---------------------------------------------------------------- card 9: widening
+function fillWiden(){
+  let t = "";
+  for (const b of TOOLBAR_IDS){
+    let row = "<tr><td style='text-align:left'>" + esc(TOOLBARS[b].label) + "</td>";
+    for (const id of IMPL_IDS){
+      const w = WD[DEF_TRIG][b][id];
+      row += "<td>" + (w.inversions ? "<span class='bad'>" + w.inversions + "</span>"
+                                    : "<span class='ok'>0</span>") + "</td>";
+    }
+    t += row + "</tr>";
+  }
+  $('tWiden').innerHTML = t;
+  let head = "<tr><th>toolbar</th>";
+  for (const id of IMPL_IDS) head += "<th>" + esc(IMPLS[id].label) + "</th>";
+  $('tWidenHead').innerHTML = head + "</tr>";
+  let total = 0, checks = 0;
+  for (const b of TOOLBAR_IDS) for (const id of IMPL_IDS){
+    total += WD[DEF_TRIG][b][id].inversions; checks += WD[DEF_TRIG][b][id].asserts;
+  }
+  $('widennote').innerHTML =
+    "<strong>" + word(total) + "</strong> inversions in <strong>" + fmt(checks) + "</strong> " +
+    "consecutive-pixel comparisons, across all " + word(IMPL_IDS.length) + " implementations and all " +
+    word(TOOLBAR_IDS.length) + " toolbars. Every one of them is monotone in the container width, correct " +
+    "and broken alike, and the reason is that each pass minimises over a fixed list of candidate " +
+    "counts whose widths do not depend on the container &mdash; widen the container and the set of " +
+    "candidates that fit can only grow. So the property a user would actually notice separates " +
+    "nothing, which is worth knowing before you write the test that asserts it.";
+}
+
+// ---------------------------------------------------------------- card 10: written out
+function fillExhibits(){
+  const T = TRIGGERS[DEF_TRIG];
+  const box = (barKey, w, el) => {
+    const P = prep(TOOLBARS[barKey]);
+    const ex = runImpl('exact', P, w, GAP, T);
+    let t = TOOLBARS[barKey].label + ", container " + w + "px, chip " + chipText(T, 1) + "\n\n";
+    for (const id of IMPL_IDS){
+      const r = runImpl(id, P, w, GAP, T);
+      const p = properties(P, w, GAP, T, r, ex);
+      const shown = [];
+      for (let i = 0; i < P.n; i++) if (!r.hidden.has(i)) shown.push(P.items[i].name);
+      if (r.h) shown.push('[' + chipText(T, r.h) + ']');
+      t += "  " + IMPLS[id].label.padEnd(36) + String(p.width).padStart(5) + "px" +
+        (p.fits ? "     " : "  OVER") + "  " + shown.join(' | ') + "\n";
+    }
+    $(el).textContent = t.replace(/\n$/, '');
+  };
+  box('mail', 476, 'artEx1');
+  box('docs', 640, 'artEx2');
+  box('board', 700, 'artEx3');
+  box('fixture', 380, 'artEx4');
+}
+
+// ---------------------------------------------------------------- the in-page self-check
+// Structural checks over the studies that were just measured, not a second copy of the prose. Each
+// one is an identity that has to hold whatever the numbers come out as, so it stays true when the
+// workload is retuned and goes false the moment the engine breaks. A failure is printed on the page
+// AND pushed to the console as "ASSERT FAIL: ...", which is what automation/bot10-page-selfcheck.mjs
+// reads - so a red page cannot be screenshotted and shipped as a green one.
+let SC = { n: 0, bad: [] };
+function chk(label, got, expected){
+  SC.n++;
+  const okv = (got === expected);
+  if (!okv) SC.bad.push({ label: label, got: String(got), expected: String(expected) });
+  return okv;
+}
+function selfCheck(){
+  SC = { n: 0, bad: [] };
+  // 1. the two representations of a row width never disagree
+  chk('real sweep: closed form == placement', RS[DEF_TRIG].cross, RS[DEF_TRIG].crossOf);
+  for (const k in CS) chk('corpus ' + k + ': closed form == placement', CS[k].cross, CS[k].crossOf);
+  // 2. the correct pass is correct, and the re-measuring pass is correct in ONE pass
+  for (const tid of TRIGGER_IDS){
+    const A = RS[tid];
+    for (const p of ['fits', 'minimal', 'sameSet', 'localOpt', 'chipRight'])
+      chk('exact/' + tid + ': ' + p, A.stat.exact[p], A.widths);
+    chk('liveMeasure/' + tid + ': one pass is minimal', A.stat.liveMeasure.minimal, A.widths);
+    chk('liveMeasure/' + tid + ': one pass hides the right set', A.stat.liveMeasure.sameSet, A.widths);
+    // 3. the three passes that cannot overflow, never do
+    for (const id of ['reserveMax', 'bisect', 'domOrder', 'liveMeasure'])
+      chk(id + '/' + tid + ': never overflows', A.stat[id].overWidths, 0);
+    // 4. and every pass renders the chip exactly when it hid something
+    for (const id of IMPL_IDS) chk(id + '/' + tid + ': chip shown when needed', A.stat[id].chipRight, A.widths);
+  }
+  // 5. the hole is the identity, on every toolbar and every chip
+  for (const tid of TRIGGER_IDS) for (const b of TOOLBAR_IDS){
+    const h = HL[tid][b];
+    chk('hole ' + b + '/' + tid + ' == chip(1) - least', h.holePixels, h.predicted);
+    chk('hole ' + b + '/' + tid + ': only the first step rises',
+        h.rises.filter(r => r.from !== 0).length, 0);
+    const f = FSH[tid][b];
+    chk('feasible ' + b + '/' + tid + ': every width classified', f.upset + f.holes, f.widths);
+  }
+  chk('hole identity: violations', HI.violations, 0);
+  chk('hole identity: rises anywhere else', HI.riseElsewhere, 0);
+  // 6. the two blindness identities
+  chk('below ten controls the two reserves are one program', RT.small.same, RT.small.widths);
+  chk('left-to-right priority makes right-to-left hiding correct', DT.ltr.same, DT.ltr.widths);
+  chk('the fixture cannot see right-to-left hiding', FIXB.stat.domOrder.minimal, FIXB.widths);
+  chk('nor which controls it hides', FIXB.stat.domOrder.sameSet, FIXB.widths);
+  chk('the fixture cannot separate the two reserves',
+      FIXB.stat.reserveOne.minimal, FIXB.stat.reserveMax.minimal);
+  chk('the identical-width corpus cannot see it either',
+      CS.fix.stat.domOrder.minimal, CS.fix.stat.domOrder.widths);
+  chk('nor can random widths with left-to-right priority',
+      CS.ltr.stat.domOrder.minimal, CS.ltr.stat.domOrder.widths);
+  // 7. widening the container never hides more, for any pass
+  let inv = 0;
+  for (const tid of TRIGGER_IDS) for (const b of TOOLBAR_IDS) for (const id of IMPL_IDS)
+    inv += WD[tid][b][id].inversions;
+  chk('widening never hides more', inv, 0);
+  // 8. the orbit is fully classified and never longer than two
+  for (const tid of TRIGGER_IDS) for (const b of TOOLBAR_IDS){
+    const f = FK[tid][b];
+    chk('orbit ' + b + '/' + tid + ': every width classified', f.fixed + f.twoCycle + f.longer, f.widths);
+    chk('orbit ' + b + '/' + tid + ': nothing longer than a two-cycle', f.longer, 0);
+  }
+  // 9. the best packing is never worse than the priority rule
+  for (const tid of TRIGGER_IDS) for (const b of TOOLBAR_IDS){
+    const p = PP[tid][b];
+    if (!p) continue;
+    chk('packing >= priority on ' + b + '/' + tid, p.byPack >= p.byPrio, true);
+  }
+  // 10. and the workload actually ran
+  chk('the studies produced assertions', TOTAL > 1000000, true);
+  chk('the real sweep is 2,309 whole pixels', RS[DEF_TRIG].widths, 2309);
+  if (SC.bad.length){
+    for (const f of SC.bad)
+      console.error('ASSERT FAIL: ' + f.label + ' (got ' + f.got + ', expected ' + f.expected + ')');
+    console.error(SC.bad);
+  }
+  return SC;
+}
+
+// ---------------------------------------------------------------- prose figures
+function fillProse(){
+  const A = RS[DEF_TRIG], st = A.stat;
+  const never = IMPL_IDS.filter(id => st[id].fits === st[id].widths);
+  const wrongNever = never.filter(id => st[id].minimal !== st[id].widths);
+  const set = (id, v) => { const e = $(id); if (e) e.innerHTML = v; };
+  set('assertline',
+    "Everything below this card is measured on load: <strong>" + fmt(TOTAL) + " assertions</strong> " +
+    "over <strong>" + fmt(WIDTHS) + " container widths</strong>, in " + (MS / 1000).toFixed(1) +
+    "&nbsp;s, with every row width computed twice &mdash; once as a closed form over prefix sums and " +
+    "once by putting each box down at a cursor &mdash; and the two agreeing on <strong>" +
+    fmt(A.cross + CS.rand.cross + CS.fix.cross + CS.ltr.cross) + " of " +
+    fmt(A.crossOf + CS.rand.crossOf + CS.fix.crossOf + CS.ltr.crossOf) + "</strong>. " +
+    "<strong>" + SC.n + " structural self-checks</strong>, " +
+    (SC.bad.length ? "<span class='bad'>" + SC.bad.length + " FAILING</span>"
+                   : "<span class='ok'>0 failing</span>") + ".");
+  set('pTotal', fmt(TOTAL) + " assertions");
+  set('pWidths', fmt(A.widths));
+  set('pNever', word(never.length));
+  set('pWrongNever', word(wrongNever.length));
+  set('pImpls', word(IMPL_IDS.length));
+  set('pLostW', fmt(st.reserveMax.lostWidths));
+  set('pLostPct', pct(st.reserveMax.lostWidths, st.reserveMax.widths));
+  set('pDomSet', pct(st.domOrder.sameSet, st.domOrder.widths));
+  set('pDomWrong', pct(st.domOrder.widths - st.domOrder.sameSet, st.domOrder.widths));
+  set('pDomMin', pct(st.domOrder.minimal, st.domOrder.widths));
+  set('pFlickCycle', fmt(FK[DEF_TRIG].docs.twoCycle));
+  set('pFlickWidths', fmt(FK[DEF_TRIG].docs.widths));
+  set('pFlickFixed', fmt(FK[DEF_TRIG].docs.fixed));
+  set('pAgree', pct(A.agree, A.widths));
+  set('pFixAgree', pct(FIXB.agree, FIXB.widths));
+  set('pHole', String(HL[DEF_TRIG].mail.holePixels));
+  set('pHoleLo', String(HL[DEF_TRIG].mail.w0));
+  set('pHoleHi', String(HL[DEF_TRIG].mail.w1));
+  set('pChip1', String(TRIGGERS[DEF_TRIG].w(1)));
+  set('pLeast', HL[DEF_TRIG].mail.least.name + " at " + HL[DEF_TRIG].mail.least.w + "px");
+  set('pHoleTested', fmt(HI.tested));
+  set('pHoleViol', String(HI.violations));
+  set('pBisect', pct(st.bisect.minimal, st.bisect.widths));
+  set('pBisectDots', pct(RS.dots.stat.bisect.minimal, RS.dots.stat.bisect.widths));
+  set('pBisectMore', pct(RS.more.stat.bisect.minimal, RS.more.stat.bisect.widths));
+  set('pTwinSmall', fmt(RT.small.same) + " of " + fmt(RT.small.widths));
+  set('pTwinBig', pct(RT.big.widths - RT.big.same, RT.big.widths));
+  set('pDomTwin', fmt(DT.ltr.same) + " of " + fmt(DT.ltr.widths));
+  set('pDomPerm', pct(DT.perm.same, DT.perm.widths));
+  set('pPack', "+" + (100 * (PP[DEF_TRIG].board.byPack - PP[DEF_TRIG].board.byPrio) /
+    PP[DEF_TRIG].board.byPrio).toFixed(1) + "%");
+  set('pNoneOver', fmt(st.reserveNone.overWidths) + " of " + fmt(st.reserveNone.widths));
+  set('pNoneMax', String(st.reserveNone.overMax));
+  set('pGapMax', String(st.gapless.overMax));
+  set('pGapOver', pct(st.gapless.overWidths, st.gapless.widths));
+  set('pOneOver', fmt(st.reserveOne.overWidths));
+  set('pWiden', "0");
+  set('pMs', (MS / 1000).toFixed(1));
+  // the UNDERSTAND tab quotes the same figures again, so it gets the same values from one place
+  set('pDomMin2', pct(st.domOrder.minimal, st.domOrder.widths));
+  set('pHoleTested2', fmt(HI.tested));
+  set('pHoleViol2', String(HI.violations));
+  set('pBisect2', pct(st.bisect.minimal, st.bisect.widths));
+  set('pBisectDots2', pct(RS.dots.stat.bisect.minimal, RS.dots.stat.bisect.widths));
+  set('pFlickCycle2', fmt(FK[DEF_TRIG].docs.twoCycle));
+  set('pFlickWidths2', fmt(FK[DEF_TRIG].docs.widths));
+  set('pPack2', "+" + (100 * (PP[DEF_TRIG].board.byPack - PP[DEF_TRIG].board.byPrio) /
+    PP[DEF_TRIG].board.byPrio).toFixed(1) + "%");
+  set('pTwinSmall2', fmt(RT.small.same) + " of " + fmt(RT.small.widths));
+  set('pTwinBig2', pct(RT.big.widths - RT.big.same, RT.big.widths));
+  set('pDomTwin2', fmt(DT.ltr.same) + " of " + fmt(DT.ltr.widths));
+  set('pDomRand', pct(CS.rand.stat.domOrder.minimal, CS.rand.stat.domOrder.widths));
+  set('pDomRandSet', pct(CS.rand.stat.domOrder.sameSet, CS.rand.stat.domOrder.widths));
+  set('pNever2', word(never.length));
+  let widenTotal = 0;
+  for (const b of TOOLBAR_IDS) for (const id of IMPL_IDS) widenTotal += WD[DEF_TRIG][b][id].inversions;
+  set('pWiden2', String(widenTotal));
+}
+
+// ---------------------------------------------------------------- wiring
+const tabs = document.querySelectorAll("#tabs button");
+const panels = document.querySelectorAll(".panel");
+Array.prototype.forEach.call(tabs, t => t.addEventListener("click", () => {
+  Array.prototype.forEach.call(tabs, x => x.classList.remove("on"));
+  t.classList.add("on");
+  Array.prototype.forEach.call(panels, p => p.classList.add("off"));
+  $(t.dataset.tab).classList.remove("off");
+}));
+
+$('selBar').innerHTML = TOOLBAR_IDS.map(b =>
+  "<option value='" + b + "'>" + esc(TOOLBARS[b].label) + " &middot; " +
+  TOOLBARS[b].items.length + " controls</option>").join('');
+$('selBar').value = barId;
+$('selTrig').innerHTML = TRIGGER_IDS.map(t =>
+  "<option value='" + t + "'>" + esc(TRIGGERS[t].label) + "</option>").join('');
+$('selTrig').value = trigId;
+$('selImpl').innerHTML = IMPL_IDS.map(i =>
+  "<option value='" + i + "'>" + esc(IMPLS[i].label) + " &middot; " + esc(IMPLS[i].note) +
+  "</option>").join('');
+$('selImpl').value = implId;
+
+$('selBar').addEventListener('change', () => {
+  barId = $('selBar').value;
+  const r = widthRange(curP(), GAP, TRIGGERS[trigId]);
+  W = Math.round((r.lo + r.hi) / 2);
+  paintLive();
+});
+$('selTrig').addEventListener('change', () => { trigId = $('selTrig').value; paintLive(); });
+$('selImpl').addEventListener('change', () => { implId = $('selImpl').value; paintLive(); });
+$('slW').addEventListener('input', () => { W = Number($('slW').value); paintLive(); });
+$('bHole').addEventListener('click', () => {
+  barId = 'mail'; trigId = DEF_TRIG; implId = 'bisect';
+  $('selBar').value = barId; $('selTrig').value = trigId; $('selImpl').value = implId;
+  W = rowWidth(prep(TOOLBARS.mail), 0, GAP, TRIGGERS[DEF_TRIG]);
+  paintLive();
+});
+$('bWalk').addEventListener('click', () => {
+  if (walking){ clearInterval(walking); walking = null; $('bWalk').textContent = 'walk the width'; return; }
+  $('bWalk').textContent = 'stop';
+  const r = widthRange(curP(), GAP, TRIGGERS[trigId]);
+  let dir = -1;
+  walking = setInterval(() => {
+    W += dir * 3;
+    if (W <= r.lo){ W = r.lo; dir = 1; }
+    if (W >= r.hi + 60){ W = r.hi + 60; dir = -1; }
+    paintLive();
+  }, 40);
+});
+$('slFl').addEventListener('input', () => {
+  liveW = Number($('slFl').value); liveH = 0; paintFlicker();
+});
+$('bStep').addEventListener('click', () => {
+  liveH = liveStep(prep(TOOLBARS.docs), liveW, GAP, TRIGGERS[DEF_TRIG], liveH);
+  paintFlicker();
+});
+$('bSpin').addEventListener('click', () => {
+  if (spinning){ clearInterval(spinning); spinning = null; $('bSpin').textContent = 'let it run'; return; }
+  $('bSpin').textContent = 'stop';
+  spinning = setInterval(() => {
+    liveH = liveStep(prep(TOOLBARS.docs), liveW, GAP, TRIGGERS[DEF_TRIG], liveH);
+    paintFlicker();
+  }, 420);
+});
+
+paintLive();
+paintFlicker();
+fillExhibits();
+// Twelve million assertions is a few seconds of arithmetic, so the live toolbar is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing here is skipped -
+// every figure on this page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  selfCheck();
+  fillSeen(); fillProps(); fillHole(); fillChip(); paintFlicker(); fillBlind();
+  fillPrice(); fillWiden(); fillProse();
+}, 30);
+</script>
+</body>
+</html>
