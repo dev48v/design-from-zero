@@ -1,0 +1,1977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 75 &mdash; Input mask</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f4f2fb; color:#1b1330; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#ece8f9; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#1e1533; color:#e9e4f7; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#6d28d9; }
+
+  header { background:#fff; border-bottom:1px solid #e4dff5; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#6d28d9; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#ece8f9; color:#1b1330; }
+  .tabs button.on { background:#1b1330; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#ece8f9; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(27,19,48,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#514669; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#7a6f92; margin:0 0 12px; }
+  .note { font-size:12px; color:#7a6f92; margin:12px 0 0; }
+  .rule { border-top:1px solid #e4dff5; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#221a3a; margin:0 0 12px; }
+  .prose ul, .prose ol { font-size:14.5px; color:#221a3a; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#7a6f92; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #e4dff5;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num th:nth-child(2), table.num td:nth-child(2) { text-align:left; }
+  table.num tr.me td { background:#f5f3ff; font-weight:700; }
+  table.num tr.ctl td { background:#fdf6ec; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#a79ec2; }
+  .scroll { overflow-x:auto; }
+
+  .ctl2 { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+          font-size:13px; max-width:100%; }
+  /* the rule select carries a whole clause of option text; without a cap it takes its width from the
+     longest option and drags a phone-width page sideways. */
+  .ctl2 label { display:flex; flex-direction:column; gap:3px; min-width:0; max-width:100%; }
+  .ctl2 select { max-width:100%; }
+  .ctl2 span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#7a6f92; }
+  .ctl2 select, .ctl2 button { font:inherit; font-size:13px; padding:6px 10px;
+          border-radius:8px; border:1px solid #cdc4e6; background:#fff; }
+  .ctl2 button { cursor:pointer; font-weight:700; background:#1b1330; color:#fff; border-color:#1b1330; }
+  .ctl2 button.ghost { background:#fff; color:#1b1330; }
+
+  .badge { display:inline-block; font-size:11.5px; font-weight:800; letter-spacing:.04em;
+           border-radius:999px; padding:4px 12px; border:1px solid #cdc4e6; background:#faf9fe;
+           color:#514669; }
+  .badge.pass { background:#dcfce7; border-color:#86efac; color:#14532d; }
+  .badge.fail { background:#fee2e2; border-color:#fca5a5; color:#7f1d1d; }
+
+  /* the field. A real input, so the caret in it is the browser's caret and the number under it is
+     the browser's own selectionStart - if those two ever disagree the model is describing a field
+     that is not on the screen. */
+  .fieldwrap { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px; }
+  .field { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:20px; letter-spacing:.06em;
+           padding:10px 12px; border-radius:10px; border:1px solid #cdc4e6; background:#faf9fe;
+           color:#1b1330; width:100%; max-width:340px; }
+  .field:focus { outline:2px solid #6d28d9; outline-offset:1px; }
+  .posstrip { display:flex; flex-wrap:wrap; gap:3px; margin:8px 0 0; }
+  .pos { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:10.5px; border-radius:5px;
+         padding:2px 5px; border:1px solid #ddd6f0; background:#faf9fe; color:#514669; }
+  .pos.dead { border-color:#fca5a5; background:#fef2f2; color:#991b1b; font-weight:800; }
+  .pos.here { outline:2px solid #6d28d9; }
+  .seq { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11.5px; color:#372a55;
+         word-break:break-all; }
+  .pill { display:inline-block; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px;
+          border:1px solid #cdc4e6; background:#f7f5fd; color:#514669; border-radius:6px;
+          padding:1px 7px; margin:0 5px 5px 0; }
+  .pill.dark { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
+  .tag { font-size:9.5px; font-weight:800; letter-spacing:.06em; border-radius:4px; padding:0 4px;
+         margin-left:6px; border:1px solid #fca5a5; color:#b91c1c; }
+  .tag.good { border-color:#86efac; color:#166534; }
+  .tag.ctl { border-color:#fcd34d; color:#92400e; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 75</p>
+    <h1>
+      &#9646; Input mask &mdash; the field that writes the spaces in a card number for you. One
+      number to settle after every keystroke, the caret, and the three things everybody tests about
+      the field are <em>it always looks like the mask, it never keeps a character the mask forbids,
+      and typing the number straight in produces the formatted number</em>. Across
+      <strong id="pKeys">25,640</strong> keystrokes enumerated exhaustively on six masks, all three
+      hold for <strong id="pBlind">five</strong> of these <strong id="pImpls">eight</strong>
+      implementations &mdash; and <strong id="pWrong">four</strong> of those five are wrong. The
+      most-shipped one puts the caret after the digit the user left it after on
+      <strong id="pEnd">14.8%</strong> of keystrokes. Worse, on a full card there are exactly
+      <strong id="pDeadBack">3</strong> places to stand where <strong>Backspace does nothing at
+      all</strong> &mdash; predictable from the mask alone, with no implementation in the argument,
+      and matched on all <strong id="pMasks">six</strong> masks. Meanwhile the three the tests do
+      reject are the control, a genuinely broken one, and one that is
+      <strong>correct in every way the user can feel</strong> and differs from the right answer only
+      in when it draws the space. The control settles what the separators are guilty of: taking them
+      out removes <strong id="pCtrlDead">100.0%</strong> of the dead keys and
+      <strong id="pCtrlCaret">none</strong> of the caret errors.
+      <strong id="pTotal">1,416,376 assertions</strong> on load. Pure vanilla JavaScript, one file,
+      no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9654;&#9654; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Type in the field.</strong> It is a real <code>input</code>, so the caret in it is the
+        browser's caret and the numbers under it are the browser's own
+        <code>selectionStart</code> &mdash; the model and the field have to agree or every figure
+        below it is fiction. Switch <em>rule</em> to hand the same keystrokes to a different
+        implementation. Then fill the field and walk the caret through the strip: the
+        <span class="pos dead">red</span> positions are the ones where pressing Backspace or Delete
+        changes nothing whatsoever.
+      </p>
+      <div class="ctl2">
+        <label><span>MASK</span><select id="selMask"></select></label>
+        <label><span>RULE</span><select id="selImpl"></select></label>
+        <label><span>&nbsp;</span><button id="bFill" class="ghost">fill it</button></label>
+        <label><span>&nbsp;</span><button id="bDead">stand on a dead key and press Backspace</button></label>
+        <label><span>&nbsp;</span><button id="bClear" class="ghost">clear</button></label>
+      </div>
+      <div class="fieldwrap">
+        <label style="flex:1 1 260px">
+          <input class="field" id="inp" type="text" inputmode="numeric" autocomplete="off"
+                 spellcheck="false" aria-label="masked input" />
+        </label>
+      </div>
+      <p class="note" id="liveNote"></p>
+      <div class="posstrip" id="strip"></div>
+      <p class="note" id="stripNote"></p>
+      <div class="rule">
+        <p class="cap">THE LAST KEYSTROKE, HANDED TO ALL EIGHT RULES</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>the one clause that differs</th><th>what it shows</th>
+            <th>caret</th><th>digits it<br>meant to hold</th><th>this<br>keystroke</th></tr></thead>
+          <tbody id="liveTab"></tbody></table></div>
+        <p class="note" id="lastNote"></p>
+        <p class="note"><span class="badge" id="selftest">self-check: running&hellip;</span></p>
+        <p class="note" id="assertline"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONLY THINGS YOU CAN SEE</p>
+      <p class="lead">
+        <em>It always looks like the mask. It never keeps a character the mask forbids. Type the
+        number straight in and the formatted number comes out.</em> Those are the three things a mask
+        test can assert without knowing what the user meant by a keystroke, and they are what a
+        screenshot, a snapshot test and a bug report can all see. Every keystroke in the sweep, six
+        masks, both caret placements. Read the verdict column afterwards, not before.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the one clause that differs</th>
+          <th>looks like<br>the mask</th><th>keeps nothing<br>forbidden</th>
+          <th>type it straight in</th><th>passes all<br>three</th><th>and is it<br>right?</th></tr></thead>
+        <tbody id="tSeen"></tbody></table></div>
+      <p class="note" id="seenNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SIX PROPERTIES, AND EXACTLY WHAT EACH ONE CAN SEE</p>
+      <p class="lead">
+        The same sweep asked six ways, in the order a team writes them. The first three are the blind
+        ones. None of the six is a superset of the others; the third one rejects the control by
+        construction and the first one rejects an implementation that is right.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th id="hProps" colspan="6"></th></tr><tr id="hProps2"></tr></thead>
+        <tbody id="tProps"></tbody></table></div>
+      <p class="note" id="propNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE KEY THAT DOES NOTHING &mdash; EVERY CARET POSITION ON A FULL FIELD</p>
+      <p class="lead">
+        A full field has one caret position per character plus one, and the whole scan fits in a
+        table. A collapsed Backspace is dead exactly when the character to its left is a literal and
+        there is a digit somewhere further left to remove &mdash; because the reformat puts that
+        literal straight back, and the digits it started from never changed. That sentence has no
+        implementation in it, so the count is a <strong>prediction</strong>: it is computed from the
+        mask, and then measured.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>mask</th><th>pattern</th><th>full field</th><th>caret<br>positions</th>
+          <th>literals</th><th>dead<br>Backspace</th><th>dead<br>Delete</th>
+          <th>measured<br>agrees</th></tr></thead>
+        <tbody id="tFull"></tbody></table></div>
+      <p class="note" id="fullNote"></p>
+      <div class="rule">
+        <p class="cap">THE SAME FULL FIELD, EVERY RULE</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>the one clause that differs</th><th>dead<br>Backspace</th>
+            <th>dead<br>Delete</th><th>of<br>positions</th><th>keystrokes<br>that do nothing</th></tr></thead>
+          <tbody id="tFullImpl"></tbody></table></div>
+        <p class="note" id="fullImplNote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE CONTROL &mdash; THE SAME FIELD WITH THE SEPARATORS TAKEN OUT</p>
+      <p class="lead">
+        Sixteen digit slots and no literals, the identical digit strings, the identical caret indices
+        and the identical keystrokes. Whatever the separators are responsible for has to disappear
+        from this column. One of the two defects does disappear, completely. The other one does not
+        move, which kills the tidy explanation that the separators are what break the caret.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>caret right<br>with separators</th><th>caret right<br>without</th>
+          <th>change</th><th>delete does<br>something, with</th><th>without</th><th>change</th></tr></thead>
+        <tbody id="tCtrl"></tbody></table></div>
+      <p class="note" id="ctrlNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">TWO CARETS, ONE DIGIT</p>
+      <p class="lead">
+        In <code class="mono">4242&nbsp;|4242</code> and <code class="mono">4242|&nbsp;4242</code> the
+        caret is at two different character indices with the same four digits to its left. A person
+        cannot tell them apart and a click produces either one. Split the sweep by which of the two
+        the keystroke started from, and it is not a tie.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>caret right, standing<br>before the separator</th>
+          <th>caret right, standing<br>after it</th><th>gap</th></tr></thead>
+        <tbody id="tPlace"></tbody></table></div>
+      <p class="note" id="placeNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">ONE KEYSTROKE AT A TIME IS THE GENEROUS TEST</p>
+      <p class="lead">
+        Judging a keystroke on its own hands the implementation a clean field first. Real typing does
+        not: the next character lands wherever the last one left the caret, so a caret error does not
+        merely look odd, it moves the next digit. Three session corpora, each replayed keystroke for
+        keystroke against all eight rules.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>type it straight in<br>(the fixture)</th>
+          <th>type it, then fix<br>something</th><th>&hellip; and fat-finger a<br>separator or a letter</th>
+          <th>per keystroke,<br>caret right</th></tr></thead>
+        <tbody id="tSess"></tbody></table></div>
+      <p class="note" id="sessNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHICH KEYSTROKE EXPOSES WHICH RULE</p>
+      <p class="lead">
+        The same sweep, cut by the kind of key. A test suite that only types digits is looking at one
+        column of this table, and the two rules that survive it are not the two that are right.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th id="hEdit" colspan="8"></th></tr><tr id="hEdit2"></tr></thead>
+        <tbody id="tEdit"></tbody></table></div>
+      <p class="note" id="editNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FOUR PREDICTIONS THAT HAD TO SURVIVE BEING MEASURED</p>
+      <p class="lead">
+        Each of these says which keystrokes a rule gets right, stated without running that rule &mdash;
+        computed from the mask and from the browser's half of the edit alone. A count is a number; a
+        count that matches a closed form is an explanation.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>right exactly when&hellip;</th><th>predicted</th><th>measured</th>
+          <th>of</th><th></th></tr></thead>
+        <tbody id="tClosed"></tbody></table></div>
+      <p class="note" id="closedNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE KEYSTROKE, WALKED</p>
+      <p class="lead">
+        A full card number, the caret clicked into the gap after the fourth digit, one press of
+        Backspace. This is the whole defect, and it fits on one line per rule.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>field before</th><th>what the browser handed back</th>
+          <th>field after</th><th>digits</th><th>verdict</th></tr></thead>
+        <tbody id="tTrace"></tbody></table></div>
+      <p class="note" id="traceNote"></p>
+      <div class="rule">
+        <p class="cap">AND THE SAME THING FORWARDS</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>field before</th><th>what the browser handed back</th>
+            <th>field after</th><th>digits</th><th>verdict</th></tr></thead>
+          <tbody id="tTrace2"></tbody></table></div>
+        <p class="note" id="traceNote2"></p>
+      </div>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <h2>Two coordinate systems, and only one of them is real</h2>
+    <p>
+      A masked field draws characters the user never typed. That single fact splits every position in
+      it into two different numbers. There is the <strong>character index</strong> &mdash; what
+      <code>selectionStart</code> reports, what the browser hands you, what every string operation in
+      your code uses. And there is the <strong>digit index</strong> &mdash; how many digits of the
+      actual number sit to the left of the caret, which is the only thing the person typing has in
+      their head.
+    </p>
+    <p>
+      In <code>4242 4242</code> the caret at character index 4 and the caret at character index 5
+      have the same digit index, 4. They look identical on screen: one is drawn just left of the
+      space, one just right of it, and at a normal font size that is a difference of a few pixels the
+      user did not choose. Both are reachable by clicking. Both are reachable by arrow keys. A
+      component that cares which one it got is a component that behaves differently depending on
+      where a fingertip landed.
+    </p>
+    <p>
+      So the caret cannot be judged by its integer value. It has to be judged in digit space, and
+      that is the first thing this page's oracle does: it keeps a plain string of digits and one
+      index into it, it has no idea the mask exists, and it says what a keystroke <em>meant</em>.
+      Backspace means &ldquo;remove the digit before me&rdquo;. It does not mean &ldquo;remove the
+      character before me&rdquo;, and the gap between those two sentences is the entire subject here.
+    </p>
+
+    <h3>The component runs second</h3>
+    <p>
+      A controlled input never sees the keystroke first. The browser applies it &mdash; splices the
+      typed character in, or takes one character out &mdash; and only then does your
+      <code>input</code> handler get to look. By that point the field holds a string that is
+      <em>not</em> shaped like the mask, and the job is to turn it back into one and decide where the
+      caret goes.
+    </p>
+    <p>
+      Every implementation on this page does the first half identically: strip the value back to
+      digits, cut it to the mask's capacity, re-render. That half is not in dispute and it is why the
+      property everybody tests is nearly free. They differ in the second half only &mdash; where the
+      caret lands, and whether they look at <em>what the browser removed</em>.
+    </p>
+
+    <h3>The key that does nothing</h3>
+    <p>
+      Put the caret just to the right of the space in <code>4242 |4242&hellip;</code> and press
+      Backspace. The browser removes the space. Your handler strips the value to digits &mdash; and
+      the digits are exactly what they were, because a space is not a digit. It re-renders. The space
+      comes back. The value is byte-for-byte what it was before the keystroke.
+    </p>
+    <p>
+      Nothing on screen changed, so nothing looks broken. There is no error, no flash, no wrong
+      character. The user pressed a key and the field ignored them. Press it again from the same
+      place and it ignores them again. This is the single most reported bug in masked inputs and it
+      is invisible to every property in the left half of the tables above, because the value is
+      always perfectly well formed &mdash; it is well formed <em>because</em> nothing happened.
+    </p>
+    <p>
+      The count is not a mystery either. On a full field, walk every caret position: the dead ones are
+      exactly the ones whose left-hand neighbour is a literal and that have at least one digit further
+      left. That is a property of the pattern, so it can be computed before any implementation exists,
+      and the table above does exactly that on all six masks and then checks it.
+    </p>
+    <p>
+      The phone mask is the one that breaks the symmetry. It has one more dead <em>Delete</em> than
+      dead <em>Backspace</em>, and the extra one is the opening bracket: at the very start of the
+      field there is a literal to the right of the caret and digits beyond it, but nothing at all to
+      its left. Backspace there has nothing to mean; Delete does, and gets ignored.
+    </p>
+
+    <h3>The fix is a question about the past, not the present</h3>
+    <p>
+      The correct rule cannot be a function of the value the browser handed back, because that value
+      is identical in the working case and the dead one. It has to know <em>what was removed</em>,
+      which means capturing the field's value and selection in <code>beforeinput</code>, before the
+      browser touches it. Then the rule is one sentence: if the delete was collapsed and took out only
+      literal characters, delete the digit the user was aiming at instead &mdash; the one before the
+      caret for Backspace, the one after it for Delete.
+    </p>
+    <p>
+      Nearly everyone writes the Backspace half. Almost nobody writes the Delete half, because almost
+      nobody tests Delete. That is one clause of difference and it is worth a whole implementation in
+      the tables: same caret behaviour, same shape, one direction of one key silently dead.
+    </p>
+
+    <h3>What the control settles</h3>
+    <p>
+      It is tempting to say the separators are what break the field, and to reach for a design that
+      does not have any. The control mask is that design, run on the identical corpus: sixteen digit
+      slots, no literals, same digits, same caret indices, same keystrokes.
+    </p>
+    <p>
+      It removes every dead key. Not most of them &mdash; all of them, on every rule, exactly as the
+      closed form says it must, because the closed form counts literals and there are none. That half
+      of the story is completely confirmed.
+    </p>
+    <p>
+      And it does essentially nothing for the caret. The most-shipped rule is right about the caret on
+      13.1% of keystrokes with separators and 13.3% without: the separators were never what was
+      breaking it. What breaks it is that the field <em>re-renders</em> at all, and re-rendering
+      throws away the caret whether or not there is a space in the string. A field with no mask and a
+      handler that reformats is still a field that loses your place.
+    </p>
+
+    <h3>Two implementations the tests reject, and only one of them deserves it</h3>
+    <p>
+      The three blind properties are not useless. They catch one genuinely broken rule &mdash; the one
+      that keeps the browser's character index &mdash; because on the very first test anybody writes,
+      typing the number straight in, its caret drifts by one at every group boundary and the digits
+      come out scrambled.
+    </p>
+    <p>
+      They also reject the control, which is correct and does not pretend otherwise: it does not
+      format, so of course typing a number into it does not produce a formatted number. That is what a
+      control is for.
+    </p>
+    <p>
+      And they reject one implementation that is right in every way a person can feel. Drawing the
+      separator the moment its group fills &mdash; showing <code>4242 </code> with the space already
+      there, waiting &mdash; makes the value differ from the strict rendering of its own digits, so
+      the shape property fails on it. Its digits and its caret are identical to the correct rule's on
+      every keystroke in the sweep; only the picture differs, and only sometimes. Whether that counts
+      as a defect is a design decision, and the one property everybody asserts has quietly made it for
+      you.
+    </p>
+
+    <h3>Two things I set out to show that were not there</h3>
+    <p>
+      The first: I expected that adding rejected keystrokes to the session corpus &mdash; typing the
+      separator yourself, which is exactly how people type an expiry date, or fat-fingering a letter
+      &mdash; would change which implementation looked better, because rejected characters are the one
+      case that pulls the character index away from the digit index without changing a digit. It
+      changes the percentages and reorders nothing at all: zero of the ordered pairs flip.
+    </p>
+    <p>
+      The second: I expected per-keystroke accuracy and end-of-session correctness to agree about the
+      ranking, so that either measurement would do. They disagree about exactly one pair &mdash; and
+      it is the pair a team is actually choosing between. Keeping the distance from the end of the
+      string is the better rule keystroke for keystroke and the worse one across a whole session,
+      because its errors land on the digit inserts that a session is made of, while the other rule's
+      errors land on keystrokes a session mostly does not contain.
+    </p>
+
+    <h3>The measurement is an enumeration</h3>
+    <p>
+      Nothing on this page is sampled. Every digit string in the corpus covers every length from empty
+      to full; every caret index in every one of those strings is visited; both character positions
+      that share a digit index are visited separately; every kind of keystroke is applied at each of
+      them; and all eight implementations answer all of it. The percentages hold to a tenth of a point
+      when the corpus is grown, which is what saturation looks like.
+    </p>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <h2>Build it</h2>
+    <p>
+      Nine steps. Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> in this
+      page's one script block is arithmetic over strings and integers &mdash; no DOM, no clock, no
+      random source &mdash; so the verifier lifts it out of the file and runs it under Node against
+      oracles written on different representations.
+    </p>
+
+    <h3>1 &middot; A mask is a pattern, not a list of group sizes</h3>
+    <p>
+      Group sizes get you <code>#### #### #### ####</code> and nothing else. A pattern gets you the
+      phone number too, with a two-character literal run in the middle and one at the start, which is
+      where the interesting edge cases live.
+    </p>
+    <pre><code>const MASKS = {
+  card:  { pat: '#### #### #### ####' },
+  phone: { pat: '(###) ###-####' },
+  bare:  { pat: '################' }   // the control
+};
+const capOf  = pat =&gt; [...pat].filter(c =&gt; c === '#').length;</code></pre>
+
+    <h3>2 &middot; Render lazily</h3>
+    <p>
+      Hold each literal back until a digit has arrived to sit after it. An empty phone field should be
+      empty, not a lone opening bracket the user has to delete.
+    </p>
+    <pre><code>function render(pat, d){
+  let out = '', k = 0, pend = '';
+  for (const c of pat){
+    if (c === '#'){ if (k &gt;= d.length) break; out += pend; pend = ''; out += d[k++]; }
+    else pend += c;
+  }
+  return out;
+}</code></pre>
+
+    <h3>3 &middot; Write both maps between the two coordinate systems</h3>
+    <p>
+      <code>digitsBefore</code> goes down to digit space, <code>caretForDigit</code> comes back up.
+      They must be inverse for every position; the self-check asserts that rather than trusting it.
+    </p>
+    <pre><code>const digitsBefore = (v, pos) =&gt;
+  [...v.slice(0, pos)].filter(isDigit).length;
+
+function caretForDigit(v, k){          // just after the k-th digit
+  if (k &lt;= 0){ let i = 0; while (i &lt; v.length &amp;&amp; !isDigit(v[i])) i++; return i; }
+  let seen = 0;
+  for (let i = 0; i &lt; v.length; i++)
+    if (isDigit(v[i]) &amp;&amp; ++seen === k) return i + 1;
+  return v.length;
+}</code></pre>
+
+    <h3>4 &middot; Capture the state before the browser edits it</h3>
+    <p>
+      This is the one thing the correct rule needs and the wrong ones do not have. Without it you
+      cannot tell a Backspace that removed a digit from one that removed a space, because the value
+      you are handed is the same either way.
+    </p>
+    <pre><code>let PRE = null;
+inp.addEventListener('beforeinput', e =&gt; {
+  PRE = { value: inp.value, sa: inp.selectionStart, sb: inp.selectionEnd, type: e.inputType };
+});</code></pre>
+
+    <h3>5 &middot; The half nobody disagrees about</h3>
+    <p>
+      Strip to digits, cut to capacity, re-render. Do this and the value is always shaped like the
+      mask, which is why the property everybody tests is nearly free and nearly worthless.
+    </p>
+    <pre><code>const d = digitsOf(raw.value).slice(0, cap);
+const v = render(pat, d);</code></pre>
+
+    <h3>6 &middot; Put the caret back by counting digits, never by counting characters</h3>
+    <p>
+      Count the digits to the left of the caret in the string the browser handed you, then find the
+      position after that many digits in the string you are about to show. This fixes every insertion,
+      including a pasted number and a character the mask rejects.
+    </p>
+    <pre><code>const k = Math.min(digitsBefore(raw.value, raw.caret), d.length);
+return { value: v, caret: caretForDigit(v, k) };</code></pre>
+
+    <h3>7 &middot; Make the delete mean what it says &mdash; in both directions</h3>
+    <p>
+      If the delete was collapsed and removed only literal characters, then nothing happened, and
+      nothing is not what the user asked for. Remove the digit they were aiming at instead. The
+      forward half is the clause that gets left out.
+    </p>
+    <pre><code>const rem = removedText(prev, ed);
+if (prev.sa === prev.sb &amp;&amp; rem.length &amp;&amp; digitsOf(rem).length === 0){
+  if (ed.kind === 'back' &amp;&amp; k &gt; 0){ d = d.slice(0, k-1) + d.slice(k); k -= 1; }
+  else if (ed.kind === 'fwd' &amp;&amp; k &lt; d.length){ d = d.slice(0, k) + d.slice(k+1); }
+}</code></pre>
+
+    <h3>8 &middot; Judge the caret in digit space</h3>
+    <p>
+      Comparing <code>selectionStart</code> against an expected integer will fail on the position that
+      is visually identical and numerically different, and it will pass a rule that happens to agree
+      with your fixture. Compare <code>digitsBefore(value, caret)</code> against the intent oracle and
+      both placements count as right, which is the honest test and also the stricter one.
+    </p>
+    <pre><code>const gotK  = digitsBefore(out.value, out.caret);
+const want  = intentStep(cap, d, ka, kb, ed);   // digits only, no mask
+const caretOk = gotK === want.k;</code></pre>
+
+    <h3>9 &middot; Run the whole thing, and run the control beside it</h3>
+    <p>
+      Enumerate: every length, every caret index, both placements, every kind of keystroke, every
+      implementation. Then run the identical corpus against a pattern with no literals in it. The
+      difference between the two columns is what the separators are responsible for &mdash; and it
+      turns out to be one of the two defects, not both.
+    </p>
+    <pre><code>const KS   = keystrokeSweep(MASK_IDS, SEED, REPS);   // every keystroke, every rule
+const PAIR = pairedControl('card', SEED_PAIR, REPS_PAIR);
+const FULL = fullFieldScan(prepMask(MASKS.card));   // and the closed form it must match</code></pre>
+
+    <p class="note">
+      Pure vanilla JavaScript, one file, no build step. The self-check badge in the first tab asserts
+      bounds and identities only &mdash; round trips, inverse maps, closed forms against their own
+      measurements &mdash; so it stays honest when the corpus changes.
+    </p>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// Input mask. A field that formats itself while you type - a card number, a phone number, an expiry
+// date - and one number to settle after every keystroke: where the caret goes. Everything here is
+// arithmetic over strings and integer positions - no DOM, no clock, no Math.random - so the verifier
+// can lift this block out of the page and run it under node against oracles built on other
+// representations.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- the masks
+// A mask is a pattern: '#' is a digit slot, everything else is a literal the field writes for you.
+// The literals are the entire subject of this page - they are the characters the user never types
+// and can never usefully delete.
+const MASKS = {
+  card:   { id:'card',   label:'a card number',        pat:'#### #### #### ####' },
+  amex:   { id:'amex',   label:'an Amex card',         pat:'#### ###### #####' },
+  phone:  { id:'phone',  label:'a US phone number',    pat:'(###) ###-####' },
+  expiry: { id:'expiry', label:'an expiry date',       pat:'##/##' },
+  ssn:    { id:'ssn',    label:'a national ID number', pat:'###-##-####' },
+  // THE CONTROL. Sixteen digit slots and not one literal: the same field with the only thing that is
+  // supposed to cause the defect taken out of it.
+  bare:   { id:'bare',   label:'the control: no separators at all', pat:'################' }
+};
+const MASK_IDS = ['card', 'amex', 'phone', 'expiry', 'ssn', 'bare'];
+const REAL_MASKS = ['card', 'amex', 'phone', 'expiry', 'ssn'];
+const CONTROL_MASK = 'bare';
+const DEMO_MASK = 'card';
+
+function isDigit(c){ return c >= '0' && c <= '9'; }
+function capOf(pat){ let n = 0; for (let i = 0; i < pat.length; i++) if (pat[i] === '#') n++; return n; }
+function digitsOf(s){ let r = ''; for (let i = 0; i < s.length; i++) if (isDigit(s[i])) r += s[i]; return r; }
+function litSet(pat){ let r = ''; for (let i = 0; i < pat.length; i++) if (pat[i] !== '#' && r.indexOf(pat[i]) < 0) r += pat[i]; return r; }
+function litCount(pat){ let n = 0; for (let i = 0; i < pat.length; i++) if (pat[i] !== '#') n++; return n; }
+function prepMask(M){
+  return { id:M.id, label:M.label, pat:M.pat, cap:capOf(M.pat), lits:litSet(M.pat), nlit:litCount(M.pat) };
+}
+
+// Render, lazily: a literal is written only once a digit has arrived to sit after it, so an empty
+// phone field is empty rather than '('.
+function render(pat, d){
+  let out = '', k = 0, pend = '';
+  for (let i = 0; i < pat.length; i++){
+    const c = pat[i];
+    if (c === '#'){ if (k >= d.length) break; out += pend; pend = ''; out += d[k++]; }
+    else pend += c;
+  }
+  return out;
+}
+// Render, eagerly: the moment a group fills, write the separator that follows it and leave it on
+// screen waiting for the next digit.
+function renderEager(pat, d){
+  let out = '', k = 0, pend = '';
+  for (let i = 0; i < pat.length; i++){
+    const c = pat[i];
+    if (c === '#'){
+      if (k >= d.length){ out += pend; pend = ''; break; }
+      out += pend; pend = ''; out += d[k++];
+    } else pend += c;
+  }
+  return out;
+}
+
+// The two coordinate systems. A DOM caret is an index into the rendered string; what the user means
+// is an index into the digits. digitsBefore maps down, caretForDigit maps back up.
+function digitsBefore(v, pos){
+  let n = 0; const p = Math.max(0, Math.min(v.length, pos));
+  for (let i = 0; i < p; i++) if (isDigit(v[i])) n++;
+  return n;
+}
+function litsBefore(v, pos){
+  const p = Math.max(0, Math.min(v.length, pos));
+  return p - digitsBefore(v, p);
+}
+// The canonical DOM position for digit index k: immediately after the k-th digit, and therefore
+// BEFORE any literal run that follows it. k = 0 means immediately before the first digit, which on a
+// mask with a leading literal is not position 0.
+function caretForDigit(v, k){
+  if (k <= 0){ let i = 0; while (i < v.length && !isDigit(v[i])) i++; return i; }
+  let seen = 0;
+  for (let i = 0; i < v.length; i++) if (isDigit(v[i])){ seen++; if (seen === k) return i + 1; }
+  return v.length;
+}
+// The other DOM position with the same digit index: past the literal run. Two caret positions, one
+// digit index - the ambiguity every implementation below has to resolve, and the reason a caret must
+// be judged in digit space and never by its integer value.
+function caretPastLits(v, k){
+  let i = caretForDigit(v, k);
+  while (i < v.length && !isDigit(v[i])) i++;
+  return i;
+}
+
+// ---------------------------------------------------------------- the browser's half of the edit
+// A controlled input runs after the fact: the browser has already applied the keystroke to its own
+// value and the component is handed the result. This is that first half, identical for every
+// implementation below.
+function browserEdit(prev, ed){
+  const v = prev.value, a = prev.sa, b = prev.sb;
+  if (ed.kind === 'insert') return { value: v.slice(0, a) + ed.text + v.slice(b), caret: a + ed.text.length };
+  if (ed.kind === 'back'){
+    if (a !== b) return { value: v.slice(0, a) + v.slice(b), caret: a };
+    if (a === 0) return { value: v, caret: 0 };
+    return { value: v.slice(0, a - 1) + v.slice(a), caret: a - 1 };
+  }
+  if (a !== b) return { value: v.slice(0, a) + v.slice(b), caret: a };
+  if (a >= v.length) return { value: v, caret: a };
+  return { value: v.slice(0, a) + v.slice(a + 1), caret: a };
+}
+// What the browser took out, recovered from the state captured before the edit. This is exactly what
+// `beforeinput` hands a real component, and it is the only extra fact the correct rule uses.
+function removedText(prev, ed){
+  if (prev.sa !== prev.sb) return prev.value.slice(prev.sa, prev.sb);
+  if (ed.kind === 'back') return prev.sa > 0 ? prev.value[prev.sa - 1] : '';
+  if (ed.kind === 'fwd') return prev.sa < prev.value.length ? prev.value[prev.sa] : '';
+  return '';
+}
+function clampCaret(c, n){ return Math.max(0, Math.min(n, c)); }
+// The half of the reformat every implementation shares: strip to digits, cut to capacity. It is the
+// caret, and whether the deleted character is looked at, that they disagree about.
+function reformDigits(cap, rawValue){ return digitsOf(rawValue).slice(0, cap); }
+
+// ---------------------------------------------------------------- eight implementations
+const IMPLS = {
+  plain: { id:'plain', label:'no mask at all', control:true,
+    clause:'show the digits unformatted, caret after the same digit',
+    render(pat, d){ return d; },
+    apply(pat, cap, prev, raw, ed){
+      const d = reformDigits(cap, raw.value);
+      return { value: d, caret: clampCaret(digitsBefore(raw.value, raw.caret), d.length) };
+    } },
+  endCaret: { id:'endCaret', label:'caret to the end',
+    clause:'after every edit put the caret at the end',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      const d = reformDigits(cap, raw.value), v = render(pat, d);
+      return { value: v, caret: v.length };
+    } },
+  rawIndex: { id:'rawIndex', label:'keep the browser index',
+    clause:'leave the caret at the same character index',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      const d = reformDigits(cap, raw.value), v = render(pat, d);
+      return { value: v, caret: clampCaret(raw.caret, v.length) };
+    } },
+  fromEnd: { id:'fromEnd', label:'keep the distance from the end',
+    clause:'leave the same number of characters to the right of the caret',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      const d = reformDigits(cap, raw.value), v = render(pat, d);
+      return { value: v, caret: clampCaret(v.length - (raw.value.length - raw.caret), v.length) };
+    } },
+  countDigits: { id:'countDigits', label:'count the digits to the left',
+    clause:'put the caret back after the same number of digits',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      const d = reformDigits(cap, raw.value), v = render(pat, d);
+      const k = Math.min(digitsBefore(raw.value, raw.caret), d.length);
+      return { value: v, caret: caretForDigit(v, k) };
+    } },
+  deleteBack: { id:'deleteBack', label:'and Backspace skips a separator',
+    clause:'and if Backspace removed a literal, remove the digit before it',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      let d = reformDigits(cap, raw.value);
+      let k = Math.min(digitsBefore(raw.value, raw.caret), d.length);
+      const rem = removedText(prev, ed);
+      if (ed.kind === 'back' && prev.sa === prev.sb && rem.length > 0 && digitsOf(rem).length === 0 && k > 0){
+        d = d.slice(0, k - 1) + d.slice(k); k -= 1;
+      }
+      const v = render(pat, d);
+      return { value: v, caret: caretForDigit(v, k) };
+    } },
+  maskAware: { id:'maskAware', label:'either delete skips a separator',
+    clause:'and forward delete does the same thing forwards',
+    render(pat, d){ return render(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      let d = reformDigits(cap, raw.value);
+      let k = Math.min(digitsBefore(raw.value, raw.caret), d.length);
+      const rem = removedText(prev, ed);
+      if (prev.sa === prev.sb && rem.length > 0 && digitsOf(rem).length === 0){
+        if (ed.kind === 'back' && k > 0){ d = d.slice(0, k - 1) + d.slice(k); k -= 1; }
+        else if (ed.kind === 'fwd' && k < d.length){ d = d.slice(0, k) + d.slice(k + 1); }
+      }
+      const v = render(pat, d);
+      return { value: v, caret: caretForDigit(v, k) };
+    } },
+  eagerSep: { id:'eagerSep', label:'the same, with the separator shown early',
+    clause:'and write the separator the moment its group is full',
+    render(pat, d){ return renderEager(pat, d); },
+    apply(pat, cap, prev, raw, ed){
+      let d = reformDigits(cap, raw.value);
+      let k = Math.min(digitsBefore(raw.value, raw.caret), d.length);
+      const rem = removedText(prev, ed);
+      if (prev.sa === prev.sb && rem.length > 0 && digitsOf(rem).length === 0){
+        if (ed.kind === 'back' && k > 0){ d = d.slice(0, k - 1) + d.slice(k); k -= 1; }
+        else if (ed.kind === 'fwd' && k < d.length){ d = d.slice(0, k) + d.slice(k + 1); }
+      }
+      const v = renderEager(pat, d);
+      return { value: v, caret: caretForDigit(v, k) };
+    } }
+};
+const IMPL_IDS = ['plain', 'endCaret', 'rawIndex', 'fromEnd', 'countDigits', 'deleteBack',
+                  'maskAware', 'eagerSep'];
+const CORRECT = 'maskAware';
+const CONTROL = 'plain';
+
+// ---------------------------------------------------------------- what the keystroke MEANT
+// The intent oracle lives only in digit space: a string of digits and an index into it. It does not
+// know the mask exists, which is the point - the meaning of Backspace does not depend on where the
+// field happens to draw its spaces.
+function intentStep(cap, d, ka, kb, ed){
+  if (ed.kind === 'insert'){
+    const t = digitsOf(ed.text);
+    let nd = d.slice(0, ka) + t + d.slice(kb);
+    if (nd.length > cap) nd = nd.slice(0, cap);
+    return { d: nd, k: Math.min(ka + t.length, nd.length) };
+  }
+  if (ka !== kb) return { d: d.slice(0, ka) + d.slice(kb), k: ka };
+  if (ed.kind === 'back'){
+    if (ka === 0) return { d: d, k: 0 };
+    return { d: d.slice(0, ka - 1) + d.slice(ka), k: ka - 1 };
+  }
+  if (ka >= d.length) return { d: d, k: ka };
+  return { d: d.slice(0, ka) + d.slice(ka + 1), k: ka };
+}
+
+// ---------------------------------------------------------------- one keystroke, judged
+function outsideAlphabet(v, lits){
+  let n = 0;
+  for (let i = 0; i < v.length; i++) if (!isDigit(v[i]) && lits.indexOf(v[i]) < 0) n++;
+  return n;
+}
+// Put the field into the state the intent describes, press one key, and ask five questions. The
+// caret is compared in DIGITS, so both DOM positions that share a digit index count as right.
+function judge(M, implId, d, ka, kb, ed, past){
+  const im = IMPLS[implId], pat = M.pat, cap = M.cap;
+  const v0 = im.render(pat, d);
+  const prev = { value: v0, sa: past ? caretPastLits(v0, ka) : caretForDigit(v0, ka),
+                            sb: past ? caretPastLits(v0, kb) : caretForDigit(v0, kb) };
+  const raw = browserEdit(prev, ed);
+  const out = im.apply(pat, cap, prev, raw, ed);
+  const want = intentStep(cap, d, ka, kb, ed);
+  const gotD = digitsOf(out.value), gotK = digitsBefore(out.value, out.caret);
+  return { prev:prev, raw:raw, out:out, want:want, gotD:gotD, gotK:gotK,
+    // THE BLIND PROPERTY: the value on screen is exactly the mask applied to the digits it holds.
+    shaped: out.value === render(pat, gotD) && gotD.length <= cap,
+    alphabet: outsideAlphabet(out.value, M.lits) === 0 && gotD.length <= cap,
+    digitsOk: gotD === want.d,
+    caretOk: gotK === want.k,
+    changed: gotD !== d,
+    shouldChange: want.d !== d,
+    // a bound, not a comparison: whatever the rule decides, the caret has to be a real position in
+    // the value it just produced and the field can never hold more digits than the mask has slots
+    inRange: gotK >= 0 && gotK <= gotD.length && gotD.length <= cap && out.caret >= 0 &&
+             out.caret <= out.value.length,
+    caretMoved: !(out.value === v0 && out.caret === prev.sa) };
+}
+
+// ---------------------------------------------------------------- the closed forms
+// Three of the wrong implementations are wrong for a reason you can state without running them. A
+// prediction that has to survive being measured against the thing it predicts is worth more than a
+// count, so each of these is computed from the mask and the browser's half alone - no caret rule.
+function reform(M, d, ka, kb, ed, past){
+  const v0 = render(M.pat, d);
+  const prev = { value:v0, sa: past ? caretPastLits(v0, ka) : caretForDigit(v0, ka),
+                           sb: past ? caretPastLits(v0, kb) : caretForDigit(v0, kb) };
+  const raw = browserEdit(prev, ed);
+  const dd = reformDigits(M.cap, raw.value);
+  return { prev:prev, raw:raw, dd:dd, v: render(M.pat, dd), want: intentStep(M.cap, d, ka, kb, ed) };
+}
+// endCaret is right exactly when the keystroke's own meaning leaves the caret after the last digit
+// the reformat produced.
+function predEndCaret(M, d, ka, kb, ed, past){
+  const r = reform(M, d, ka, kb, ed, past);
+  return r.want.k === r.dd.length;
+}
+// rawIndex is right exactly when the re-render leaves the same number of LITERALS to the left of the
+// character index the browser handed back.
+function predRawIndex(M, d, ka, kb, ed, past){
+  const r = reform(M, d, ka, kb, ed, past);
+  const c = clampCaret(r.raw.caret, r.v.length);
+  return c - litsBefore(r.v, c) === r.want.k;
+}
+// fromEnd is right exactly when it leaves the same number of characters to the RIGHT, measured
+// against the value that actually appears.
+function predFromEnd(M, d, ka, kb, ed, past){
+  const r = reform(M, d, ka, kb, ed, past);
+  const c = clampCaret(r.v.length - (r.raw.value.length - r.raw.caret), r.v.length);
+  return c - litsBefore(r.v, c) === r.want.k;
+}
+// THE STUCK KEY, in closed form and with no implementation involved: a collapsed delete that means
+// to remove a digit, sitting on a character that is a literal. Nothing is removed, the reformat puts
+// the literal straight back, and the key does nothing at all.
+function predStuck(M, d, ka, kb, ed, past){
+  if (ed.kind === 'insert' || ka !== kb) return false;
+  if (intentStep(M.cap, d, ka, kb, ed).d === d) return false;
+  const v0 = render(M.pat, d);
+  const rem = removedText({ value:v0, sa: past ? caretPastLits(v0, ka) : caretForDigit(v0, ka),
+                            sb: past ? caretPastLits(v0, ka) : caretForDigit(v0, ka) }, ed);
+  return rem.length > 0 && digitsOf(rem).length === 0;
+}
+
+// ---------------------------------------------------------------- the exhaustive keystroke sweep
+// Not a sample. Every digit string in the corpus, every caret index in it, both DOM placements that
+// share that index, every kind of keystroke, every implementation.
+const EDIT_KINDS = ['digit', 'sep', 'letter', 'paste', 'back', 'fwd', 'selrep', 'seldel'];
+function editList(M){
+  const sep = M.lits.length ? M.lits[0] : ' ';
+  return [
+    { id:'digit',  kind:'insert', text:'7',    sel:0 },
+    { id:'sep',    kind:'insert', text:sep,    sel:0 },
+    { id:'letter', kind:'insert', text:'x',    sel:0 },
+    { id:'paste',  kind:'insert', text:'1234', sel:0 },
+    { id:'back',   kind:'back',   text:'',     sel:0 },
+    { id:'fwd',    kind:'fwd',    text:'',     sel:0 },
+    { id:'selrep', kind:'insert', text:'5',    sel:2 },
+    { id:'seldel', kind:'back',   text:'',     sel:2 }
+  ];
+}
+function digitCorpus(M, seed, reps){
+  const rnd = mulberry32(seed), out = [];
+  for (let L = 0; L <= M.cap; L++)
+    for (let r = 0; r < reps; r++){
+      let s = '';
+      for (let i = 0; i < L; i++) s += String(Math.floor(rnd() * 10));
+      out.push(s);
+    }
+  return out;
+}
+function blankStat(){
+  return { n:0, shaped:0, alphabet:0, digitsOk:0, caretOk:0, eff:0, effOf:0,
+           caretEff:0, caretEffOf:0, inRange:0, asserts:0 };
+}
+function addStat(a, b){
+  for (const k in a) if (typeof a[k] === 'number') a[k] += b[k];
+}
+function keystrokeSweep(maskIds, seed, reps){
+  const stat = {}, per = {}, byEdit = {}, byPlace = { near:{}, past:{} };
+  for (const id of IMPL_IDS){ stat[id] = blankStat(); byPlace.near[id] = blankStat(); byPlace.past[id] = blankStat(); }
+  for (const e of EDIT_KINDS){ byEdit[e] = {}; for (const id of IMPL_IDS) byEdit[e][id] = blankStat(); }
+  const pred = { endCaret:0, rawIndex:0, fromEnd:0, stuck:0, stuckFwd:0, n:0 };
+  let cases = 0, asserts = 0;
+  for (const mid of maskIds){
+    const M = prepMask(MASKS[mid]);
+    per[mid] = {}; for (const id of IMPL_IDS) per[mid][id] = blankStat();
+    const eds = editList(M);
+    for (const d of digitCorpus(M, seed + M.pat.length * 977, reps)){
+      const v0 = render(M.pat, d);
+      for (let k = 0; k <= d.length; k++){
+        for (let pi = 0; pi < 2; pi++){
+          const past = pi === 1;
+          if (past && caretPastLits(v0, k) === caretForDigit(v0, k)) continue;
+          for (const ed of eds){
+            const ka = ed.sel ? Math.max(0, k - ed.sel) : k, kb = k;
+            cases++; pred.n++;
+            if (predEndCaret(M, d, ka, kb, ed, past)) pred.endCaret++;
+            if (predRawIndex(M, d, ka, kb, ed, past)) pred.rawIndex++;
+            if (predFromEnd(M, d, ka, kb, ed, past)) pred.fromEnd++;
+            if (predStuck(M, d, ka, kb, ed, past)){ pred.stuck++; if (ed.kind === 'fwd') pred.stuckFwd++; }
+            for (const id of IMPL_IDS){
+              const j = judge(M, id, d, ka, kb, ed, past);
+              for (const s of [stat[id], per[mid][id], byEdit[ed.id][id],
+                               past ? byPlace.past[id] : byPlace.near[id]]){
+                s.n++;
+                if (j.shaped) s.shaped++;
+                if (j.alphabet) s.alphabet++;
+                if (j.digitsOk) s.digitsOk++;
+                if (j.caretOk) s.caretOk++;
+                if (j.shouldChange){ s.effOf++; if (j.changed) s.eff++; }
+                if (j.digitsOk){ s.caretEffOf++; if (j.caretOk) s.caretEff++; }
+                if (j.inRange) s.inRange++;
+                s.asserts += 5;
+              }
+              asserts += 5;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { stat:stat, per:per, byEdit:byEdit, byPlace:byPlace, pred:pred, cases:cases, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- sessions
+// A keystroke judged on its own is generous: it hands the implementation a clean state first. Real
+// typing does not. In a session the next keystroke lands wherever the last one left the caret, so an
+// error moves the next character rather than merely looking odd.
+function newState(M, im, d, k){
+  const v = im.render(M.pat, d), c = caretForDigit(v, Math.min(k, d.length));
+  return { value:v, sa:c, sb:c };
+}
+function runSession(M, implId, ops){
+  const im = IMPLS[implId];
+  let st = { value: im.render(M.pat, ''), sa:0, sb:0 };
+  let d = '', ka = 0, kb = 0, steps = 0;
+  for (const op of ops){
+    if (op.a === 'aim'){
+      const k = Math.min(op.k, digitsOf(st.value).length);
+      const c = caretForDigit(st.value, k);
+      st = { value: st.value, sa:c, sb:c };
+      ka = kb = Math.min(op.k, d.length);
+      continue;
+    }
+    if (op.a === 'sel'){
+      const dd = digitsOf(st.value).length;
+      const a = Math.min(op.ka, dd), b = Math.min(op.kb, dd);
+      st = { value: st.value, sa: caretForDigit(st.value, a), sb: caretForDigit(st.value, b) };
+      ka = Math.min(op.ka, d.length); kb = Math.min(op.kb, d.length);
+      continue;
+    }
+    const ed = op.a === 'type' ? { kind:'insert', text:op.text }
+             : op.a === 'back' ? { kind:'back', text:'' } : { kind:'fwd', text:'' };
+    const raw = browserEdit(st, ed);
+    const out = im.apply(M.pat, M.cap, st, raw, ed);
+    st = { value: out.value, sa: out.caret, sb: out.caret };
+    const w = intentStep(M.cap, d, ka, kb, ed);
+    d = w.d; ka = kb = w.k;
+    steps++;
+  }
+  return { st:st, gotD: digitsOf(st.value), wantD: d, steps: steps,
+           shown: st.value, shownOk: st.value === render(M.pat, d),
+           gotK: digitsBefore(st.value, st.sa), wantK: ka };
+}
+// The session every mask test writes: type the number in, left to right, and look at it. No caret
+// ever moves, no key is ever deleted, and nothing that follows can happen.
+function appendOps(rnd, M){
+  const ops = [];
+  for (let i = 0; i < M.cap; i++) ops.push({ a:'type', text:String(Math.floor(rnd() * 10)) });
+  return ops;
+}
+// The session a person has: paste or type most of it, then go back and fix something.
+function editOps(rnd, M){
+  const ops = [];
+  const n = Math.max(1, M.cap - Math.floor(rnd() * 3));
+  let s = '';
+  for (let i = 0; i < n; i++) s += String(Math.floor(rnd() * 10));
+  ops.push({ a:'type', text:s });
+  const rounds = 1 + Math.floor(rnd() * 3);
+  for (let r = 0; r < rounds; r++){
+    const k = Math.floor(rnd() * (n + 1));
+    const roll = rnd();
+    if (roll < 0.34){
+      ops.push({ a:'aim', k:k });
+      const run = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < run; i++) ops.push({ a:'type', text:String(Math.floor(rnd() * 10)) });
+    } else if (roll < 0.62){
+      ops.push({ a:'aim', k:k });
+      const run = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < run; i++) ops.push({ a:'back' });
+    } else if (roll < 0.82){
+      ops.push({ a:'aim', k:k });
+      const run = 1 + Math.floor(rnd() * 2);
+      for (let i = 0; i < run; i++) ops.push({ a:'fwd' });
+    } else {
+      const a = Math.max(0, k - 2);
+      ops.push({ a:'sel', ka:a, kb:k });
+      ops.push({ a:'type', text:String(Math.floor(rnd() * 10)) });
+    }
+  }
+  return ops;
+}
+function sessionSweep(maskIds, kind, cases, seed){
+  const rnd = mulberry32(seed), stat = {}, per = {};
+  for (const id of IMPL_IDS) stat[id] = { n:0, ok:0, shown:0, caret:0, steps:0 };
+  for (const mid of maskIds){
+    per[mid] = {}; for (const id of IMPL_IDS) per[mid][id] = { n:0, ok:0, shown:0, caret:0, steps:0 };
+  }
+  let asserts = 0, steps = 0;
+  for (let c = 0; c < cases; c++){
+    for (const mid of maskIds){
+      const M = prepMask(MASKS[mid]);
+      const ops = kind === 'append' ? appendOps(rnd, M) : editOps(rnd, M);
+      for (const id of IMPL_IDS){
+        const r = runSession(M, id, ops);
+        for (const s of [stat[id], per[mid][id]]){
+          s.n++; s.steps += r.steps;
+          if (r.gotD === r.wantD) s.ok++;
+          if (r.shownOk) s.shown++;
+          if (r.gotD === r.wantD && r.gotK === r.wantK) s.caret++;
+        }
+        steps += r.steps; asserts += 3;
+      }
+    }
+  }
+  return { kind:kind, stat:stat, per:per, cases:cases, asserts:asserts, steps:steps };
+}
+
+// ---------------------------------------------------------------- the traces the page shows
+// One named keystroke, walked step by step, so the number in the table has a keystroke attached.
+function traceOne(M, implId, d, k, ed, past){
+  const j = judge(M, implId, d, k, k, ed, past);
+  return { before:j.prev.value, caretBefore:j.prev.sa, raw:j.raw.value, rawCaret:j.raw.caret,
+           after:j.out.value, caretAfter:j.out.caret, wantD:j.want.d, wantK:j.want.k,
+           gotD:j.gotD, gotK:j.gotK, digitsOk:j.digitsOk, caretOk:j.caretOk, stuck: j.shouldChange && !j.changed };
+}
+function traceSession(M, implId, ops){
+  const im = IMPLS[implId], rows = [];
+  let st = { value: im.render(M.pat, ''), sa:0, sb:0 }, d = '', ka = 0, kb = 0;
+  for (const op of ops){
+    if (op.a === 'aim' || op.a === 'sel'){
+      const dd = digitsOf(st.value).length;
+      const a = Math.min(op.a === 'aim' ? op.k : op.ka, dd), b = Math.min(op.a === 'aim' ? op.k : op.kb, dd);
+      st = { value: st.value, sa: caretForDigit(st.value, a), sb: caretForDigit(st.value, b) };
+      ka = Math.min(op.a === 'aim' ? op.k : op.ka, d.length);
+      kb = Math.min(op.a === 'aim' ? op.k : op.kb, d.length);
+      rows.push({ op:op, value:st.value, sa:st.sa, sb:st.sb, want:d, wantK:ka, ok:true, move:true });
+      continue;
+    }
+    const ed = op.a === 'type' ? { kind:'insert', text:op.text }
+             : op.a === 'back' ? { kind:'back', text:'' } : { kind:'fwd', text:'' };
+    const before = st.value;
+    const raw = browserEdit(st, ed);
+    const out = im.apply(M.pat, M.cap, st, raw, ed);
+    st = { value: out.value, sa: out.caret, sb: out.caret };
+    const w = intentStep(M.cap, d, ka, kb, ed);
+    d = w.d; ka = kb = w.k;
+    rows.push({ op:op, value:st.value, sa:st.sa, sb:st.sb, want:d, wantK:ka,
+                ok: digitsOf(st.value) === d, move:false,
+                stuck: digitsOf(before) === digitsOf(st.value) && digitsOf(before) !== d });
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- the property table
+// Six properties in the order a team writes them. The first three are the ones a test can assert
+// without knowing what the user meant - a screenshot, a snapshot test and a bug report can all see
+// them, and nothing else.
+const PROPS = [
+  { id:'shaped',   label:'the value is always the mask applied to its digits', blind:true },
+  { id:'alphabet', label:'nothing the user typed survives that the mask forbids', blind:true },
+  { id:'append',   label:'typing the number straight in produces the formatted number', blind:true },
+  { id:'caret',    label:'the caret stays after the digit the user left it after', blind:false },
+  { id:'effective',label:'every delete deletes something', blind:false },
+  { id:'session',  label:'a real editing session ends with the number the user meant', blind:false }
+];
+function propScore(id, KS, APP, SESS){
+  const out = {};
+  for (const im of IMPL_IDS){
+    if (id === 'shaped')    out[im] = [KS.stat[im].shaped, KS.stat[im].n];
+    else if (id === 'alphabet') out[im] = [KS.stat[im].alphabet, KS.stat[im].n];
+    else if (id === 'append')   out[im] = [APP.stat[im].shown, APP.stat[im].n];
+    else if (id === 'caret')    out[im] = [KS.stat[im].caretOk, KS.stat[im].n];
+    else if (id === 'effective')out[im] = [KS.stat[im].eff, KS.stat[im].effOf];
+    else                        out[im] = [SESS.stat[im].ok, SESS.stat[im].n];
+  }
+  return out;
+}
+// The blind set: the implementations that pass every property a test can assert without knowing the
+// user's intent. This is the whole point of the page, so it is computed, never asserted.
+function blindSet(KS, APP){
+  return IMPL_IDS.filter(id => KS.stat[id].shaped === KS.stat[id].n &&
+                               KS.stat[id].alphabet === KS.stat[id].n &&
+                               APP.stat[id].shown === APP.stat[id].n);
+}
+function correctSet(KS, SESS){
+  return IMPL_IDS.filter(id => KS.stat[id].caretOk === KS.stat[id].n &&
+                               KS.stat[id].eff === KS.stat[id].effOf &&
+                               KS.stat[id].digitsOk === KS.stat[id].n &&
+                               SESS.stat[id].ok === SESS.stat[id].n);
+}
+
+// ---------------------------------------------------------------- a second reading of the mask
+// The same mask expressed as a slot map: for digit index i, the character position it occupies once
+// the field is full. render() walks the pattern; this walks nothing - it is a lookup table - and the
+// two have to agree about every position and every caret.
+function slotMap(pat){
+  const slot = [];
+  for (let i = 0; i < pat.length; i++) if (pat[i] === '#') slot.push(i);
+  return slot;
+}
+function slotCheck(M){
+  const slot = slotMap(M.pat), full = new Array(M.cap).fill('9').join('');
+  const v = render(M.pat, full);
+  let posOk = 0, caretOk = 0, backOk = 0, asserts = 0;
+  for (let i = 0; i < M.cap; i++){
+    if (v[slot[i]] === full[i]) posOk++;
+    if (caretForDigit(v, i + 1) === slot[i] + 1) caretOk++;
+    asserts += 2;
+  }
+  for (let k = 0; k <= M.cap; k++){ if (digitsBefore(v, caretForDigit(v, k)) === k) backOk++; asserts++; }
+  return { slot:slot, full:v, posOk:posOk, caretOk:caretOk, backOk:backOk, of:M.cap,
+           backOf:M.cap + 1, asserts:asserts };
+}
+// render and digitsOf are inverse in one direction for every digit string the mask can hold. Checked
+// over the whole prefix ladder rather than asserted.
+function roundTrip(M, seed, reps){
+  let ok = 0, of = 0, eagerOk = 0, asserts = 0;
+  for (const d of digitCorpus(M, seed, reps)){
+    of++;
+    if (digitsOf(render(M.pat, d)) === d) ok++;
+    if (digitsOf(renderEager(M.pat, d)) === d) eagerOk++;
+    asserts += 2;
+  }
+  return { ok:ok, eagerOk:eagerOk, of:of, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- every caret position on a full field
+// Exhaustive and tiny: a field holding its full number has len+1 places to put the caret. Press
+// Backspace at each of them, then forward delete at each of them, and count the keystrokes that do
+// nothing. The closed form has no implementation in it: a collapsed Backspace is dead exactly when
+// the character to its left is a literal AND there is a digit somewhere to its left to remove.
+function fullFieldScan(M){
+  const full = new Array(M.cap).fill('9').join('');
+  const v = render(M.pat, full);
+  const out = { of: v.length + 1, backPred:0, fwdPred:0, per:{}, asserts:0, value:v };
+  for (let c = 0; c <= v.length; c++){
+    if (c > 0 && !isDigit(v[c - 1]) && digitsBefore(v, c) > 0) out.backPred++;
+    if (c < v.length && !isDigit(v[c]) && digitsBefore(v, c) < M.cap) out.fwdPred++;
+  }
+  for (const id of IMPL_IDS){
+    const im = IMPLS[id], vv = im.render(M.pat, full);
+    let backDead = 0, fwdDead = 0;
+    for (let c = 0; c <= vv.length; c++){
+      for (const kind of ['back', 'fwd']){
+        const ed = { kind:kind, text:'' }, prev = { value:vv, sa:c, sb:c };
+        const raw = browserEdit(prev, ed);
+        const res = im.apply(M.pat, M.cap, prev, raw, ed);
+        const k = digitsBefore(vv, c);
+        const want = intentStep(M.cap, full, k, k, ed);
+        if (want.d !== full && digitsOf(res.value) === full){ if (kind === 'back') backDead++; else fwdDead++; }
+        out.asserts++;
+      }
+    }
+    out.per[id] = { backDead:backDead, fwdDead:fwdDead, of: vv.length + 1 };
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the paired control
+// The control mask has the same capacity and takes the same corpus, so the only difference between
+// the two columns is the literals. Run the identical digit strings, the identical caret indices and
+// the identical keystrokes against both, and the difference is caused by the separators or it is not
+// caused by them.
+function pairedControl(maskId, seed, reps){
+  const A = prepMask(MASKS[maskId]), B = prepMask(MASKS[CONTROL_MASK]);
+  const rows = {};
+  for (const id of IMPL_IDS) rows[id] = { aCaret:0, aOf:0, aEff:0, aEffOf:0,
+                                          bCaret:0, bOf:0, bEff:0, bEffOf:0 };
+  let asserts = 0, cases = 0;
+  const eds = editList(A);
+  for (const d of digitCorpus(A, seed, reps)){
+    for (let k = 0; k <= d.length; k++){
+      for (const ed of eds){
+        const ka = ed.sel ? Math.max(0, k - ed.sel) : k;
+        cases++;
+        for (const id of IMPL_IDS){
+          const ja = judge(A, id, d, ka, k, ed, false), jb = judge(B, id, d, ka, k, ed, false);
+          const r = rows[id];
+          r.aOf++; if (ja.caretOk) r.aCaret++;
+          if (ja.shouldChange){ r.aEffOf++; if (ja.changed) r.aEff++; }
+          r.bOf++; if (jb.caretOk) r.bCaret++;
+          if (jb.shouldChange){ r.bEffOf++; if (jb.changed) r.bEff++; }
+          asserts += 4;
+        }
+      }
+    }
+  }
+  return { maskId:maskId, rows:rows, cases:cases, asserts:asserts, capA:A.cap, capB:B.cap };
+}
+
+// ---------------------------------------------------------------- a session with rejected keys
+// People type the separator themselves - an expiry date is typed "12/25" by almost everybody - and
+// they fat-finger a letter. Neither reaches the digits, so neither can change the value, and both
+// still move the caret. The plain edit corpus has no such keystroke in it, which turns out to decide
+// the ranking.
+function editOpsReject(rnd, M){
+  const ops = editOps(rnd, M), out = [], sep = M.lits.length ? M.lits[0] : ' ';
+  for (const op of ops){
+    out.push(op);
+    if (op.a === 'type' && rnd() < 0.35) out.push({ a:'type', text: rnd() < 0.6 ? sep : 'x' });
+  }
+  return out;
+}
+function sessionSweepReject(maskIds, cases, seed){
+  const rnd = mulberry32(seed), stat = {};
+  for (const id of IMPL_IDS) stat[id] = { n:0, ok:0, shown:0, caret:0, steps:0 };
+  let asserts = 0, steps = 0;
+  for (let c = 0; c < cases; c++){
+    for (const mid of maskIds){
+      const M = prepMask(MASKS[mid]);
+      const ops = editOpsReject(rnd, M);
+      for (const id of IMPL_IDS){
+        const r = runSession(M, id, ops), s = stat[id];
+        s.n++; s.steps += r.steps;
+        if (r.gotD === r.wantD) s.ok++;
+        if (r.shownOk) s.shown++;
+        if (r.gotD === r.wantD && r.gotK === r.wantK) s.caret++;
+        steps += r.steps; asserts += 3;
+      }
+    }
+  }
+  return { kind:'reject', stat:stat, cases:cases, asserts:asserts, steps:steps };
+}
+// Rank the implementations two ways and count the pairs the two orders disagree about. A ranking
+// that changes when the corpus changes is not a ranking of the implementations.
+function rankPairs(a, b){
+  let same = 0, flip = 0, tie = 0;
+  for (let i = 0; i < IMPL_IDS.length; i++)
+    for (let j = i + 1; j < IMPL_IDS.length; j++){
+      const x = a[IMPL_IDS[i]] - a[IMPL_IDS[j]], y = b[IMPL_IDS[i]] - b[IMPL_IDS[j]];
+      if (x === 0 || y === 0) tie++;
+      else if ((x > 0) === (y > 0)) same++;
+      else flip++;
+    }
+  return { same:same, flip:flip, tie:tie, of: IMPL_IDS.length * (IMPL_IDS.length - 1) / 2 };
+}
+
+// ---------------------------------------------------------------- rendering is not deciding
+// eagerSep and the correct rule differ in exactly one place: when the separator is drawn. If they
+// ever disagree about a DIGIT or about which digit the caret sits after, the difference is not
+// cosmetic and the whole reading of the property table changes. Checked, not assumed.
+function renderOnlyDiff(maskIds, seed, reps){
+  let sameD = 0, sameK = 0, of = 0, sameValue = 0, asserts = 0;
+  for (const mid of maskIds){
+    const M = prepMask(MASKS[mid]), eds = editList(M);
+    for (const d of digitCorpus(M, seed, reps)){
+      for (let k = 0; k <= d.length; k++){
+        for (const ed of eds){
+          const ka = ed.sel ? Math.max(0, k - ed.sel) : k;
+          const a = judge(M, 'maskAware', d, ka, k, ed, false);
+          const b = judge(M, 'eagerSep', d, ka, k, ed, false);
+          of++;
+          if (a.gotD === b.gotD) sameD++;
+          if (a.gotK === b.gotK) sameK++;
+          if (a.out.value === b.out.value) sameValue++;
+          asserts += 3;
+        }
+      }
+    }
+  }
+  return { sameD:sameD, sameK:sameK, sameValue:sameValue, of:of, asserts:asserts };
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own prose
+// and "1,416,376" must not come back as "14,16,376" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const p100 = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + pct(x, n) + "</span>";
+const yn = b => b ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>";
+const cnt = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + x + " / " + n + "</span>";
+const q = s => "<span class='seq'>" + esc(s === '' ? '(empty)' : s) + "</span>";
+// small counts read as words in the prose, so the markup's fallback text and the rendered text are
+// the same string and the verifier can check one against the other.
+const WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+const word = n => (n >= 0 && n < WORDS.length) ? WORDS[n] : String(n);
+
+// The exact workload. Every figure this page prints comes out of these calls, and the verifier
+// replays the same counts and seeds through its own oracles before it checks the prose.
+const REPS = 5, PC_REPS = 6, ROD_REPS = 4;
+const CASES = { append: 160, edit: 260, reject: 260 };
+const SEEDS = { keys: 7501, append: 7511, edit: 7521, reject: 7531, round: 7541, pair: 7551, rod: 7561 };
+const PAIR_MASK = 'card';
+
+let KS = null, APP = null, SESS = null, REJ = null, PC = null, ROD = null;
+let FF = null, SL = null, RT = null, BLIND = null, RIGHT = null;
+let TOTAL = 0, MS = 0, RANK_SESS = null, RANK_REJ = null;
+
+function measure(){
+  const t0 = Date.now();
+  KS   = keystrokeSweep(MASK_IDS, SEEDS.keys, REPS);
+  APP  = sessionSweep(MASK_IDS, 'append', CASES.append, SEEDS.append);
+  SESS = sessionSweep(MASK_IDS, 'edit',   CASES.edit,   SEEDS.edit);
+  REJ  = sessionSweepReject(MASK_IDS,     CASES.reject, SEEDS.reject);
+  FF = {}; SL = {}; RT = {};
+  TOTAL = KS.asserts + APP.asserts + SESS.asserts + REJ.asserts;
+  for (const mid of MASK_IDS){
+    const M = prepMask(MASKS[mid]);
+    FF[mid] = fullFieldScan(M); SL[mid] = slotCheck(M); RT[mid] = roundTrip(M, SEEDS.round, REPS);
+    TOTAL += FF[mid].asserts + SL[mid].asserts + RT[mid].asserts;
+  }
+  PC  = pairedControl(PAIR_MASK, SEEDS.pair, PC_REPS);
+  ROD = renderOnlyDiff(MASK_IDS, SEEDS.rod, ROD_REPS);
+  TOTAL += PC.asserts + ROD.asserts;
+  BLIND = blindSet(KS, APP);
+  RIGHT = correctSet(KS, SESS);
+  const a = {}, b = {}, c = {};
+  for (const id of IMPL_IDS){
+    a[id] = SESS.stat[id].ok / SESS.stat[id].n;
+    b[id] = REJ.stat[id].ok / REJ.stat[id].n;
+    c[id] = KS.stat[id].caretOk / KS.stat[id].n;
+  }
+  RANK_SESS = rankPairs(c, a);
+  RANK_REJ  = rankPairs(a, b);
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- self-check
+// Bounds and identities only. Not one expected number is typed in: every check is either a bound the
+// arithmetic cannot leave, or two independent computations of the same quantity being compared.
+let SC = { n: 0, bad: [] };
+function chk(label, got, expected){
+  SC.n++;
+  if (got !== expected) SC.bad.push({ label: label, got: String(got), expected: String(expected) });
+}
+function selfCheck(){
+  SC = { n: 0, bad: [] };
+  // 1. the two readings of the mask agree, and the two coordinate maps are inverse
+  for (const mid of MASK_IDS){
+    const M = prepMask(MASKS[mid]);
+    chk('slot map ' + mid + ': every digit lands in its slot', SL[mid].posOk, SL[mid].of);
+    chk('slot map ' + mid + ': caret after digit k is slot k plus one', SL[mid].caretOk, SL[mid].of);
+    chk('maps ' + mid + ': digitsBefore inverts caretForDigit everywhere', SL[mid].backOk, SL[mid].backOf);
+    chk('round trip ' + mid + ': stripping a rendered value returns its digits', RT[mid].ok, RT[mid].of);
+    chk('round trip ' + mid + ': the eager rendering strips back the same', RT[mid].eagerOk, RT[mid].of);
+    chk('mask ' + mid + ': slots plus literals is the whole pattern', M.cap + M.nlit, M.pat.length);
+  }
+  // 2. every rule stays inside the bounds the arithmetic gives it, whatever it decides
+  for (const id of IMPL_IDS){
+    chk('bounds/' + id + ': caret is a real position and the field never overflows',
+        KS.stat[id].inRange, KS.stat[id].n);
+    chk('bounds/' + id + ': it cannot get more keystrokes right than there were',
+        KS.stat[id].caretOk <= KS.stat[id].n && KS.stat[id].eff <= KS.stat[id].effOf, true);
+    chk('bounds/' + id + ': a keystroke that changed nothing was never asked to',
+        KS.stat[id].eff <= KS.stat[id].effOf, true);
+  }
+  // 3. the correct rule is correct by the oracle's definition, not by agreement with a sibling
+  chk('correct: the caret is where the intent put it, every keystroke',
+      KS.stat[CORRECT].caretOk, KS.stat[CORRECT].n);
+  chk('correct: the digits are what the keystroke meant, every keystroke',
+      KS.stat[CORRECT].digitsOk, KS.stat[CORRECT].n);
+  chk('correct: no delete is ever dead', KS.stat[CORRECT].eff, KS.stat[CORRECT].effOf);
+  chk('correct: every session ends with the number the user meant', SESS.stat[CORRECT].ok, SESS.stat[CORRECT].n);
+  chk('correct: and so does a session with rejected keys', REJ.stat[CORRECT].ok, REJ.stat[CORRECT].n);
+  chk('control: the unformatted field gets every caret right', KS.stat[CONTROL].caretOk, KS.stat[CONTROL].n);
+  chk('control: and never has a dead key', KS.stat[CONTROL].eff, KS.stat[CONTROL].effOf);
+  // 4. the closed forms, each predicted without the rule it predicts
+  chk('closed form: caret-to-the-end is right exactly when the intent ends at the last digit',
+      KS.pred.endCaret, KS.stat.endCaret.caretOk);
+  chk('closed form: the browser index is right exactly when the literals to its left are unchanged',
+      KS.pred.rawIndex, KS.stat.rawIndex.caretOk);
+  chk('closed form: distance-from-the-end is right exactly when the characters to its right are',
+      KS.pred.fromEnd, KS.stat.fromEnd.caretOk);
+  chk('closed form: the dead keys are the collapsed deletes sitting on a literal',
+      KS.pred.stuck, KS.stat.countDigits.effOf - KS.stat.countDigits.eff);
+  chk('closed form: patching Backspace leaves exactly the forward half dead',
+      KS.pred.stuckFwd, KS.stat.deleteBack.effOf - KS.stat.deleteBack.eff);
+  chk('bound: the forward dead keys are a subset of all the dead keys',
+      KS.pred.stuckFwd <= KS.pred.stuck, true);
+  // 5. the full-field scan: predicted from the pattern, measured against every rule
+  let ffOk = 0, ffOf = 0, ffBound = 0;
+  for (const mid of MASK_IDS){
+    const M = prepMask(MASKS[mid]), f = FF[mid];
+    chk('full field ' + mid + ': dead Backspaces match the closed form',
+        f.per.countDigits.backDead, f.backPred);
+    chk('full field ' + mid + ': dead Deletes match the closed form',
+        f.per.countDigits.fwdDead, f.fwdPred);
+    chk('full field ' + mid + ': patching Backspace kills the Backspaces and nothing else',
+        f.per.deleteBack.backDead === 0 && f.per.deleteBack.fwdDead === f.fwdPred, true);
+    chk('full field ' + mid + ': the correct rule has no dead key at any position',
+        f.per[CORRECT].backDead + f.per[CORRECT].fwdDead, 0);
+    chk('bound ' + mid + ': dead keys cannot outnumber the literals',
+        f.backPred <= M.nlit && f.fwdPred <= M.nlit, true);
+    chk('bound ' + mid + ': positions are one more than the characters',
+        f.of, f.value.length + 1);
+    ffBound++;
+    for (const id of IMPL_IDS){ ffOf++; if (f.per[id].backDead + f.per[id].fwdDead <= 2 * M.nlit) ffOk++; }
+  }
+  chk('bound: no rule has more dead keys than twice the literal count', ffOk, ffOf);
+  // 6. the control removes the literals, so it must remove every dead key and nothing else can
+  let ctlEff = 0, ctlOf = 0;
+  for (const id of IMPL_IDS){ ctlOf++; if (PC.rows[id].bEff === PC.rows[id].bEffOf) ctlEff++; }
+  chk('control: with no literals not one rule has a dead key', ctlEff, ctlOf);
+  chk('control: the paired corpus is the same size on both sides',
+      PC.rows[CORRECT].aOf, PC.rows[CORRECT].bOf);
+  chk('control mask: the closed form predicts no dead key at all',
+      FF[CONTROL_MASK].backPred + FF[CONTROL_MASK].fwdPred, 0);
+  // 7. the eager renderer differs in rendering and in nothing else
+  chk('eager: identical digits on every keystroke', ROD.sameD, ROD.of);
+  chk('eager: identical caret, in digits, on every keystroke', ROD.sameK, ROD.of);
+  chk('eager: and yet the value on screen is not always the same', ROD.sameValue < ROD.of, true);
+  // 8. the sets are computed, so what is asserted is a relation between them
+  chk('the blind properties accept some rules and reject others',
+      BLIND.length > 0 && BLIND.length < IMPL_IDS.length, true);
+  chk('exactly one rule is both accepted and right',
+      BLIND.filter(id => RIGHT.indexOf(id) >= 0).length, 1);
+  chk('and it is the one the oracle calls correct',
+      BLIND.filter(id => RIGHT.indexOf(id) >= 0)[0], CORRECT);
+  chk('the blind properties reject a rule that is right',
+      RIGHT.filter(id => BLIND.indexOf(id) < 0).length > 0, true);
+  chk('the control is right and rejected', RIGHT.indexOf(CONTROL) >= 0 && BLIND.indexOf(CONTROL) < 0, true);
+  // 9. the two rankings, counted as pairs
+  chk('rank pairs are accounted for exactly once, session',
+      RANK_SESS.same + RANK_SESS.flip + RANK_SESS.tie, RANK_SESS.of);
+  chk('rank pairs are accounted for exactly once, rejected keys',
+      RANK_REJ.same + RANK_REJ.flip + RANK_REJ.tie, RANK_REJ.of);
+  chk('bound: a ranking cannot flip more pairs than it has', RANK_SESS.flip <= RANK_SESS.of, true);
+  // 10. sessions: the corpora are the same shape, and the append corpus is a strict subset of keys
+  for (const id of IMPL_IDS){
+    chk('sessions/' + id + ': the three corpora ran the same number of fields per corpus',
+        APP.stat[id].n === APP.stat[CORRECT].n && SESS.stat[id].n === REJ.stat[id].n, true);
+    chk('sessions/' + id + ': a session cannot end right more often than it ran',
+        SESS.stat[id].ok <= SESS.stat[id].n, true);
+  }
+  chk('the append corpus contains no delete at all, so every rule keeps its digits',
+      IMPL_IDS.filter(id => APP.stat[id].ok === APP.stat[id].n).length > 0, true);
+  // 11. and the workload actually ran
+  chk('the sweep visited every caret index of every value in the corpus', KS.cases > 0, true);
+  chk('the studies produced assertions', TOTAL > KS.cases, true);
+  chk('every keystroke was handed to every rule', KS.stat[CORRECT].n, KS.cases);
+  if (SC.bad.length){
+    for (const f of SC.bad)
+      console.error('ASSERT FAIL: ' + f.label + ' (got ' + f.got + ', expected ' + f.expected + ')');
+  }
+  const el = $('selftest');
+  el.className = 'badge ' + (SC.bad.length ? 'fail' : 'pass');
+  el.innerHTML = SC.bad.length
+    ? 'self-check: ' + SC.bad.length + ' of ' + SC.n + ' FAILING'
+    : 'self-check: ' + SC.n + ' bounds and identities, 0 failing';
+  return SC;
+}
+
+// ---------------------------------------------------------------- the live field
+// The field opens on the rule that looks obviously right and is not: counting the digits to the
+// left fixes every insertion and leaves the dead keys exactly where they were, so the strip under
+// the field is red on load rather than after a menu change nobody makes.
+let maskId = DEMO_MASK, implId = 'countDigits', PRE = null, LAST = null;
+function M(){ return prepMask(MASKS[maskId]); }
+
+function buildSelects(){
+  $('selMask').innerHTML = MASK_IDS.map(id =>
+    "<option value='" + id + "'" + (id === maskId ? " selected" : "") + ">" +
+    esc(MASKS[id].label) + "  " + esc(MASKS[id].pat) + "</option>").join('');
+  $('selImpl').innerHTML = IMPL_IDS.map(id =>
+    "<option value='" + id + "'" + (id === implId ? " selected" : "") + ">" +
+    IMPLS[id].label + (id === CORRECT ? " (correct)" : IMPLS[id].control ? " (control)" : "") +
+    "</option>").join('');
+}
+function setField(v, c){
+  const inp = $('inp');
+  inp.value = v;
+  try { inp.setSelectionRange(c, c); } catch (e) { /* a detached or hidden field has no selection */ }
+  paintLive();
+}
+function applyEdit(kind, text){
+  const inp = $('inp');
+  const prev = { value: inp.value, sa: inp.selectionStart || 0, sb: inp.selectionEnd || 0 };
+  const ed = { kind: kind, text: text || '' };
+  const raw = browserEdit(prev, ed);
+  const out = IMPLS[implId].apply(M().pat, M().cap, prev, raw, ed);
+  LAST = { prev: prev, raw: raw, ed: ed, out: out };
+  setField(out.value, out.caret);
+}
+function paintLive(){
+  const Mx = M(), inp = $('inp');
+  const v = inp.value, c = inp.selectionStart == null ? v.length : inp.selectionStart;
+  const d = digitsOf(v), k = digitsBefore(v, c);
+  $('liveNote').innerHTML =
+    "the field holds <strong>" + q(v) + "</strong> &middot; browser <code>selectionStart</code> " +
+    "<strong>" + c + "</strong> &middot; digits to its left <strong>" + k + "</strong> of " +
+    fmt(d.length) + " &middot; capacity <strong>" + Mx.cap + "</strong> &middot; the mask has " +
+    "<strong>" + Mx.nlit + "</strong> literal character" + (Mx.nlit === 1 ? "" : "s") +
+    " &middot; the model's rendering of those digits is <strong>" +
+    q(IMPLS[implId].render(Mx.pat, d)) + "</strong> " +
+    (IMPLS[implId].render(Mx.pat, d) === v ? "<span class='ok'>agree</span>"
+                                           : "<span class='bad'>differ</span>");
+  paintStrip();
+  paintLast();
+}
+function paintStrip(){
+  const Mx = M(), f = fullFieldScan(Mx), inp = $('inp');
+  const im = IMPLS[implId], vv = im.render(Mx.pat, new Array(Mx.cap).fill('9').join(''));
+  const here = inp.value === vv ? (inp.selectionStart == null ? -1 : inp.selectionStart) : -1;
+  const dead = [];
+  for (let cpos = 0; cpos <= vv.length; cpos++){
+    const kk = digitsBefore(vv, cpos);
+    let isDead = false;
+    for (const kind of ['back', 'fwd']){
+      const ed = { kind: kind, text: '' }, prev = { value: vv, sa: cpos, sb: cpos };
+      const res = im.apply(Mx.pat, Mx.cap, prev, browserEdit(prev, ed), ed);
+      const want = intentStep(Mx.cap, digitsOf(vv), kk, kk, ed);
+      if (want.d !== digitsOf(vv) && digitsOf(res.value) === digitsOf(vv)) isDead = true;
+    }
+    dead.push(isDead);
+  }
+  $('strip').innerHTML = dead.map((bad, i) =>
+    "<span class='pos" + (bad ? " dead" : "") + (i === here ? " here" : "") + "'>" + i + "</span>").join('');
+  const n = dead.filter(Boolean).length;
+  $('stripNote').innerHTML =
+    "Each chip is one place the caret can stand in the full field <strong>" + q(vv) + "</strong>. " +
+    "<strong>" + n + "</strong> of <strong>" + dead.length + "</strong> of them are dead for " +
+    "<em>" + IMPLS[implId].label + "</em> &mdash; a delete pressed there changes nothing. The mask " +
+    "alone predicts <strong>" + f.backPred + "</strong> dead Backspaces and <strong>" + f.fwdPred +
+    "</strong> dead Deletes.";
+}
+function paintLast(){
+  const Mx = M();
+  if (!LAST){
+    $('liveTab').innerHTML = "<tr><td colspan='6' class='dim'>press a key in the field</td></tr>";
+    $('lastNote').innerHTML = "";
+    return;
+  }
+  const pv = LAST.prev.value;
+  const d = digitsOf(pv), ka = digitsBefore(pv, LAST.prev.sa), kb = digitsBefore(pv, LAST.prev.sb);
+  const past = LAST.prev.sa !== caretForDigit(pv, ka);
+  $('liveTab').innerHTML = IMPL_IDS.map(id => {
+    const j = judge(Mx, id, d, ka, kb, LAST.ed, past);
+    const verdict = j.shouldChange && !j.changed ? "<span class='bad'>does nothing</span>"
+                  : (j.digitsOk && j.caretOk ? "<span class='ok'>right</span>"
+                  : !j.digitsOk ? "<span class='bad'>wrong digits</span>"
+                  : "<span class='bad'>caret moved</span>");
+    return "<tr class='" + (id === implId ? "me" : IMPLS[id].control ? "ctl" : "") + "'><td>" +
+      IMPLS[id].label + (id === CORRECT ? " <span class='tag good'>CORRECT</span>" : "") +
+      (IMPLS[id].control ? " <span class='tag ctl'>CONTROL</span>" : "") + "</td><td class='dim'>" +
+      IMPLS[id].clause + "</td><td>" + q(j.out.value) + "</td><td>" + j.gotK + " / " + j.want.k +
+      "</td><td>" + j.gotD.length + " / " + j.want.d.length + "</td><td>" + verdict + "</td></tr>";
+  }).join('');
+  const kindName = LAST.ed.kind === 'back' ? 'Backspace' : LAST.ed.kind === 'fwd' ? 'Delete'
+                 : 'inserting ' + JSON.stringify(LAST.ed.text);
+  $('lastNote').innerHTML =
+    "The keystroke: <strong>" + esc(kindName) + "</strong> from " + q(pv) + " with the caret at " +
+    "<strong>" + LAST.prev.sa + "</strong>" + (past ? " (past the separator)" : "") +
+    ", which is digit index <strong>" + ka + "</strong>. The browser handed back " +
+    q(LAST.raw.value) + " with its caret at <strong>" + LAST.raw.caret + "</strong>. " +
+    "<em>caret</em> and <em>digits</em> columns read got / meant.";
+}
+
+// ---------------------------------------------------------------- tables
+function implCell(id){
+  return IMPLS[id].label + (id === CORRECT ? " <span class='tag good'>CORRECT</span>" : "") +
+         (IMPLS[id].control ? " <span class='tag ctl'>CONTROL</span>" : "");
+}
+function rowClass(id){ return id === CORRECT ? "me" : IMPLS[id].control ? "ctl" : ""; }
+
+function fillSeen(){
+  $('tSeen').innerHTML = IMPL_IDS.map(id => {
+    const s = KS.stat[id], a = APP.stat[id];
+    const blind = BLIND.indexOf(id) >= 0, right = RIGHT.indexOf(id) >= 0;
+    return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td class='dim'>" +
+      IMPLS[id].clause + "</td><td>" + p100(s.shaped, s.n) + "</td><td>" + p100(s.alphabet, s.n) +
+      "</td><td>" + p100(a.shown, a.n) + "</td><td>" +
+      (blind ? "<span class='ok'>passes</span>" : "<span class='bad'>caught</span>") + "</td><td>" +
+      (right ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>") + "</td></tr>";
+  }).join('');
+  const wrong = BLIND.filter(id => RIGHT.indexOf(id) < 0);
+  const missed = RIGHT.filter(id => BLIND.indexOf(id) < 0);
+  $('seenNote').innerHTML =
+    "<strong>" + word(BLIND.length) + " of " + word(IMPL_IDS.length) + "</strong> rules pass all " +
+    "three, and <strong>" + word(wrong.length) + "</strong> of those " + word(BLIND.length) +
+    " are wrong: " + wrong.map(id => "<span class='pill dark'>" + IMPLS[id].label + "</span>").join(' ') +
+    ". The " + word(IMPL_IDS.length - BLIND.length) + " the tests do catch are " +
+    missed.map(id => "<span class='pill'>" + IMPLS[id].label + "</span>").join(' ') +
+    " &mdash; both of which are <em>right</em> &mdash; and " +
+    IMPL_IDS.filter(id => BLIND.indexOf(id) < 0 && RIGHT.indexOf(id) < 0)
+            .map(id => "<span class='pill dark'>" + IMPLS[id].label + "</span>").join(' ') +
+    ", which is genuinely broken. " + fmt(KS.stat[CORRECT].n) + " keystrokes each.";
+}
+
+function fillProps(){
+  $('hProps').innerHTML = "the six properties, in the order a team writes them";
+  $('hProps2').innerHTML = "<th></th>" + PROPS.map(p =>
+    "<th>" + p.label + (p.blind ? "<br><span class='dim'>blind</span>" : "") + "</th>").join('');
+  $('tProps').innerHTML = IMPL_IDS.map(id => {
+    const cells = PROPS.map(p => { const s = propScore(p.id, KS, APP, SESS)[id];
+      return "<td>" + p100(s[0], s[1]) + "</td>"; }).join('');
+    return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td>" + cells + "</tr>";
+  }).join('');
+  const blindProps = PROPS.filter(p => p.blind).length;
+  $('propNote').innerHTML =
+    "The first <strong>" + word(blindProps) + "</strong> columns are the blind ones. Note the " +
+    "shape of the table: the rule with the worst caret in the whole study scores " +
+    p100(KS.stat.endCaret.shaped, KS.stat.endCaret.n) + " on the first column and " +
+    p100(APP.stat.endCaret.shown, APP.stat.endCaret.n) + " on the third, while the rule that is " +
+    "right in every column a user can feel scores " +
+    p100(KS.stat.eagerSep.shaped, KS.stat.eagerSep.n) + " on the first. " +
+    "Denominators: " + fmt(KS.stat[CORRECT].n) + " keystrokes, " + fmt(APP.stat[CORRECT].n) +
+    " typed-straight-in fields, " + fmt(SESS.stat[CORRECT].n) + " editing sessions, " +
+    fmt(KS.stat[CORRECT].effOf) + " keystrokes that were supposed to change something.";
+}
+
+function fillFull(){
+  let agree = 0, of = 0;
+  $('tFull').innerHTML = MASK_IDS.map(mid => {
+    const Mx = prepMask(MASKS[mid]), f = FF[mid];
+    const ok = f.per.countDigits.backDead === f.backPred && f.per.countDigits.fwdDead === f.fwdPred;
+    of++; if (ok) agree++;
+    return "<tr class='" + (mid === CONTROL_MASK ? "ctl" : mid === maskId ? "me" : "") + "'><td>" +
+      esc(MASKS[mid].label) + "</td><td class='mono'>" + esc(Mx.pat) + "</td><td>" + q(f.value) +
+      "</td><td>" + f.of + "</td><td>" + Mx.nlit + "</td><td>" + f.backPred + "</td><td>" +
+      f.fwdPred + "</td><td>" + yn(ok) + "</td></tr>";
+  }).join('');
+  const ph = FF.phone;
+  $('fullNote').innerHTML =
+    "Predicted from the pattern, measured against the rules: <strong>" + agree + " / " + of +
+    "</strong> masks agree exactly. The phone mask is the asymmetric one &mdash; <strong>" +
+    ph.backPred + "</strong> dead Backspaces against <strong>" + ph.fwdPred + "</strong> dead " +
+    "Deletes, and the extra one is the opening bracket: it has digits to its right and nothing at " +
+    "all to its left, so Backspace there has nothing to mean while Delete does and is ignored. The " +
+    "control mask predicts <strong>" + (FF[CONTROL_MASK].backPred + FF[CONTROL_MASK].fwdPred) +
+    "</strong>, because it has no literals to stand on.";
+  const Mx = prepMask(MASKS[maskId]), f = FF[maskId];
+  $('tFullImpl').innerHTML = IMPL_IDS.map(id => {
+    const p = f.per[id], tot = p.backDead + p.fwdDead;
+    return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td class='dim'>" +
+      IMPLS[id].clause + "</td><td>" + cnt(p.backDead, 0) + "</td><td>" + cnt(p.fwdDead, 0) +
+      "</td><td>" + p.of + "</td><td>" + (tot ? "<span class='bad'>" + tot + "</span>"
+                                              : "<span class='ok'>0</span>") + "</td></tr>";
+  }).join('');
+  $('fullImplNote').innerHTML =
+    "On <strong>" + esc(MASKS[maskId].label) + "</strong>. The two columns are counts of caret " +
+    "positions, out of " + f.per[CORRECT].of + ". Patching Backspace and stopping &mdash; which is " +
+    "what almost every mask library does &mdash; takes the left column to zero and leaves the right " +
+    "one exactly where it was.";
+}
+
+function fillCtrl(){
+  $('tCtrl').innerHTML = IMPL_IDS.map(id => {
+    const r = PC.rows[id];
+    const ca = 100 * r.aCaret / r.aOf, cb = 100 * r.bCaret / r.bOf;
+    const ea = 100 * r.aEff / r.aEffOf, eb = 100 * r.bEff / r.bEffOf;
+    const dc = cb - ca, de = eb - ea;
+    return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td>" +
+      p100(r.aCaret, r.aOf) + "</td><td>" + p100(r.bCaret, r.bOf) + "</td><td>" +
+      (Math.abs(dc) < 0.05 ? "<span class='bad'>none</span>"
+        : "<span class='" + (dc > 0 ? "warn" : "bad") + "'>" + (dc > 0 ? "+" : "") + dc.toFixed(1) + "</span>") +
+      "</td><td>" + p100(r.aEff, r.aEffOf) + "</td><td>" + p100(r.bEff, r.bEffOf) + "</td><td>" +
+      (Math.abs(de) < 0.05 ? "<span class='dim'>none</span>"
+        : "<span class='ok'>+" + de.toFixed(1) + "</span>") + "</td></tr>";
+  }).join('');
+  const e = PC.rows.endCaret;
+  $('ctrlNote').innerHTML =
+    "Identical corpus on both sides: " + fmt(e.aOf) + " keystrokes each, " + fmt(e.aEffOf) +
+    " of them supposed to change something. Taking the separators out fixes the delete for every " +
+    "rule &mdash; <strong>" + IMPL_IDS.filter(id => PC.rows[id].bEff === PC.rows[id].bEffOf).length +
+    " of " + IMPL_IDS.length + "</strong> now at 100%, exactly as the closed form requires. It does " +
+    "nothing for the caret: the most-shipped rule goes from <strong>" + pct(e.aCaret, e.aOf) +
+    "</strong> to <strong>" + pct(e.bCaret, e.bOf) + "</strong>. A field with no mask at all and a " +
+    "handler that re-renders is still a field that loses your place, so &lsquo;the separators break " +
+    "the caret&rsquo; is not what is happening.";
+}
+
+function fillPlace(){
+  const near = KS.byPlace.near, past = KS.byPlace.past;
+  $('tPlace').innerHTML = IMPL_IDS.map(id => {
+    const a = 100 * near[id].caretOk / near[id].n, b = 100 * past[id].caretOk / past[id].n;
+    return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td>" +
+      p100(near[id].caretOk, near[id].n) + "</td><td>" + p100(past[id].caretOk, past[id].n) +
+      "</td><td>" + (Math.abs(a - b) < 0.05 ? "<span class='dim'>none</span>"
+        : "<span class='bad'>" + (b - a).toFixed(1) + "</span>") + "</td></tr>";
+  }).join('');
+  const cd = { a: near.countDigits, b: past.countDigits };
+  $('placeNote').innerHTML =
+    fmt(near[CORRECT].n) + " keystrokes started before the separator, " + fmt(past[CORRECT].n) +
+    " started after it. The digit-counting rule &mdash; the one that looks obviously right &mdash; is " +
+    "<strong>" + pct(cd.a.caretOk, cd.a.n) + "</strong> on the first and <strong>" +
+    pct(cd.b.caretOk, cd.b.n) + "</strong> on the second: same keystroke, same digits, different " +
+    "answer, decided by which side of a space a click happened to land on. Only the rules that read " +
+    "what the browser removed are flat across the two.";
+}
+
+function fillSess(){
+  $('tSess').innerHTML = IMPL_IDS.map(id =>
+    "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td>" +
+    p100(APP.stat[id].shown, APP.stat[id].n) + "</td><td>" + p100(SESS.stat[id].ok, SESS.stat[id].n) +
+    "</td><td>" + p100(REJ.stat[id].ok, REJ.stat[id].n) + "</td><td>" +
+    p100(KS.stat[id].caretOk, KS.stat[id].n) + "</td></tr>").join('');
+  $('sessNote').innerHTML =
+    fmt(APP.stat[CORRECT].n) + " / " + fmt(SESS.stat[CORRECT].n) + " / " + fmt(REJ.stat[CORRECT].n) +
+    " fields, " + fmt(APP.steps + SESS.steps + REJ.steps) + " keystrokes in total. Two things that " +
+    "were meant to be here and are not. <strong>Adding rejected keystrokes reorders nothing</strong>: " +
+    "typing the separator yourself or fat-fingering a letter is the one keystroke that pulls the " +
+    "character index away from the digit index without touching a digit, and across the eight rules " +
+    "it flips <strong>" + RANK_REJ.flip + " of " + RANK_REJ.of + "</strong> ordered pairs (" +
+    RANK_REJ.tie + " tied). And <strong>per-keystroke accuracy is not the same ranking as " +
+    "end-of-session correctness</strong>: those two disagree about <strong>" + RANK_SESS.flip +
+    " of " + RANK_SESS.of + "</strong> pairs &mdash; " +
+    "<span class='pill'>" + IMPLS.fromEnd.label + "</span> beats " +
+    "<span class='pill'>" + IMPLS.rawIndex.label + "</span> keystroke for keystroke (" +
+    pct(KS.stat.fromEnd.caretOk, KS.stat.fromEnd.n) + " against " +
+    pct(KS.stat.rawIndex.caretOk, KS.stat.rawIndex.n) + ") and loses across a session (" +
+    pct(SESS.stat.fromEnd.ok, SESS.stat.fromEnd.n) + " against " +
+    pct(SESS.stat.rawIndex.ok, SESS.stat.rawIndex.n) + "), because its errors land on the digit " +
+    "inserts a session is made of.";
+}
+
+function fillEdit(){
+  const names = { digit:'a digit', sep:'the separator', letter:'a letter', paste:'a pasted run',
+                  back:'Backspace', fwd:'Delete', selrep:'select two, retype', seldel:'select two, delete' };
+  $('hEdit').innerHTML = "caret right, by the kind of key pressed";
+  $('hEdit2').innerHTML = "<th></th>" + EDIT_KINDS.map(e => "<th>" + names[e] + "</th>").join('');
+  $('tEdit').innerHTML = IMPL_IDS.map(id =>
+    "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td>" +
+    EDIT_KINDS.map(e => { const s = KS.byEdit[e][id]; return "<td>" + p100(s.caretOk, s.n) + "</td>"; }).join('') +
+    "</tr>").join('');
+  const dg = KS.byEdit.digit;
+  $('editNote').innerHTML =
+    "The digit column is the one a test suite has. It is <strong>" +
+    IMPL_IDS.filter(id => dg[id].caretOk === dg[id].n).length + " of " + IMPL_IDS.length +
+    "</strong> rules at 100% there, and only <strong>" + word(RIGHT.length) + "</strong> of them are " +
+    "right. Typing the separator yourself &mdash; how an expiry date is actually typed &mdash; takes " +
+    "the browser-index rule to " + pct(KS.byEdit.sep.rawIndex.caretOk, KS.byEdit.sep.rawIndex.n) +
+    ", while the distance-from-the-end rule is perfect on that column and " +
+    pct(KS.byEdit.paste.fromEnd.caretOk, KS.byEdit.paste.fromEnd.n) + " on a pasted run.";
+}
+
+function fillClosed(){
+  const rows = [
+    ['endCaret', 'the keystroke&rsquo;s own meaning leaves the caret after the last digit',
+     KS.pred.endCaret, KS.stat.endCaret.caretOk, KS.stat.endCaret.n],
+    ['rawIndex', 're-rendering leaves the same number of literals to the left of that index',
+     KS.pred.rawIndex, KS.stat.rawIndex.caretOk, KS.stat.rawIndex.n],
+    ['fromEnd', 'it leaves the same number of characters to the right',
+     KS.pred.fromEnd, KS.stat.fromEnd.caretOk, KS.stat.fromEnd.n],
+    ['countDigits', 'the delete is dead exactly on a collapsed delete sitting on a literal',
+     KS.pred.stuck, KS.stat.countDigits.effOf - KS.stat.countDigits.eff, KS.stat.countDigits.effOf],
+    ['deleteBack', 'patching Backspace leaves exactly the forward half of those dead',
+     KS.pred.stuckFwd, KS.stat.deleteBack.effOf - KS.stat.deleteBack.eff, KS.stat.deleteBack.effOf]
+  ];
+  $('tClosed').innerHTML = rows.map(r =>
+    "<tr class='" + rowClass(r[0]) + "'><td>" + implCell(r[0]) + "</td><td class='dim'>" + r[1] +
+    "</td><td>" + fmt(r[2]) + "</td><td>" + fmt(r[3]) + "</td><td>" + fmt(r[4]) + "</td><td>" +
+    (r[2] === r[3] ? "<span class='ok'>exact</span>" : "<span class='bad'>differ</span>") +
+    "</td></tr>").join('');
+  $('closedNote').innerHTML =
+    "All <strong>" + rows.length + "</strong> exact. Each predicate is evaluated from the mask and " +
+    "the browser&rsquo;s half of the edit only &mdash; the rule it describes is never called. The " +
+    "last two are why the dead key is a property of the pattern rather than a bug report: they hold " +
+    "on every mask here, including the control, where they both predict zero.";
+}
+
+function fillTrace(){
+  const Mx = prepMask(MASKS.card), full = '4242424242424242', at = 4;
+  function rows(kind, past, target){
+    $(target).innerHTML = IMPL_IDS.map(id => {
+      const t = traceOne(Mx, id, full, at, { kind:kind, text:'' }, past);
+      const verdict = t.stuck ? "<span class='bad'>nothing happened</span>"
+                    : (t.digitsOk && t.caretOk ? "<span class='ok'>right</span>"
+                    : "<span class='bad'>wrong</span>");
+      return "<tr class='" + rowClass(id) + "'><td>" + implCell(id) + "</td><td>" + q(t.before) +
+        "</td><td>" + q(t.raw) + "</td><td>" + q(t.after) + "</td><td>" + t.gotD.length + " / " +
+        t.wantD.length + "</td><td>" + verdict + "</td></tr>";
+    }).join('');
+  }
+  rows('back', true, 'tTrace');
+  rows('fwd', false, 'tTrace2');
+  const deadB = IMPL_IDS.filter(id => traceOne(Mx, id, full, at, { kind:'back', text:'' }, true).stuck);
+  const deadF = IMPL_IDS.filter(id => traceOne(Mx, id, full, at, { kind:'fwd', text:'' }, false).stuck);
+  $('traceNote').innerHTML =
+    "One press of Backspace with the caret standing just to the right of the first space. " +
+    "<strong>" + word(deadB.length) + "</strong> of " + word(IMPL_IDS.length) + " rules do nothing " +
+    "at all: " + deadB.map(id => "<span class='pill dark'>" + IMPLS[id].label + "</span>").join(' ') +
+    ". Look at the middle column &mdash; the browser handed all of them the same string, and it is " +
+    "the string they started from once the space is put back. Nothing in that value distinguishes " +
+    "the dead case from the working one, which is why the fix has to ask what was removed.";
+  $('traceNote2').innerHTML =
+    "The same field, the caret one character to the left, Delete instead. Now <strong>" +
+    word(deadF.length) + "</strong> rules do nothing, and the extra one is the rule that patched " +
+    "Backspace and stopped: " +
+    deadF.map(id => "<span class='pill dark'>" + IMPLS[id].label + "</span>").join(' ') + ".";
+}
+
+function fillProse(){
+  const wrong = BLIND.filter(id => RIGHT.indexOf(id) < 0);
+  const e = PC.rows.endCaret;
+  const dc = 100 * e.bCaret / e.bOf - 100 * e.aCaret / e.aOf;
+  $('pKeys').textContent = fmt(KS.cases);
+  $('pImpls').textContent = word(IMPL_IDS.length);
+  $('pBlind').textContent = word(BLIND.length);
+  $('pWrong').textContent = word(wrong.length);
+  $('pMasks').textContent = word(MASK_IDS.length);
+  $('pEnd').textContent = pct(KS.stat.endCaret.caretOk, KS.stat.endCaret.n);
+  $('pDeadBack').textContent = String(FF.card.backPred);
+  // measured, not asserted: the dead keys that survive when the literals are taken away
+  let deadWith = 0, deadWithout = 0;
+  for (const id of IMPL_IDS){
+    deadWith += PC.rows[id].aEffOf - PC.rows[id].aEff;
+    deadWithout += PC.rows[id].bEffOf - PC.rows[id].bEff;
+  }
+  $('pCtrlDead').textContent = pct(deadWith - deadWithout, deadWith);
+  $('pCtrlCaret').textContent = Math.abs(dc) < 1 ? 'none' : dc.toFixed(1) + ' points';
+  $('pTotal').textContent = fmt(TOTAL) + ' assertions';
+  $('assertline').innerHTML =
+    fmt(TOTAL) + " assertions in " + MS + "&thinsp;ms &middot; " + fmt(KS.cases) +
+    " keystrokes enumerated across " + MASK_IDS.length + " masks &times; " + IMPL_IDS.length +
+    " rules &middot; " + fmt(APP.steps + SESS.steps + REJ.steps) + " session keystrokes &middot; " +
+    "the eager renderer agrees with the correct rule on " + fmt(ROD.sameD) + " / " + fmt(ROD.of) +
+    " digit strings and " + fmt(ROD.sameK) + " / " + fmt(ROD.of) + " carets while showing a " +
+    "different string " + pct(ROD.of - ROD.sameValue, ROD.of) + " of the time.";
+}
+
+// ---------------------------------------------------------------- wiring
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const btn of $('tabs').querySelectorAll('button')) btn.classList.toggle('on', btn === b);
+  for (const id of ['look', 'understand', 'build']) $(id).classList.toggle('off', id !== b.dataset.tab);
+});
+$('selMask').addEventListener('change', e => {
+  maskId = e.target.value; seedField();
+  if (KS){ fillFull(); }
+});
+$('selImpl').addEventListener('change', e => {
+  implId = e.target.value;
+  const d = digitsOf($('inp').value);
+  setField(IMPLS[implId].render(M().pat, d), IMPLS[implId].render(M().pat, d).length);
+});
+$('inp').addEventListener('beforeinput', e => {
+  const inp = $('inp');
+  PRE = { value: inp.value, sa: inp.selectionStart || 0, sb: inp.selectionEnd || 0, type: e.inputType };
+});
+$('inp').addEventListener('input', e => {
+  const inp = $('inp');
+  const kind = /^delete.*Backward/.test(e.inputType || '') ? 'back'
+             : /^delete.*Forward/.test(e.inputType || '') ? 'fwd' : 'insert';
+  // beforeinput is where the removed character still exists; without it the dead-key fix is not
+  // implementable at all, which is the whole point of step 4 in the BUILD tab.
+  const prev = PRE || { value: inp.value, sa: inp.selectionStart, sb: inp.selectionStart };
+  const raw = { value: inp.value, caret: inp.selectionStart == null ? inp.value.length : inp.selectionStart };
+  const ed = { kind: kind, text: '' };
+  const out = IMPLS[implId].apply(M().pat, M().cap, prev, raw, ed);
+  LAST = { prev: prev, raw: raw, ed: ed, out: out };
+  setField(out.value, out.caret);
+});
+$('inp').addEventListener('keyup', paintLive);
+$('inp').addEventListener('click', paintLive);
+$('bClear').addEventListener('click', () => { LAST = null; setField('', 0); $('inp').focus(); });
+$('bFill').addEventListener('click', () => {
+  const Mx = M(), d = '4242424242424242'.slice(0, Mx.cap);
+  const v = IMPLS[implId].render(Mx.pat, d);
+  LAST = null; setField(v, v.length); $('inp').focus();
+});
+$('bDead').addEventListener('click', () => {
+  const Mx = M(), d = '4242424242424242'.slice(0, Mx.cap);
+  const v = IMPLS[implId].render(Mx.pat, d);
+  // stand on the first position where a Backspace is dead for SOME rule, so the button demonstrates
+  // the same keystroke whichever rule is selected
+  let at = -1;
+  for (let c = 1; c <= v.length && at < 0; c++)
+    if (!isDigit(v[c - 1]) && digitsBefore(v, c) > 0) at = c;
+  if (at < 0) at = v.length;
+  setField(v, at);
+  $('inp').focus();
+  applyEdit('back', '');
+});
+
+function seedField(){
+  const Mx = M();
+  LAST = null; setField('', 0);
+  applyEdit('insert', '4242424242424242'.slice(0, Mx.cap));
+}
+buildSelects();
+seedField();
+// A million and a half assertions is about a second of arithmetic, so the field is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing here is skipped -
+// every figure on this page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  selfCheck();
+  fillSeen(); fillProps(); fillFull(); fillCtrl(); fillPlace(); fillSess(); fillEdit();
+  fillClosed(); fillTrace(); fillProse();
+}, 30);
+</script>
+</body>
+</html>
