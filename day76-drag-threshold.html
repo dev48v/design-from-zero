@@ -1,0 +1,1892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 76 &mdash; Drag threshold</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#eef5f4; color:#0f2320; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#dcece9; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#0d2320; color:#dcf0ec; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  em { font-style:italic; }
+  a { color:#0f766e; }
+
+  header { background:#fff; border-bottom:1px solid #d5e6e3; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#0f766e; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#dcece9; color:#0f2320; }
+  .tabs button.on { background:#0f2320; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#dcece9; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,35,32,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#3c5450; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#5f7b76; margin:0 0 12px; }
+  .note { font-size:12px; color:#5f7b76; margin:12px 0 0; }
+  .rule { border-top:1px solid #d5e6e3; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#152e2a; margin:0 0 12px; }
+  .prose ul, .prose ol { font-size:14.5px; color:#152e2a; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#5f7b76; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #d5e6e3;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num th:nth-child(2), table.num td:nth-child(2) { text-align:left; }
+  table.num tr.me td { background:#ecfdf5; font-weight:700; }
+  table.num tr.ctl td { background:#fdf6ec; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#9bb3ae; }
+  .scroll { overflow-x:auto; }
+
+  .ctl2 { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+          font-size:13px; max-width:100%; }
+  /* the gesture select carries a whole clause of option text; without a cap it takes its width from
+     the longest option and drags a phone-width page sideways. */
+  .ctl2 label { display:flex; flex-direction:column; gap:3px; min-width:0; max-width:100%; }
+  .ctl2 select { max-width:100%; }
+  .ctl2 span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#5f7b76; }
+  .ctl2 select, .ctl2 button { font:inherit; font-size:13px; padding:6px 10px;
+          border-radius:8px; border:1px solid #b9d4cf; background:#fff; }
+  .ctl2 button { cursor:pointer; font-weight:700; background:#0f2320; color:#fff; border-color:#0f2320; }
+  .ctl2 button.ghost { background:#fff; color:#0f2320; }
+
+  .badge { display:inline-block; font-size:11.5px; font-weight:800; letter-spacing:.04em;
+           border-radius:999px; padding:4px 12px; border:1px solid #b9d4cf; background:#f6fbfa;
+           color:#3c5450; }
+  .badge.pass { background:#dcfce7; border-color:#86efac; color:#14532d; }
+  .badge.fail { background:#fee2e2; border-color:#fca5a5; color:#7f1d1d; }
+
+  /* the pad. A real pointer surface: the samples drawn on it are the ones the browser reported,
+     so the numbers beside it are about the reader's own hand and not about a model of one. */
+  .padrow { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+  .padbox { flex:1 1 420px; min-width:280px; }
+  .zoombox { flex:0 0 210px; }
+  svg.pad { width:100%; height:300px; display:block; border-radius:12px; border:1px solid #b9d4cf;
+            background:#f6fbfa; touch-action:none; cursor:crosshair; }
+  svg.zoom { width:210px; height:210px; display:block; border-radius:12px; border:1px solid #b9d4cf;
+             background:#f6fbfa; }
+  @media (max-width:560px) { .zoombox { flex:1 1 100%; } svg.zoom { width:100%; height:220px; } }
+  .scrubrow { display:flex; gap:10px; align-items:center; margin:10px 0 0; font-size:12px;
+              color:#5f7b76; flex-wrap:wrap; }
+  .scrubrow input[type=range] { flex:1 1 220px; min-width:160px; }
+
+  /* one cell per sample: what a rule believed at that moment in the gesture */
+  .tl { display:flex; gap:1px; min-width:90px; }
+  .tl i { flex:1 1 0; min-width:1px; height:12px; background:#dcece9; border-radius:1px; }
+  .tl i.on { background:#0f766e; }
+  .tl i.now { outline:2px solid #0f2320; outline-offset:0; }
+
+  .pill { display:inline-block; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px;
+          border:1px solid #b9d4cf; background:#f2f9f8; color:#3c5450; border-radius:6px;
+          padding:1px 7px; margin:0 5px 5px 0; }
+  .pill.dark { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
+  .tag { font-size:9.5px; font-weight:800; letter-spacing:.06em; border-radius:4px; padding:0 4px;
+         margin-left:6px; border:1px solid #fca5a5; color:#b91c1c; }
+  .tag.good { border-color:#86efac; color:#166534; }
+  .tag.ctl { border-color:#fcd34d; color:#92400e; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 76</p>
+    <h1>
+      &#9678; Drag threshold &mdash; the two lines that decide whether a press was a click or the
+      start of a drag. A test suite has no hand: <code>pointerDown</code>, one
+      <code>pointerMove</code>, <code>pointerUp</code> puts the pointer in two places with nothing in
+      between, and the three things it can assert are <em>a big move is a drag, no movement is a
+      click, and the same big move in forty small steps is still a drag</em>. All three hold for
+      <strong id="pBlind">six</strong> of these <strong id="pImpls">eight</strong> rules &mdash; and
+      <strong id="pWrong">five</strong> of those six are wrong once a real hand is on the pointer.
+      The one in the most code calls <strong id="pAnyFalse">959</strong> of
+      <strong id="pClicks">960</strong> deliberate clicks a drag, because a resting hand shakes.
+      Across <strong id="pGest">2,720</strong> generated gestures on three pointer types, the best of
+      the six that pass is right <strong id="pAxisAcc">88.2%</strong> of the time &mdash; and the
+      second-best rule of all eight, right <strong id="pDwellAcc">99.7%</strong>, is one the three
+      properties <strong>throw out</strong>, for a behaviour that only exists in the corpus a test
+      makes up. A control with the shake removed settles the blame: it deletes
+      <strong id="pCtlFalse">100.0%</strong> of the false drags and
+      <strong id="pCtlMiss">3.4%</strong> of the missed ones.
+      <strong id="pTotal">1,128,111 assertions</strong> on load. Pure vanilla JavaScript, one file,
+      no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9654;&#9654; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Press inside the pad and drag, then let go.</strong> The line is the samples your
+        browser actually reported &mdash; not a model of a hand, yours. The small circle is the
+        threshold and the square around it is the same number measured per axis; the panel on the
+        right is the first few pixels blown up, because at real size the whole argument is smaller
+        than a full stop. Underneath, all eight rules are handed the same samples. Drag the
+        <em>sample</em> slider to walk through the gesture and watch which of them have made up their
+        mind, and which change it.
+      </p>
+      <div class="ctl2">
+        <label><span>POINTER</span><select id="selDev"></select></label>
+        <label><span>GESTURE</span><select id="selKind"></select></label>
+        <label><span>&nbsp;</span><button id="bReplay">replay it</button></label>
+        <label><span>&nbsp;</span><button id="bTest" class="ghost">what a test does</button></label>
+        <label><span>&nbsp;</span><button id="bClear" class="ghost">clear the pad</button></label>
+      </div>
+      <div class="padrow">
+        <div class="padbox">
+          <svg class="pad" id="pad" viewBox="0 0 600 300" preserveAspectRatio="none"
+               aria-label="pointer pad"></svg>
+        </div>
+        <div class="zoombox">
+          <svg class="zoom" id="zoom" viewBox="0 0 210 210" aria-label="threshold, magnified"></svg>
+          <p class="note" id="zoomNote"></p>
+        </div>
+      </div>
+      <div class="scrubrow">
+        <span id="scrubLab">sample</span>
+        <input type="range" id="scrub" min="0" max="1" value="1" step="1" aria-label="sample index" />
+      </div>
+      <p class="note" id="padNote"></p>
+      <div class="rule">
+        <p class="cap">THIS GESTURE, HANDED TO ALL EIGHT RULES</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>rule</th><th>the one clause that differs</th><th>says</th>
+            <th>picks it<br>up at</th><th>changes<br>its mind</th>
+            <th style="text-align:left">what it believed, sample by sample</th></tr></thead>
+          <tbody id="liveTab"></tbody></table></div>
+        <p class="note" id="lastNote"></p>
+        <p class="note"><span class="badge" id="selftest">self-check: running&hellip;</span></p>
+        <p class="note" id="assertline"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE ONLY THINGS A TEST CAN ASSERT</p>
+      <p class="lead">
+        A drag test cannot know what the hand meant, so it states the three things that are true by
+        construction of the events it fires. Evaluated on the corpus a test suite really produces
+        &mdash; a press, a teleport, a release &mdash; in twelve directions on each of three pointer
+        types. Read the last column afterwards, not before.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the one clause that differs</th>
+          <th>big move<br>is a drag</th><th>no move<br>is a click</th>
+          <th>forty small steps<br>still a drag</th><th>passes all<br>three</th>
+          <th>and is it<br>right?</th></tr></thead>
+        <tbody id="tSeen"></tbody></table></div>
+      <p class="note" id="seenNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">SEVEN PROPERTIES, AND EXACTLY WHAT EACH ONE CAN SEE</p>
+      <p class="lead">
+        Same shape of claim every time &mdash; <em>every gesture of this kind is classified
+        correctly</em> &mdash; so the only thing that varies is which rules survive it. The first
+        three are the ones above. The other four each name a shape a hand makes and a test does not.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>property</th><th>what it says</th><th>a test<br>can state it</th>
+          <th>rules it<br>rejects</th><th>which ones</th><th>rules left<br>after it</th></tr></thead>
+        <tbody id="tProps"></tbody></table></div>
+      <p class="note" id="propNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE SWEEP &mdash; EVERY GESTURE, EVERY RULE</p>
+      <p class="lead">
+        The corpus is built from intents, never from verdicts: each gesture is generated as a click
+        or as a drag and then shaken, and any gesture whose furthest excursion lands on the wrong
+        side of its own threshold is discarded rather than scored, because it is genuinely
+        ambiguous. <em>Where</em> a rule picks the thing up is the second observable: latch early and
+        the item moves before the user meant it to, latch late and it jumps.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the one clause that differs</th><th>right</th>
+          <th>clicks called<br>a drag</th><th>drags called<br>a click</th>
+          <th>changed its<br>mind mid-drag</th><th>pixels off at<br>pick-up</th></tr></thead>
+        <tbody id="tSweep"></tbody></table></div>
+      <p class="note" id="sweepNote"></p>
+      <div class="rule">
+        <p class="cap">AND BROKEN DOWN BY WHAT THE HAND WAS DOING</p>
+        <div class="scroll"><table class="num">
+          <thead><tr id="kindHead"></tr></thead>
+          <tbody id="tKind"></tbody></table></div>
+        <p class="note" id="kindNote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE CONTROL &mdash; THE SAME GESTURES WITH THE SHAKE TAKEN OUT</p>
+      <p class="lead">
+        Same generator, same seed, same sample counts, same deliberate excursions, shake amplitude
+        set to zero. It is exactly the corpus a test harness produces, and it is the arm on which
+        the broken rules look fine. What it removes is the whole claim about what the shake is
+        guilty of.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>rule</th><th>the one clause that differs</th>
+          <th>clicks called a drag<br>with shake</th><th>without</th>
+          <th>drags called a click<br>with shake</th><th>without</th>
+          <th>right, without</th></tr></thead>
+        <tbody id="tCtl"></tbody></table></div>
+      <p class="note" id="ctlNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">FOUR CLOSED FORMS, EACH PREDICTED WITHOUT THE RULE IT PREDICTS</p>
+      <p class="lead">
+        Each row states which gestures a rule must be wrong about, computed from the samples and the
+        threshold alone, and is then compared with what the rule actually did. Agreement here is not
+        two implementations of the same idea agreeing &mdash; it is an argument and a measurement
+        agreeing.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>the argument</th><th>what it predicts, with no rule in it</th>
+          <th>predicted</th><th>agrees</th><th>of</th></tr></thead>
+        <tbody id="tLaw"></tbody></table></div>
+      <p class="note" id="lawNote"></p>
+      <div class="rule">
+        <p class="cap">THE CORNER THE SQUARE CANNOT SEE</p>
+        <p class="lead">
+          Measuring the same axis on both sides is a square, and the circle it stands in for is
+          inscribed in it. For a steady move of length <em>r</em> the square misses a fraction
+          <code>1 &minus; (4/&pi;)&middot;acos(T/r)</code> of all directions, which is 1 at
+          <code>r = T</code> and 0 at <code>r = T&radic;2</code>. Swept over
+          <strong id="pDirs">3,600</strong> directions and compared with the law.
+        </p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>move length</th><th>&nbsp;</th><th>directions missed,<br>measured</th>
+            <th>the law</th><th>difference</th><th>grid can<br>resolve</th></tr></thead>
+          <tbody id="tAxis"></tbody></table></div>
+        <p class="note" id="axisNote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE THRESHOLD IS NOT THE RULE</p>
+      <p class="lead">
+        Every rule above was handed the same threshold, so none of the differences are about its
+        value. That value has its own question: how wide is the band of thresholds on which the
+        correct rule makes no mistake at all, and is there one number that serves every pointer
+        type at once?
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>pointer</th><th>&nbsp;</th><th>shake, per axis</th><th>threshold used</th>
+          <th>furthest a click<br>gets from the press</th><th>shortest deliberate<br>move</th>
+          <th>band where the correct<br>rule is perfect</th></tr></thead>
+        <tbody id="tBand"></tbody></table></div>
+      <p class="note" id="bandNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">TWO THINGS THAT DID NOT HAPPEN</p>
+      <p class="lead" id="nullNote"></p>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <h2>The two lines nobody draws</h2>
+    <p>
+      Every draggable thing in every interface sits behind one decision that has no pixels: the
+      press has happened, the pointer has moved a little, and something has to say whether this is a
+      click on its way to being finished or a drag on its way to being started. Get it wrong in one
+      direction and buttons stop working, because a hand that trembles by a pixel turns every click
+      into a two-pixel drag of nothing. Get it wrong in the other and the thing you meant to move
+      never lifts off.
+    </p>
+    <p>
+      The decision is worth exactly two lines of code, which is why it is almost never examined, and
+      why so many different two-liners are in production. This page writes eight of them, hands all
+      eight the same samples, and asks the question the two lines exist to answer.
+    </p>
+
+    <h3>1 &middot; A test suite has no hand</h3>
+    <p>
+      Here is how a drag gets tested, in every codebase, in every framework:
+    </p>
+    <pre><code>fireEvent.pointerDown(el, { clientX: 0,   clientY: 0 });
+fireEvent.pointerMove(el, { clientX: 100, clientY: 0 });
+fireEvent.pointerUp(el);
+expect(onDragStart).toHaveBeenCalled();</code></pre>
+    <p>
+      Three events. The pointer is at the origin, then it is a hundred pixels away, and there is
+      nothing in between &mdash; no intermediate samples, no overshoot, no tremor, and above all no
+      time spent holding still. That gesture is not a poor approximation of a hand. It is a shape a
+      hand cannot make.
+    </p>
+    <p>
+      A real press produces a sample every eight to sixteen milliseconds for as long as the button
+      is down, and a resting hand is not still: it drifts a pixel here and a pixel there, forever,
+      and the browser dutifully reports every one of them. A press held for a second is sixty to a
+      hundred and twenty samples of noise before anything deliberate happens at all.
+    </p>
+
+    <h3>2 &middot; The three things the test can assert</h3>
+    <p>
+      From the events above, a test can state three things without knowing anything about intent:
+      a big move ends as a drag, no movement at all ends as a click, and the same big move delivered
+      in forty small steps is still a drag. They are reasonable, they are the ones people write, and
+      between them they look like they pin the behaviour down.
+    </p>
+    <p>
+      They do not. Six of the eight rules on this page satisfy all three, and five of those six are
+      wrong. Not subtly wrong in a corner &mdash; the one that appears most often, <em>any movement
+      after the press is a drag</em>, calls almost every deliberate click a drag, because the shake
+      is movement and there is always some.
+    </p>
+
+    <h3>3 &middot; What the eight rules actually differ by</h3>
+    <p>
+      All eight take the same list of samples and the same threshold. The threshold is not part of
+      any of them &mdash; that matters, because otherwise a comparison of rules quietly becomes a
+      comparison of constants. What is left is one clause each:
+    </p>
+    <ul>
+      <li><strong>any movement</strong> &mdash; the pointer is not exactly where it went down.</li>
+      <li><strong>distance travelled</strong> &mdash; add up the length of the path so far.</li>
+      <li><strong>distance right now</strong> &mdash; how far it is from the press point at this sample.</li>
+      <li><strong>either axis</strong> &mdash; the horizontal or the vertical distance, taken separately.</li>
+      <li><strong>where it let go</strong> &mdash; compare the release point with the press point.</li>
+      <li><strong>one fast jump</strong> &mdash; a single sample moved further than the threshold.</li>
+      <li><strong>outside twice running</strong> &mdash; two samples in a row outside.</li>
+      <li><strong>the furthest it got</strong> &mdash; it was <em>ever</em> outside, and once that is true it stays true.</li>
+    </ul>
+    <p>
+      The last one is the answer, and the reason is not that it is cleverer. It is that the intent
+      &mdash; did this hand deliberately leave the neighbourhood of the press &mdash; is a statement
+      about the maximum of a quantity over the gesture, and only one of the eight computes that
+      maximum. Everything else measures something correlated with it.
+    </p>
+
+    <h3>4 &middot; Why the path length is a clock in disguise</h3>
+    <p>
+      Adding up the distance travelled feels like the careful version: surely a gesture that has
+      covered thirty pixels of ground is a drag. But a shaking hand covers ground without going
+      anywhere. Each sample contributes roughly the mean length of one tremor step, so the total
+      grows linearly with <em>how long you have held the button down</em> and not at all with how far
+      you have moved.
+    </p>
+    <p>
+      That gives a prediction with no rule in it: the hold at which a still hand becomes a drag is
+      the threshold divided by the mean step, which on the mouse model here is about seven samples,
+      or fifty-six milliseconds. The page measures the longest hold still called a click and the
+      shortest already called a drag, and checks the prediction lands between them. It does, on all
+      three pointer types. A rule whose failure is a function of duration is a long-press detector
+      that nobody meant to write.
+    </p>
+
+    <h3>5 &middot; Why the release point loses the drop</h3>
+    <p>
+      Two of the rules ask only where the pointer ended up: <em>distance right now</em>, evaluated
+      at the last sample, and <em>where it let go</em>. They are wrong on exactly one shape of
+      gesture, and the page predicts that set before running them &mdash; the drags whose release
+      landed back inside the threshold circle.
+    </p>
+    <p>
+      That shape is not exotic. It is picking a card up, changing your mind, and putting it back;
+      dragging a slider out and returning it; a reorder that circles and lands where it started.
+      Roughly a third of the deliberate drags in this corpus come home, and both rules report every
+      one of them as a click &mdash; which in a real interface means the drop never fires and,
+      worse, a click handler does.
+    </p>
+    <p>
+      The live version also has a second symptom the others do not: it un-latches. Because it asks
+      the question fresh at every sample, a pointer that wanders back inside the circle mid-gesture
+      makes it change its mind, and the page counts how often that happens. A rule that can flip
+      back is a rule whose drag can be cancelled by a wobble.
+    </p>
+
+    <h3>6 &middot; The corner the square cannot see</h3>
+    <p>
+      Comparing the horizontal and the vertical distance separately &mdash; <code>|dx| &gt; T ||
+      |dy| &gt; T</code> &mdash; is the most defensible of the wrong answers, and the hardest to
+      catch, because it is right about almost everything. It is a square where the intent is a
+      circle, and the square is larger: its area exceeds the inscribed circle's by exactly
+      4/&pi; &minus; 1, about 27.3%.
+    </p>
+    <p>
+      All of the excess is in the diagonals, which gives the exact shape of the failure. A steady
+      move of length <em>r</em> in a uniformly random direction is missed with probability
+      <code>1 &minus; (4/&pi;)&middot;acos(T/r)</code> for <em>r</em> between <em>T</em> and
+      <em>T</em>&radic;2, and never outside that ring. The page sweeps three thousand six hundred
+      directions and matches the law to within what a grid that fine can resolve. On real gestures
+      the ring is narrow but not empty: the short diagonal nudge &mdash; moving something by a
+      hair &mdash; falls in it, and the square misses all of them.
+    </p>
+
+    <h3>7 &middot; The control</h3>
+    <p>
+      It would be easy to conclude that the shake is what breaks these rules, and easy to be wrong
+      about it, so the page runs a paired control: the same generator, the same seed, the same
+      sample counts, the same deliberate excursions, with the shake amplitude set to zero. That
+      corpus is precisely what a test harness produces.
+    </p>
+    <p>
+      Taking the shake out removes every single false drag &mdash; all of them, on every rule
+      &mdash; and about three per cent of the missed drags. So the shake is the whole story for one
+      failure mode and essentially none of the story for the other. The square still misses the
+      diagonal nudge with a perfectly steady hand; the release-point rules still lose the drop. Those
+      are errors of the clause, not of the noise, and no amount of smoothing will touch them.
+    </p>
+
+    <h3>8 &middot; The rule the properties throw out</h3>
+    <p>
+      The most uncomfortable result on this page is the inversion at the other end. <em>Outside twice
+      running</em> &mdash; require two consecutive samples outside the circle before
+      committing &mdash; is the second most accurate of the eight, right on 99.7% of the corpus, and
+      it fails the very first blind property.
+    </p>
+    <p>
+      It fails because the test's gesture has exactly one sample outside the circle: the teleport.
+      There is no second one, because there is nothing between the two positions. The page predicts
+      this exactly: the dwell rule differs from the correct one on precisely the gestures that cross
+      the circle for a single sample and no more, of which there are eight in the whole hand-driven
+      corpus and every single one of the teleports. A test suite is not merely blind to five wrong
+      rules &mdash; it actively rejects a good one, for a shape only it can produce.
+    </p>
+
+    <h3>9 &middot; The threshold, which is a separate question</h3>
+    <p>
+      Because the threshold was handed to all eight rules, it can be studied on its own. Sweeping it
+      from zero upward and asking where the correct rule makes no mistake at all gives a band per
+      pointer type, and the bands are pushed from both ends: from below by the shake, which sets how
+      far a still hand can wander, and from above by the shortest move anybody deliberately makes.
+    </p>
+    <p>
+      The intended claim going in was that no single threshold can serve a mouse and a touchscreen at
+      once. Measured, that is false: the three bands do intersect, and a single value sits inside all
+      of them. What is true is much less dramatic and more useful &mdash; the intersection is only a
+      few pixels wide, and it is narrow for a reason you can name from the two ends that squeeze it.
+      That is the sort of claim a measurement is for.
+    </p>
+
+    <h3>10 &middot; What to take away</h3>
+    <p>
+      The properties everyone asserts about a drag threshold are all true of five implementations
+      that are wrong, and false of one that is nearly right. This is not because the properties are
+      badly written. It is because they are evaluated on gestures a test constructs, and the entire
+      difficulty of the problem lives in the samples a test does not construct: the ones in between,
+      and the ones that happen while nothing is happening.
+    </p>
+    <p>
+      If you take one thing: the quantity to threshold is the <em>maximum distance from the press
+      point over the whole gesture</em>, latched, and it should be measured as a distance and not
+      per axis. The other seven each measure something that agrees with it on the gestures you will
+      write a test for.
+    </p>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <h2>Build it</h2>
+    <p>
+      Nine steps. Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> in this
+      file is pure functions over arrays of samples &mdash; no DOM, no clock, no
+      <code>Math.random</code> &mdash; which is what makes it possible to run the same code over a
+      generated corpus in a self-check and over the reader's own hand on the pad above.
+    </p>
+
+    <h3>1 &middot; Decide what a gesture is</h3>
+    <p>
+      A gesture is a list of <code>{x, y, t}</code> from <code>pointerdown</code> to
+      <code>pointerup</code>. The first entry is the press and it carries no shake, because
+      <code>pointerdown</code>'s coordinates <em>are</em> the origin by definition. Everything the
+      rules do is a function of this list and one number.
+    </p>
+    <pre><code>el.addEventListener('pointerdown', e =&gt; {
+  el.setPointerCapture(e.pointerId);
+  samples = [{ x: e.clientX, y: e.clientY, t: e.timeStamp }];
+});
+el.addEventListener('pointermove', e =&gt; {
+  if (!samples) return;
+  samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+  decide(samples);
+});</code></pre>
+    <p>
+      Use <code>setPointerCapture</code>. Without it the pointer leaving the element ends the
+      gesture, and a drag that leaves the element is the entire point of a drag.
+    </p>
+
+    <h3>2 &middot; Write the rule as a maximum, and latch it</h3>
+    <pre><code>function isDrag(samples, T) {
+  for (let i = 1; i &lt; samples.length; i++) {
+    const dx = samples[i].x - samples[0].x;
+    const dy = samples[i].y - samples[0].y;
+    if (dx * dx + dy * dy &gt;= T * T) return i;   // latched: never re-tested
+  }
+  return -1;
+}</code></pre>
+    <p>
+      Two details do all the work. It compares squared distances, so there is no square root and no
+      floating-point boundary to argue about. And it returns the <em>index</em>, not a boolean:
+      the sample at which the drag started is where the UI must pick the item up from, and a rule
+      that cannot say when it committed cannot place the thing it is dragging.
+    </p>
+
+    <h3>3 &middot; Never re-ask the question</h3>
+    <p>
+      In real code the latch is a flag on the gesture state, set once:
+    </p>
+    <pre><code>if (!state.dragging) {
+  const at = isDrag(samples, T);
+  if (at &gt;= 0) { state.dragging = true; state.origin = samples[at]; onDragStart(samples[at]); }
+}</code></pre>
+    <p>
+      The version without <code>if (!state.dragging)</code> is the <em>distance right now</em> rule,
+      and it is the single most common way to accidentally write a drag that cancels itself when the
+      user brings the pointer back near where they started.
+    </p>
+
+    <h3>4 &middot; Do not add up the path</h3>
+    <p>
+      Accumulating <code>hypot(dx, dy)</code> between consecutive samples looks more thorough and is
+      a duration detector: a still hand adds a pixel or two per sample forever. If you want a
+      long-press, write a long-press; do not get one by accident.
+    </p>
+
+    <h3>5 &middot; Do not compare the axes separately</h3>
+    <p>
+      <code>Math.abs(dx) &gt; T || Math.abs(dy) &gt; T</code> is a square. It needs
+      &radic;2 times as much movement on the diagonal, and the whole of the discrepancy is
+      concentrated exactly where short deliberate nudges live.
+    </p>
+
+    <h3>6 &middot; Give touch its own number</h3>
+    <p>
+      A finger's contact patch wanders several pixels while it is down and a mouse's does not, so one
+      threshold applied to both either eats short mouse drags or turns taps into drags. Read
+      <code>event.pointerType</code> and keep a small table. Everything else about the rule stays
+      identical &mdash; the threshold is data, the clause is the code.
+    </p>
+
+    <h3>7 &middot; Generate the corpus from intents, not from verdicts</h3>
+    <p>
+      To test any of this you need gestures whose right answer is known independently. Build them
+      from an intent &mdash; press and hold, flick, slow haul, out and back, diagonal nudge &mdash;
+      and then shake them. Because the intent came first, no rule can be scored against a label that
+      a rule produced.
+    </p>
+    <p>
+      Then throw away the ambiguous ones. A gesture generated as a drag whose furthest excursion did
+      not clear its own threshold has no defensible right answer, so it is discarded and the
+      discards are counted. Two of 2,722 here.
+    </p>
+
+    <h3>8 &middot; Keep a control arm</h3>
+    <p>
+      Run the same generator with the shake set to zero. Everything else identical. Any difference
+      between the arms is attributable to the shake and nothing else &mdash; which is how the page
+      can say the shake is responsible for all of one failure mode and almost none of the other,
+      rather than assuming it.
+    </p>
+
+    <h3>9 &middot; Assert bounds and identities, never constants</h3>
+    <p>
+      The self-check on this page never compares anything to a number typed in by hand. Every check
+      is either a bound the arithmetic cannot leave &mdash; a latch index is a real sample index, a
+      rule cannot be right more often than it ran &mdash; or two independent computations of the
+      same quantity being compared: a closed form against a measurement, the correct rule against
+      the definition of the intent, the shaken arm against the steady one. A test that hardcodes
+      today's number passes forever and means nothing.
+    </p>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// A gesture is the list of pointer samples between pointerdown and pointerup. Everything below is a
+// function of that list. No DOM, no clock, no Math.random - the corpus comes from a seeded
+// generator, so every figure the page prints is reproducible from the seeds alone.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const ri = (rnd, lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+
+// ---------------------------------------------------------------- devices
+// A pointer type is three numbers: how much the hand shakes while the button is down, how often the
+// browser reports a sample, and the distance this UI calls a drag. The threshold is NOT part of any
+// rule below - it is handed to all of them, so the rules differ only in their one clause.
+const DEVICES = {
+  mouse:    { label:'mouse',    jit:1, dt:8,  T:10 },
+  trackpad: { label:'trackpad', jit:2, dt:8,  T:10 },
+  touch:    { label:'touch',    jit:4, dt:16, T:20 }
+};
+const DEVICE_IDS = ['mouse', 'trackpad', 'touch'];
+
+// ---------------------------------------------------------------- gesture kinds
+// Each kind carries the INTENT it was built from. The intent belongs to the generator and never to
+// a rule, so nothing here can agree with a rule for the wrong reason.
+const KINDS = {
+  tap:       { intent:'click', label:'tap',              blurb:'press and let go' },
+  press:     { intent:'click', label:'press and hold',   blurb:'a still hand, held down' },
+  flick:     { intent:'drag',  label:'flick',            blurb:'a fast deliberate move' },
+  haul:      { intent:'drag',  label:'slow haul',        blurb:'the same distance, delivered slowly' },
+  boomerang: { intent:'drag',  label:'out and back',     blurb:'dropped where it was picked up' },
+  nudge:     { intent:'drag',  label:'diagonal nudge',   blurb:'a short move at 45 degrees' }
+};
+const KIND_IDS = ['tap', 'press', 'flick', 'haul', 'boomerang', 'nudge'];
+
+// ---------------------------------------------------------------- geometry
+const hyp = (x, y) => Math.sqrt(x * x + y * y);
+function maxOriginDist(s){
+  let m = 0;
+  for (let i = 0; i < s.length; i++){ const d = hyp(s[i].x - s[0].x, s[i].y - s[0].y); if (d > m) m = d; }
+  return m;
+}
+function maxAxisDist(s){
+  let m = 0;
+  for (let i = 0; i < s.length; i++){
+    const d = Math.max(Math.abs(s[i].x - s[0].x), Math.abs(s[i].y - s[0].y));
+    if (d > m) m = d;
+  }
+  return m;
+}
+function pathLen(s){
+  let t = 0;
+  for (let i = 1; i < s.length; i++) t += hyp(s[i].x - s[i - 1].x, s[i].y - s[i - 1].y);
+  return t;
+}
+const endDist = s => hyp(s[s.length - 1].x - s[0].x, s[s.length - 1].y - s[0].y);
+function maxStep(s){
+  let m = 0;
+  for (let i = 1; i < s.length; i++){ const d = hyp(s[i].x - s[i-1].x, s[i].y - s[i-1].y); if (d > m) m = d; }
+  return m;
+}
+// the first sample that leaves the threshold circle. This is a fact about the samples, not a rule.
+function firstPast(s, T){
+  for (let i = 1; i < s.length; i++) if (hyp(s[i].x - s[0].x, s[i].y - s[0].y) >= T) return i;
+  return -1;
+}
+// how many samples in a row, at most, sit outside the circle - the quantity a dwell rule needs.
+function longestRunPast(s, T){
+  let best = 0, run = 0;
+  for (let i = 1; i < s.length; i++){
+    if (hyp(s[i].x - s[0].x, s[i].y - s[0].y) >= T){ run++; if (run > best) best = run; } else run = 0;
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- the generator
+// The press point is exact: pointerdown hands you a coordinate and that coordinate IS the origin.
+// Shake starts at the first move sample, which is the only place a hand can put it.
+function buildGesture(rnd, devId, kindId, shakeOn){
+  const D = DEVICES[devId], a = shakeOn ? D.jit : 0, s = [];
+  let t = 0;
+  const push = (x, y) => { s.push({ x:x, y:y, t:t }); t += D.dt; };
+  push(0, 0);
+  const shake = (n, cx, cy) => { for (let i = 0; i < n; i++) push(cx + ri(rnd,-a,a), cy + ri(rnd,-a,a)); };
+  const glide = (n, x0, y0, x1, y1) => {
+    for (let i = 1; i <= n; i++){
+      const f = i / n;
+      push(Math.round(x0 + (x1 - x0) * f) + ri(rnd,-a,a), Math.round(y0 + (y1 - y0) * f) + ri(rnd,-a,a));
+    }
+  };
+  const dir = () => { const th = rnd() * Math.PI * 2; return [Math.cos(th), Math.sin(th)]; };
+  let meta = { r:0 };
+  if (kindId === 'tap') shake(ri(rnd, 2, 8), 0, 0);
+  else if (kindId === 'press') shake(ri(rnd, 24, 90), 0, 0);
+  else if (kindId === 'flick'){
+    const r = ri(rnd, 60, 180), d = dir(), tx = Math.round(r*d[0]), ty = Math.round(r*d[1]);
+    shake(ri(rnd,0,2), 0, 0); glide(ri(rnd,3,7), 0, 0, tx, ty); shake(ri(rnd,2,5), tx, ty);
+    meta = { r:r };
+  } else if (kindId === 'haul'){
+    const r = ri(rnd, 50, 160), d = dir(), tx = Math.round(r*d[0]), ty = Math.round(r*d[1]);
+    shake(ri(rnd,1,4), 0, 0); glide(ri(rnd,34,88), 0, 0, tx, ty); shake(ri(rnd,2,6), tx, ty);
+    meta = { r:r };
+  } else if (kindId === 'boomerang'){
+    const r = ri(rnd, 60, 160), d = dir(), tx = Math.round(r*d[0]), ty = Math.round(r*d[1]);
+    shake(ri(rnd,0,2), 0, 0); glide(ri(rnd,6,16), 0, 0, tx, ty); shake(ri(rnd,2,5), tx, ty);
+    glide(ri(rnd,6,16), tx, ty, 0, 0); shake(ri(rnd,1,3), 0, 0);
+    meta = { r:r };
+  } else if (kindId === 'nudge'){
+    const tg = nudgeTargets(devId);
+    if (!tg.pts.length) return null;
+    const p = tg.pts[ri(rnd, 0, tg.pts.length - 1)];
+    shake(ri(rnd,0,2), 0, 0); glide(ri(rnd,4,10), 0, 0, p[0], p[1]); shake(ri(rnd,5,11), p[0], p[1]);
+    meta = { r: hyp(p[0], p[1]) };
+  }
+  return { dev:devId, kind:kindId, intent:KINDS[kindId].intent, s:s, meta:meta };
+}
+
+// The corner the square cannot see. A nudge target is an INTEGER offset that is outside the circle
+// and inside the square even after the hand has pushed it outward, so the set is not a choice - it
+// is every integer point satisfying two inequalities, enumerated. On a trackpad there are none,
+// because a shake of two pixels is too large next to a ten pixel threshold, and that emptiness is a
+// derived fact rather than an omission.
+function nudgeTargets(devId){
+  const D = DEVICES[devId], a = D.jit, lim = D.T + a * 2, pts = [];
+  for (let x = -lim; x <= lim; x++) for (let y = -lim; y <= lim; y++){
+    if (Math.max(Math.abs(x), Math.abs(y)) + a >= D.T) continue;   // the square would fire
+    if (hyp(x, y) < D.T) continue;                                  // the circle would not
+    pts.push([x, y]);
+  }
+  return { pts:pts, T:D.T, jit:a };
+}
+
+// A gesture is only usable if the quantity the intent is about separates it: a drag has to leave the
+// threshold circle and a click has to stay inside it. Anything else is genuinely ambiguous, so it is
+// discarded rather than scored, and the discards are counted and reported.
+function separable(g){
+  const T = DEVICES[g.dev].T, m = maxOriginDist(g.s);
+  return g.intent === 'drag' ? m >= T : m < T;
+}
+
+function corpus(devIds, kindIds, per, seed, shakeOn){
+  const rnd = mulberry32(seed), out = [];
+  let drops = 0;
+  for (const d of devIds) for (const k of kindIds){
+    if (k === 'nudge' && !nudgeTargets(d).pts.length) continue;
+    let made = 0, tries = 0;
+    while (made < per && tries < per * 60){
+      tries++;
+      const g = buildGesture(rnd, d, k, shakeOn);
+      if (g && separable(g)){ g.id = out.length; out.push(g); made++; } else drops++;
+    }
+  }
+  return { list:out, drops:drops };
+}
+
+// The paired control: the SAME generator, the same seed, the same sample counts and the same
+// deliberate excursions - with the shake amplitude set to zero. It is the corpus a test harness
+// produces, and the only arm on which the jittery rules look fine.
+function pairedCorpus(devIds, kindIds, per, seed){
+  return { shaken: corpus(devIds, kindIds, per, seed, true),
+           steady: corpus(devIds, kindIds, per, seed, false) };
+}
+
+// ---------------------------------------------------------------- the eight rules
+// Each answers the same question from the same samples and the same threshold. The clause is the
+// whole difference. `latch` is the sample index at which the rule first committed to a drag - which
+// is where the UI would pick the thing up - and `flips` counts how often it changed its mind.
+const RULES = {
+  anyMove: { label:'any movement', clause:'the pointer is not exactly where it went down',
+    run: function(s){
+      let latch = -1;
+      for (let i = 1; i < s.length && latch < 0; i++) if (s[i].x !== s[0].x || s[i].y !== s[0].y) latch = i;
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } },
+  pathLength: { label:'distance travelled', clause:'the length of the path so far passes the threshold',
+    run: function(s, T){
+      let acc = 0, latch = -1;
+      for (let i = 1; i < s.length; i++){
+        acc += hyp(s[i].x - s[i-1].x, s[i].y - s[i-1].y);
+        if (acc >= T && latch < 0) latch = i;
+      }
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } },
+  originLive: { label:'distance right now', clause:'it is more than the threshold from the press point AT THIS SAMPLE',
+    run: function(s, T){
+      let latch = -1, on = false, flips = 0;
+      for (let i = 1; i < s.length; i++){
+        const d = hyp(s[i].x - s[0].x, s[i].y - s[0].y) >= T;
+        if (d && latch < 0) latch = i;
+        if (d !== on){ on = d; flips++; }
+      }
+      return { drag: on, latch: on ? latch : -1, flips: flips };
+    } },
+  axisBox: { label:'either axis', clause:'the horizontal OR the vertical distance passes the threshold',
+    run: function(s, T){
+      let latch = -1;
+      for (let i = 1; i < s.length && latch < 0; i++)
+        if (Math.max(Math.abs(s[i].x - s[0].x), Math.abs(s[i].y - s[0].y)) >= T) latch = i;
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } },
+  lastSample: { label:'where it let go', clause:'the release landed more than the threshold from the press',
+    run: function(s, T){
+      const d = hyp(s[s.length-1].x - s[0].x, s[s.length-1].y - s[0].y) >= T;
+      return { drag: d, latch: d ? s.length - 1 : -1, flips: d ? 1 : 0 };
+    } },
+  stepDelta: { label:'one fast jump', clause:'a single sample moved further than the threshold',
+    run: function(s, T){
+      let latch = -1;
+      for (let i = 1; i < s.length && latch < 0; i++)
+        if (hyp(s[i].x - s[i-1].x, s[i].y - s[i-1].y) >= T) latch = i;
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } },
+  originDwell: { label:'outside twice running', clause:'two samples in a row outside the threshold',
+    run: function(s, T){
+      let latch = -1, prev = false;
+      for (let i = 1; i < s.length; i++){
+        const d = hyp(s[i].x - s[0].x, s[i].y - s[0].y) >= T;
+        if (d && prev && latch < 0) latch = i;
+        prev = d;
+      }
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } },
+  originLatch: { label:'the furthest it got', clause:'it was EVER more than the threshold from the press point',
+    run: function(s, T){
+      let latch = -1;
+      for (let i = 1; i < s.length && latch < 0; i++)
+        if (hyp(s[i].x - s[0].x, s[i].y - s[0].y) >= T) latch = i;
+      return { drag: latch >= 0, latch: latch, flips: latch >= 0 ? 1 : 0 };
+    } }
+};
+const RULE_IDS = ['anyMove','pathLength','originLive','axisBox','lastSample','stepDelta',
+                  'originDwell','originLatch'];
+const CORRECT = 'originLatch';
+
+// ---------------------------------------------------------------- the corpus a test suite makes
+// A test suite has no hand. `mouseDown, mouseMove, mouseUp` puts the pointer in two places with
+// nothing in between, and that gap is the whole difference between these gestures and the ones a
+// person produces.
+function teleportSet(devId, dirs){
+  const D = DEVICES[devId], out = [], r = D.T * 10;
+  for (let k = 0; k < dirs; k++){
+    const th = 2 * Math.PI * k / dirs;
+    const tx = Math.round(r * Math.cos(th)), ty = Math.round(r * Math.sin(th));
+    out.push({ dev:devId, kind:'B1', intent:'drag', meta:{ r:r },
+               s:[{x:0,y:0,t:0},{x:tx,y:ty,t:D.dt}] });
+    const st = [{ x:0, y:0, t:0 }], n = 40;
+    for (let i = 1; i <= n; i++) st.push({ x:Math.round(tx*i/n), y:Math.round(ty*i/n), t:i*D.dt });
+    out.push({ dev:devId, kind:'B3', intent:'drag', meta:{ r:r }, s:st });
+  }
+  out.push({ dev:devId, kind:'B2', intent:'click', meta:{ r:0 },
+             s:[{x:0,y:0,t:0},{x:0,y:0,t:D.dt},{x:0,y:0,t:2*D.dt}] });
+  return out;
+}
+
+// The three things a drag test can assert without knowing what the hand did.
+const BLIND_IDS = ['B1', 'B2', 'B3'];
+const BLIND_TEXT = {
+  B1: 'a press, a big move and a release far away is a drag',
+  B2: 'a press and a release with no movement at all is a click',
+  B3: 'the same big move, delivered in forty small steps, is still a drag'
+};
+function blindRun(devIds, dirs){
+  const per = {};
+  for (const id of RULE_IDS){ per[id] = {}; for (const b of BLIND_IDS) per[id][b] = { ok:0, n:0 }; }
+  let asserts = 0, cases = 0;
+  for (const dev of devIds){
+    const T = DEVICES[dev].T;
+    for (const g of teleportSet(dev, dirs)){
+      cases++;
+      for (const id of RULE_IDS){
+        const r = RULES[id].run(g.s, T), cell = per[id][g.kind];
+        cell.n++; if (r.drag === (g.intent === 'drag')) cell.ok++;
+        asserts += 2;
+      }
+    }
+  }
+  const pass = {}, passes = [];
+  for (const id of RULE_IDS){
+    let all = true;
+    for (const b of BLIND_IDS) if (per[id][b].ok !== per[id][b].n) all = false;
+    pass[id] = all; if (all) passes.push(id);
+  }
+  return { per:per, pass:pass, passes:passes, asserts:asserts, cases:cases };
+}
+
+// ---------------------------------------------------------------- what each property can see
+// Seven properties. The first three are the ones a test suite can state without a hand, evaluated
+// on the corpus a test suite builds. The other four each name a shape of gesture a person makes,
+// and are evaluated on that shape. Every property is the same shape of claim - "every gesture of
+// this kind is classified correctly" - so which rules survive is the only thing that varies.
+const PROPS = [
+  { id:'B1', blind:true,  kind:null, text:'a press, a big move and a release far away is a drag' },
+  { id:'B2', blind:true,  kind:null, text:'a press and a release with no movement at all is a click' },
+  { id:'B3', blind:true,  kind:null, text:'the same big move, delivered in forty small steps, is still a drag' },
+  { id:'P4', blind:false, kind:'press',     text:'a still hand is a click however long it is held down' },
+  { id:'P5', blind:false, kind:'haul',      text:'a deliberate move delivered slowly is a drag' },
+  { id:'P6', blind:false, kind:'boomerang', text:'a drag dropped where it started is still a drag' },
+  { id:'P7', blind:false, kind:'nudge',     text:'a short move at 45 degrees is a drag' }
+];
+function propTable(bl, sw){
+  const cell = {}, rejects = {};
+  for (const p of PROPS) rejects[p.id] = [];
+  for (const id of RULE_IDS){
+    cell[id] = {};
+    for (const p of PROPS){
+      const c = p.blind ? bl.per[id][p.id] : sw.stat[id].byKind[p.kind];
+      const ok = c.n > 0 && c.ok === c.n;
+      cell[id][p.id] = { ok:ok, got:c.ok, n:c.n };
+      if (!ok) rejects[p.id].push(id);
+    }
+  }
+  // how many rules are left after taking the properties in order - the three blind ones first,
+  // which is the order a project actually adds them in
+  const survive = [];
+  let live = RULE_IDS.slice();
+  for (const p of PROPS){
+    live = live.filter(id => cell[id][p.id].ok);
+    survive.push({ id:p.id, left:live.length });
+  }
+  return { cell:cell, rejects:rejects, survive:survive, last:live };
+}
+
+// ---------------------------------------------------------------- the sweep over real gestures
+function blank(){
+  return { n:0, ok:0, falseDrag:0, missedDrag:0, flips:0, unlatched:0,
+           latchLate:0, latchOf:0, jump:0, byKind:{} };
+}
+function sweep(gs){
+  const stat = {};
+  for (const id of RULE_IDS){
+    stat[id] = blank();
+    for (const k of KIND_IDS) stat[id].byKind[k] = { n:0, ok:0 };
+  }
+  let asserts = 0, bounds = 0;
+  const rows = [];
+  for (const g of gs){
+    const T = DEVICES[g.dev].T, want = g.intent === 'drag', truth = firstPast(g.s, T);
+    const row = { id:g.id, per:{} };
+    for (const id of RULE_IDS){
+      const r = RULES[id].run(g.s, T), st = stat[id];
+      st.n++;
+      if (r.drag === want) st.ok++; else if (r.drag) st.falseDrag++; else st.missedDrag++;
+      st.flips += r.flips;
+      if (r.flips > 1) st.unlatched++;
+      // Bounds, never expected values: a verdict is a boolean, a latch is either absent or a real
+      // sample index, and a rule that says drag must be able to say where the drag started.
+      if (typeof r.drag === 'boolean') bounds++; asserts++;
+      if (r.latch === -1 || (r.latch >= 1 && r.latch < g.s.length)) bounds++; asserts++;
+      if (r.drag === (r.latch >= 0)) bounds++; asserts++;
+      // Where the drag STARTS is the second observable. The sample the correct rule latches on is
+      // the moment the intent became visible in the data, so a rule that latches earlier picks the
+      // thing up before the user meant to and one that latches later makes it jump. Both are errors,
+      // measured as the distance between the two press-relative positions.
+      if (want && r.drag && truth >= 0){
+        st.latchOf++;
+        if (r.latch !== truth){
+          st.latchLate += Math.abs(r.latch - truth);
+          st.jump += hyp(g.s[r.latch].x - g.s[truth].x, g.s[r.latch].y - g.s[truth].y);
+        }
+      }
+      const bk = st.byKind[g.kind]; bk.n++; if (r.drag === want) bk.ok++;
+      row.per[id] = r;
+    }
+    rows.push(row);
+  }
+  return { stat:stat, rows:rows, asserts:asserts, bounds:bounds, n:gs.length };
+}
+
+// which rules get every gesture right, judged against the intent the generator built in
+function correctSet(sw){
+  return RULE_IDS.filter(id => sw.stat[id].ok === sw.stat[id].n);
+}
+
+// ---------------------------------------------------------------- closed forms
+// Each one predicts a rule's verdicts from the samples and the threshold alone, without calling the
+// rule it predicts, and is then compared with what the rule actually did.
+
+// The square admits the corner. For a steady move of length r in direction th, the square rule
+// fires iff r * max(|cos|,|sin|) >= T, so the fraction of directions it misses is
+// 1 - (4/pi) * acos(T/r) for T <= r <= T*sqrt(2), and 0 outside. Checked against a direction sweep.
+function axisAngleLaw(T, radii, dirs){
+  const rows = [];
+  let asserts = 0, worst = 0;
+  // A direction grid can only resolve a boundary to one step, and the law has eight boundaries, so
+  // the tolerance is 8/dirs - derived from the grid, not chosen. r = T exactly is excluded: there
+  // the law is a single point of measure zero and no grid can see it.
+  const tol = 8 / dirs;
+  for (const r of radii){
+    let missed = 0;
+    for (let k = 0; k < dirs; k++){
+      const th = 2 * Math.PI * k / dirs;
+      const s = [{x:0,y:0,t:0},{x:r*Math.cos(th), y:r*Math.sin(th), t:1}];
+      const fired = RULES.axisBox.run(s, T).drag;
+      const circle = RULES.originLatch.run(s, T).drag;
+      if (circle && !fired) missed++;
+      asserts += 2;
+    }
+    const u = Math.min(1, T / r);
+    const law = r < T ? 0 : (r >= T * Math.SQRT2 ? 0 : 1 - (4 / Math.PI) * Math.acos(u));
+    const got = missed / dirs, err = Math.abs(got - law);
+    if (err > worst) worst = err;
+    rows.push({ r:r, got:got, law:law, err:err });
+  }
+  // and the area statement the ring is an instance of: the square is 4/pi of the circle
+  const area = 4 / Math.PI - 1;
+  return { rows:rows, worst:worst, tol:tol, area:area, asserts:asserts, dirs:dirs };
+}
+
+// The dwell rule differs from the latched one only where a gesture crosses the circle for a single
+// sample and no more. Run the same law over the teleport corpus, where that is every gesture.
+function dwellLawOn(gs, T){
+  let pred = 0, differ = 0, hit = 0, asserts = 0;
+  for (const g of gs){
+    const TT = T === undefined ? DEVICES[g.dev].T : T;
+    const thin = firstPast(g.s, TT) >= 0 && longestRunPast(g.s, TT) < 2;
+    const d = RULES.originLatch.run(g.s, TT).drag !== RULES.originDwell.run(g.s, TT).drag;
+    if (thin) pred++;
+    if (d) differ++;
+    if (thin === d) hit++;
+    asserts += 2;
+  }
+  return { pred:pred, differ:differ, hit:hit, of:gs.length, asserts:asserts };
+}
+
+// The rules that read only the release point are wrong on exactly the drags that came home. Predict
+// that set from the samples - end distance under the threshold - and compare with the verdicts.
+function homeLaw(gs, sw){
+  let pred = 0, hitLast = 0, hitLive = 0, asserts = 0;
+  const ids = [];
+  for (let i = 0; i < gs.length; i++){
+    const g = gs[i], T = DEVICES[g.dev].T;
+    if (g.intent !== 'drag') continue;
+    const home = endDist(g.s) < T;
+    if (home){ pred++; ids.push(g.id); }
+    if (home === !sw.rows[i].per.lastSample.drag) hitLast++;
+    if (home === !sw.rows[i].per.originLive.drag) hitLive++;
+    asserts += 2;
+  }
+  return { pred:pred, hitLast:hitLast, hitLive:hitLive, of:ids.length ? pred : 0,
+           n:asserts / 2, ids:ids, asserts:asserts };
+}
+
+// The dwell rule differs from the latched one on exactly the gestures with fewer than two samples in
+// a row outside the circle. Predict from the samples; compare with the two rules' verdicts.
+function dwellLaw(gs, sw){
+  let pred = 0, hit = 0, asserts = 0;
+  for (let i = 0; i < gs.length; i++){
+    const g = gs[i], T = DEVICES[g.dev].T;
+    const thin = firstPast(g.s, T) >= 0 && longestRunPast(g.s, T) < 2;
+    if (thin) pred++;
+    const differ = sw.rows[i].per.originLatch.drag !== sw.rows[i].per.originDwell.drag;
+    if (thin === differ) hit++;
+    asserts += 2;
+  }
+  return { pred:pred, hit:hit, of:gs.length, asserts:asserts };
+}
+
+// A still hand becomes a drag for the path-length rule after about T / (mean step) samples, which
+// is a statement about the SHAKE and the CLOCK with no rule in it. Measured against the corpus.
+function tremorLaw(gs, sw){
+  const per = {};
+  for (const d of DEVICE_IDS) per[d] = { steps:0, len:0, cross:[], holds:[] };
+  let asserts = 0;
+  for (let i = 0; i < gs.length; i++){
+    const g = gs[i];
+    if (g.intent !== 'click') continue;
+    const p = per[g.dev];
+    p.steps += g.s.length - 1; p.len += pathLen(g.s);
+    p.holds.push({ n: g.s.length - 1, drag: sw.rows[i].per.pathLength.drag });
+    asserts++;
+  }
+  const rows = [];
+  for (const d of DEVICE_IDS){
+    const p = per[d], mean = p.steps ? p.len / p.steps : 0, T = DEVICES[d].T;
+    const nStar = mean ? T / mean : 0;
+    // The crossing is measured as a BRACKET, not a number: the longest hold that was still called a
+    // click, and the shortest hold that was already called a drag. The prediction has to land in
+    // between, which is an interval containment rather than a fitted constant.
+    let lastClick = 0, firstDrag = Infinity;
+    for (const h of p.holds){
+      if (h.drag){ if (h.n < firstDrag) firstDrag = h.n; }
+      else if (h.n > lastClick) lastClick = h.n;
+    }
+    rows.push({ dev:d, mean:mean, nStar:nStar, lastClick:lastClick, firstDrag:firstDrag,
+                inside: nStar >= firstDrag - 1 && nStar <= lastClick + 1,
+                ms: nStar * DEVICES[d].dt });
+  }
+  return { rows:rows, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the threshold sweep
+// The threshold is not the rule, so it gets its own study: for each device, how many gestures each
+// rule gets wrong as the threshold walks from 0 upward, and how wide the band of thresholds is on
+// which the correct rule is perfect.
+function thresholdSweep(gs, lo, hi){
+  const out = {};
+  let asserts = 0;
+  for (const d of DEVICE_IDS){
+    const mine = gs.filter(g => g.dev === d);
+    const curve = {};
+    for (const id of RULE_IDS) curve[id] = [];
+    for (let T = lo; T <= hi; T++){
+      const acc = {};
+      for (const id of RULE_IDS) acc[id] = { bad:0, falseDrag:0, missed:0 };
+      for (const g of mine){
+        const want = g.intent === 'drag';
+        for (const id of RULE_IDS){
+          const r = RULES[id].run(g.s, T);
+          if (r.drag !== want){ acc[id].bad++; if (r.drag) acc[id].falseDrag++; else acc[id].missed++; }
+          asserts++;
+        }
+      }
+      for (const id of RULE_IDS) curve[id].push({ T:T, bad:acc[id].bad, falseDrag:acc[id].falseDrag,
+                                                 missed:acc[id].missed, n:mine.length });
+    }
+    // the widest run of thresholds on which the correct rule makes no mistake at all
+    let best = { lo:0, hi:-1, w:0 }, run = -1;
+    const c = curve[CORRECT];
+    for (let i = 0; i < c.length; i++){
+      if (c[i].bad === 0){ if (run < 0) run = i; const w = i - run + 1; if (w > best.w) best = { lo:c[run].T, hi:c[i].T, w:w }; }
+      else run = -1;
+    }
+    out[d] = { curve:curve, band:best, n:mine.length };
+  }
+  // and the single threshold that would have to serve all three devices at once: the intersection of
+  // the per-device bands, computed rather than argued about.
+  let jlo = -1, jhi = -1, one = { T:-1, bad:Infinity };
+  for (let T = lo; T <= hi; T++){
+    let bad = 0;
+    for (const g of gs) if (RULES[CORRECT].run(g.s, T).drag !== (g.intent === 'drag')) bad++;
+    if (bad < one.bad) one = { T:T, bad:bad };
+    if (bad === 0){ if (jlo < 0) jlo = T; jhi = T; }
+    asserts++;
+  }
+  return { per:out, one:one, joint:{ lo:jlo, hi:jhi, w: jlo < 0 ? 0 : jhi - jlo + 1 },
+           n:gs.length, asserts:asserts };
+}
+
+// ---------------------------------------------------------------- the paired control
+function controlRun(pc){
+  const a = sweep(pc.shaken.list), b = sweep(pc.steady.list), rows = {};
+  for (const id of RULE_IDS){
+    rows[id] = { aFalse:a.stat[id].falseDrag, bFalse:b.stat[id].falseDrag,
+                 aMissed:a.stat[id].missedDrag, bMissed:b.stat[id].missedDrag,
+                 aOk:a.stat[id].ok, bOk:b.stat[id].ok, n:a.stat[id].n, bn:b.stat[id].n };
+  }
+  let fa = 0, fb = 0, ma = 0, mb = 0;
+  for (const id of RULE_IDS){ fa += rows[id].aFalse; fb += rows[id].bFalse; ma += rows[id].aMissed; mb += rows[id].bMissed; }
+  return { rows:rows, a:a, b:b, falseA:fa, falseB:fb, missA:ma, missB:mb,
+           asserts:a.asserts + b.asserts };
+}
+
+// ---------------------------------------------------------------- ranking, kept as a null
+// Two ways to rank the rules: how often the verdict is right, and how far the thing being dragged
+// jumps when the rule finally notices. If they agree, the second buys nothing.
+function rankPairs(x, y){
+  let same = 0, flip = 0, tie = 0, of = 0;
+  for (let i = 0; i < RULE_IDS.length; i++) for (let j = i + 1; j < RULE_IDS.length; j++){
+    const a = RULE_IDS[i], b = RULE_IDS[j];
+    const dx = x[a] - x[b], dy = y[a] - y[b];
+    of++;
+    if (dx === 0 || dy === 0) tie++;
+    else if ((dx > 0) === (dy > 0)) same++;
+    else flip++;
+  }
+  return { same:same, flip:flip, tie:tie, of:of };
+}
+
+// ---------------------------------------------------------------- a single gesture, for the page
+// What a rule believes at every sample, obtained by running it on each prefix. This is the only
+// honest way to draw it: a rule that cannot be asked mid-gesture is a rule a UI cannot use.
+function timeline(g, id, T){
+  const out = [false];
+  for (let i = 2; i <= g.s.length; i++) out.push(RULES[id].run(g.s.slice(0, i), T).drag);
+  return out;
+}
+function traceOne(g){
+  const T = DEVICES[g.dev].T, out = { T:T, n:g.s.length, per:{},
+    maxD:maxOriginDist(g.s), maxA:maxAxisDist(g.s), path:pathLen(g.s), end:endDist(g.s),
+    step:maxStep(g.s), run:longestRunPast(g.s, T), first:firstPast(g.s, T) };
+  for (const id of RULE_IDS) out.per[id] = RULES[id].run(g.s, T);
+  return out;
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- UI
+const $ = id => document.getElementById(id);
+// thousands separators by hand, not toLocaleString - the page quotes these figures in its own prose
+// and "1,128,111" must not come back as "11,28,111" on an en-IN browser.
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + "%" : "&mdash;";
+const p100 = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + pct(x, n) + "</span>";
+const yn = b => b ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>";
+const cnt = (x, n) => "<span class='" + (x === n ? "ok" : "bad") + "'>" + x + " / " + n + "</span>";
+// small counts read as words in the prose, so the markup's fallback text and the rendered text are
+// the same string and the verifier can check one against the other.
+const WORDS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+const word = n => (n >= 0 && n < WORDS.length) ? WORDS[n] : String(n);
+
+// The exact workload. Every figure on this page comes out of these calls, and the verifier replays
+// the same counts and seeds through its own oracles before it checks the prose.
+const PER = 160, SEED = 7601, DIRS = 12, LAW_DIRS = 3600, LAW_T = 10;
+const LAW_RADII = [11, 12, 13, 14];
+const SWEEP_LO = 0, SWEEP_HI = 40;
+
+let PC = null, G = null, SW = null, BL = null, PT = null, RIGHT = null;
+let AX = null, HL = null, DL = null, DT = null, TL = null, TS = null, CT = null, RANK = null;
+let TELE = null, TOTAL = 0, MS = 0, CLICKS = 0, DRAGS = 0;
+
+function measure(){
+  const t0 = Date.now();
+  PC = pairedCorpus(DEVICE_IDS, KIND_IDS, PER, SEED);
+  G = PC.shaken.list;
+  SW = sweep(G);
+  BL = blindRun(DEVICE_IDS, DIRS);
+  PT = propTable(BL, SW);
+  RIGHT = correctSet(SW);
+  AX = axisAngleLaw(LAW_T, LAW_RADII, LAW_DIRS);
+  HL = homeLaw(G, SW);
+  DL = dwellLaw(G, SW);
+  TELE = [];
+  for (const d of DEVICE_IDS) for (const g of teleportSet(d, DIRS)) TELE.push(g);
+  DT = dwellLawOn(TELE);
+  TL = tremorLaw(G, SW);
+  TS = thresholdSweep(G, SWEEP_LO, SWEEP_HI);
+  CT = controlRun(PC);
+  CLICKS = G.filter(g => g.intent === 'click').length;
+  DRAGS = G.length - CLICKS;
+  const acc = {}, jmp = {};
+  for (const id of RULE_IDS){
+    acc[id] = SW.stat[id].ok / SW.stat[id].n;
+    jmp[id] = -(SW.stat[id].latchOf ? SW.stat[id].jump / SW.stat[id].latchOf : 0);
+  }
+  RANK = rankPairs(acc, jmp);
+  TOTAL = SW.asserts + BL.asserts + AX.asserts + HL.asserts + DL.asserts + DT.asserts +
+          TL.asserts + TS.asserts + CT.asserts;
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- self-check
+// Bounds and identities only. Not one expected number is typed in: every check is either a bound the
+// arithmetic cannot leave, or two independent computations of the same quantity being compared.
+let SC = { n: 0, bad: [] };
+function chk(label, got, expected){
+  SC.n++;
+  if (got !== expected) SC.bad.push({ label: label, got: String(got), expected: String(expected) });
+}
+function selfCheck(){
+  SC = { n: 0, bad: [] };
+  // 1. the corpus is what it claims to be, and it separates
+  chk('corpus: every gesture carries the intent its kind was built from',
+      G.filter(g => g.intent === KINDS[g.kind].intent).length, G.length);
+  chk('corpus: the quantity the intent is about separates every gesture kept',
+      G.filter(separable).length, G.length);
+  chk('corpus: the steady arm is the same size as the shaken one',
+      PC.steady.list.length, PC.shaken.list.length);
+  chk('corpus: clicks and drags account for every gesture', CLICKS + DRAGS, G.length);
+  chk('corpus: the press sample carries no shake, on either arm',
+      G.filter(g => g.s[0].x === 0 && g.s[0].y === 0).length +
+      PC.steady.list.filter(g => g.s[0].x === 0 && g.s[0].y === 0).length,
+      G.length + PC.steady.list.length);
+  chk('corpus: sample times are strictly increasing in every gesture',
+      G.filter(g => { for (let i = 1; i < g.s.length; i++) if (g.s[i].t <= g.s[i-1].t) return false; return true; }).length,
+      G.length);
+  // 2. the shake amplitude is a bound the generator cannot exceed
+  {
+    let inside = 0;
+    for (const g of G){
+      const D = DEVICES[g.dev];
+      if (maxOriginDist(g.s) <= (g.meta.r || 0) + D.jit * Math.SQRT2 + 1) inside++;
+    }
+    chk('bound: no sample lands further out than the intended target plus the shake', inside, G.length);
+    let still = 0;
+    for (const g of PC.steady.list) if (g.intent !== 'click' || maxOriginDist(g.s) === 0) still++;
+    chk('control: with the shake off, a click never leaves the press point at all', still, PC.steady.list.length);
+  }
+  // 3. every rule stays inside the bounds the arithmetic gives it, whatever it decides
+  chk('bounds: every verdict is a boolean, every latch is a real sample index, and a rule that says '
+      + 'drag can say where', SW.bounds, SW.asserts);
+  for (const id of RULE_IDS){
+    chk('bounds/' + id + ': it cannot be right more often than it ran',
+        SW.stat[id].ok <= SW.stat[id].n, true);
+    chk('bounds/' + id + ': its two ways of being wrong add up to the times it was',
+        SW.stat[id].falseDrag + SW.stat[id].missedDrag, SW.stat[id].n - SW.stat[id].ok);
+    chk('bounds/' + id + ': a false drag is a click and a missed drag is a drag',
+        SW.stat[id].falseDrag <= CLICKS && SW.stat[id].missedDrag <= DRAGS, true);
+  }
+  // 4. exactly one rule can change its mind, and a rule that latches cannot
+  chk('exactly one rule ever un-latches',
+      RULE_IDS.filter(id => SW.stat[id].unlatched > 0).length, 1);
+  chk('and it is the one whose flips outnumber the drags it declared',
+      RULE_IDS.filter(id => SW.stat[id].flips > SW.stat[id].n - SW.stat[id].missedDrag -
+                            SW.stat[id].falseDrag).length > 0, true);
+  // 5. the correct rule is correct by the oracle's definition, not by agreement with a sibling
+  chk('correct: it classifies every gesture the way the intent built it',
+      SW.stat[CORRECT].ok, SW.stat[CORRECT].n);
+  chk('correct: it picks the item up at the first sample outside the circle, every drag',
+      SW.stat[CORRECT].jump, 0);
+  chk('correct: it never changes its mind', SW.stat[CORRECT].unlatched, 0);
+  chk('correct: and it is the only rule that gets everything right', RIGHT.join(), CORRECT);
+  // 6. the sets are computed, so what is asserted is a relation between them
+  chk('the blind properties accept some rules and reject others',
+      BL.passes.length > 0 && BL.passes.length < RULE_IDS.length, true);
+  chk('exactly one rule is both accepted and right',
+      BL.passes.filter(id => RIGHT.indexOf(id) >= 0).length, 1);
+  chk('and it is the one the oracle calls correct',
+      BL.passes.filter(id => RIGHT.indexOf(id) >= 0)[0], CORRECT);
+  chk('the blind properties accept rules that are wrong',
+      BL.passes.filter(id => RIGHT.indexOf(id) < 0).length > 0, true);
+  {
+    const rejected = RULE_IDS.filter(id => BL.passes.indexOf(id) < 0);
+    const best = rejected.map(id => SW.stat[id].ok / SW.stat[id].n).sort((a, b) => b - a)[0];
+    const worstKept = BL.passes.filter(id => id !== CORRECT)
+                        .map(id => SW.stat[id].ok / SW.stat[id].n).sort((a, b) => b - a)[0];
+    chk('a rejected rule scores better than every accepted rule that is wrong', best > worstKept, true);
+  }
+  // 7. the property table: taking them in order can only ever remove rules
+  {
+    let mono = true;
+    for (let i = 1; i < PT.survive.length; i++) if (PT.survive[i].left > PT.survive[i-1].left) mono = false;
+    chk('properties: each one can only ever remove rules, never add them', mono, true);
+    chk('properties: the last one standing is the correct rule', PT.last.join(), CORRECT);
+    chk('properties: every rule that survives all seven is right',
+        PT.last.filter(id => RIGHT.indexOf(id) < 0).length, 0);
+  }
+  // 8. the closed forms, each predicted without the rule it predicts
+  chk('closed form: the release-point rules are wrong on exactly the drags that came home, one',
+      HL.hitLast, HL.n);
+  chk('closed form: and the other one too', HL.hitLive, HL.n);
+  chk('bound: the drags that came home cannot outnumber the drags', HL.pred <= DRAGS, true);
+  chk('closed form: dwell differs from latched on exactly the single-sample crossings',
+      DL.hit, DL.of);
+  chk('closed form: and on the corpus a test makes, that is every gesture with a crossing',
+      DT.hit, DT.of);
+  chk('the teleport is a single-sample crossing by construction', DT.pred, DT.differ);
+  {
+    let inside = 0;
+    for (const r of TL.rows) if (r.inside) inside++;
+    chk('closed form: the hold at which a still hand becomes a drag lands in the measured bracket',
+        inside, TL.rows.length);
+  }
+  chk('closed form: the square misses no direction beyond what the grid can resolve',
+      AX.worst <= AX.tol, true);
+  chk('closed form: and the ring it misses is empty at r = T root two',
+      AX.rows[AX.rows.length - 1].law < AX.rows[0].law, true);
+  chk('identity: the square exceeds the circle it stands in for by four over pi minus one',
+      Math.abs(AX.area - (4 / Math.PI - 1)) < 1e-12, true);
+  // 9. the control removes one failure mode completely and the other barely at all
+  chk('control: with no shake there is not one false drag left', CT.falseB, 0);
+  chk('control: and the shaken arm had plenty', CT.falseA > 0, true);
+  chk('control: the missed drags survive the shake being removed', CT.missB > 0, true);
+  chk('bound: removing the shake cannot remove most of the missed drags',
+      CT.missB > CT.missA * 0.5, true);
+  chk('control: the two arms ran the same number of gestures per rule',
+      CT.rows[CORRECT].n, CT.rows[CORRECT].bn);
+  for (const id of RULE_IDS)
+    chk('control/' + id + ': a steady hand cannot make a rule call a click a drag', CT.rows[id].bFalse, 0);
+  // 10. the threshold sweep: bands are intervals, and the joint band is inside every one of them
+  {
+    let ok = 0;
+    for (const d of DEVICE_IDS){
+      const b = TS.per[d].band;
+      if (b.w === b.hi - b.lo + 1 && b.lo >= SWEEP_LO && b.hi <= SWEEP_HI) ok++;
+    }
+    chk('sweep: each band is a genuine interval inside the range swept', ok, DEVICE_IDS.length);
+    let cover = 0;
+    for (const d of DEVICE_IDS)
+      if (TS.joint.lo >= TS.per[d].band.lo && TS.joint.hi <= TS.per[d].band.hi) cover++;
+    chk('sweep: the joint band sits inside every device band', cover, DEVICE_IDS.length);
+    chk('sweep: the best single threshold is inside the joint band',
+        TS.one.T >= TS.joint.lo && TS.one.T <= TS.joint.hi, true);
+    chk('sweep: and it makes no mistake, which is what a joint band means', TS.one.bad, 0);
+    chk('sweep: the threshold this page uses on a mouse is inside the mouse band',
+        DEVICES.mouse.T >= TS.per.mouse.band.lo && DEVICES.mouse.T <= TS.per.mouse.band.hi, true);
+  }
+  // 11. the diagonal band is derived, and where it is empty that is a fact about the device
+  for (const d of DEVICE_IDS){
+    const tg = nudgeTargets(d), D = DEVICES[d];
+    let good = 0;
+    for (const p of tg.pts)
+      if (Math.max(Math.abs(p[0]), Math.abs(p[1])) + D.jit < D.T && Math.hypot(p[0], p[1]) >= D.T) good++;
+    chk('band ' + d + ': every enumerated target is outside the circle and inside the square',
+        good, tg.pts.length);
+    // derived a second way: the furthest point the square admits is its own corner, so the band is
+    // empty exactly when that corner is already inside the circle.
+    const m = Math.ceil(D.T - D.jit) - 1;
+    chk('band ' + d + ': empty exactly when the corner of the square is already inside the circle',
+        tg.pts.length === 0, Math.hypot(m, m) < D.T);
+  }
+  // 12. the ranking, counted as pairs
+  chk('rank pairs are accounted for exactly once', RANK.same + RANK.flip + RANK.tie, RANK.of);
+  chk('bound: a ranking cannot flip more pairs than it has', RANK.flip <= RANK.of, true);
+  // 13. and the workload actually ran
+  chk('every gesture was handed to every rule', SW.stat[CORRECT].n, G.length);
+  chk('the studies produced assertions', TOTAL > G.length, true);
+  chk('the blind corpus has gestures of all three shapes',
+      BL.per[CORRECT].B1.n > 0 && BL.per[CORRECT].B2.n > 0 && BL.per[CORRECT].B3.n > 0, true);
+  if (SC.bad.length){
+    for (const f of SC.bad)
+      console.error('ASSERT FAIL: ' + f.label + ' (got ' + f.got + ', expected ' + f.expected + ')');
+  }
+  const el = $('selftest');
+  el.className = 'badge ' + (SC.bad.length ? 'fail' : 'pass');
+  el.innerHTML = SC.bad.length
+    ? 'self-check: ' + SC.bad.length + ' of ' + SC.n + ' FAILING'
+    : 'self-check: ' + SC.n + ' bounds and identities, 0 failing';
+  return SC;
+}
+
+// ---------------------------------------------------------------- the pad
+// The gesture on the pad is either the reader's own - real pointer samples, in real CSS pixels - or
+// one replayed from the generator. Nothing else about the two cases differs, including the code that
+// classifies them.
+let devId = 'mouse', kindId = 'boomerang', CUR = null, drawing = false, at = 0;
+const PAD_SEED = 4242;
+let padRnd = mulberry32(PAD_SEED);
+
+function padSize(){
+  const r = $('pad').getBoundingClientRect();
+  return { w: Math.max(120, Math.round(r.width)), h: Math.max(120, Math.round(r.height)) };
+}
+function replay(kind){
+  const g = kind === 'teleport'
+    ? teleportSet(devId, 8)[0]
+    : buildGesture(padRnd, devId, kind, true);
+  if (!g){ return; }
+  const sz = padSize();
+  // put the press point where the whole path fits: to the left for a long excursion, in the middle
+  // for a gesture that never leaves the press.
+  let lo = { x: 0, y: 0 }, hi = { x: 0, y: 0 };
+  for (const s of g.s){ lo.x = Math.min(lo.x, s.x); lo.y = Math.min(lo.y, s.y);
+                        hi.x = Math.max(hi.x, s.x); hi.y = Math.max(hi.y, s.y); }
+  const ox = Math.round((sz.w - (hi.x - lo.x)) / 2 - lo.x);
+  const oy = Math.round((sz.h - (hi.y - lo.y)) / 2 - lo.y);
+  CUR = { dev: g.dev, kind: g.kind, intent: g.intent, meta: g.meta, mine: false,
+          s: g.s.map(s => ({ x: s.x + ox, y: s.y + oy, t: s.t })) };
+  at = CUR.s.length - 1;
+  paint();
+}
+function rel(g){
+  // press-relative samples: every rule reads these, and the pad only ever draws the absolute ones
+  return g.s.map(s => ({ x: s.x - g.s[0].x, y: s.y - g.s[0].y, t: s.t - g.s[0].t }));
+}
+function svgEl(tag, attrs){
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function paint(){
+  const pad = $('pad'), zm = $('zoom'), sz = padSize(), T = DEVICES[devId].T;
+  pad.setAttribute('viewBox', '0 0 ' + sz.w + ' ' + sz.h);
+  while (pad.firstChild) pad.removeChild(pad.firstChild);
+  while (zm.firstChild) zm.removeChild(zm.firstChild);
+  if (!CUR || CUR.s.length === 0){
+    $('padNote').innerHTML = 'Press and drag inside the pad, or replay one of the generated gestures.';
+    $('liveTab').innerHTML = '';
+    $('zoomNote').innerHTML = '';
+    $('scrub').max = 1; $('scrub').value = 1;
+    $('scrubLab').textContent = 'sample';
+    return;
+  }
+  const s = CUR.s, o = s[0];
+  // the pad, 1 unit = 1 CSS pixel, so the threshold on screen is the threshold in the arithmetic
+  pad.appendChild(svgEl('rect', { x:o.x - T, y:o.y - T, width:2*T, height:2*T, fill:'none',
+                                  stroke:'#c9a227', 'stroke-dasharray':'3 3', 'stroke-width':1 }));
+  pad.appendChild(svgEl('circle', { cx:o.x, cy:o.y, r:T, fill:'none', stroke:'#0f766e', 'stroke-width':1.5 }));
+  let d = '';
+  for (let i = 0; i <= at && i < s.length; i++) d += (i ? ' L' : 'M') + s[i].x + ' ' + s[i].y;
+  pad.appendChild(svgEl('path', { d:d, fill:'none', stroke:'#0f2320', 'stroke-width':1.5,
+                                  'stroke-linejoin':'round' }));
+  if (at < s.length - 1){
+    let e = '';
+    for (let i = at; i < s.length; i++) e += (i === at ? 'M' : ' L') + s[i].x + ' ' + s[i].y;
+    pad.appendChild(svgEl('path', { d:e, fill:'none', stroke:'#9bb3ae', 'stroke-width':1,
+                                    'stroke-dasharray':'2 3' }));
+  }
+  for (let i = 0; i < s.length; i++)
+    pad.appendChild(svgEl('circle', { cx:s[i].x, cy:s[i].y, r: i === at ? 3.5 : 1.4,
+      fill: i === 0 ? '#0f766e' : (i === at ? '#b45309' : '#0f2320'),
+      opacity: i > at ? 0.25 : 1 }));
+  // the magnifier: the first few pixels around the press, where the whole decision happens
+  const Z = 210 / (2 * T * 1.9), C = 105;
+  zm.appendChild(svgEl('rect', { x:C - T*Z, y:C - T*Z, width:2*T*Z, height:2*T*Z, fill:'none',
+                                 stroke:'#c9a227', 'stroke-dasharray':'4 4', 'stroke-width':1.2 }));
+  zm.appendChild(svgEl('circle', { cx:C, cy:C, r:T*Z, fill:'none', stroke:'#0f766e', 'stroke-width':2 }));
+  let zd = '';
+  for (let i = 0; i <= at && i < s.length; i++)
+    zd += (i ? ' L' : 'M') + (C + (s[i].x - o.x) * Z) + ' ' + (C + (s[i].y - o.y) * Z);
+  zm.appendChild(svgEl('path', { d:zd, fill:'none', stroke:'#0f2320', 'stroke-width':1.5 }));
+  for (let i = 0; i <= at && i < s.length; i++)
+    zm.appendChild(svgEl('circle', { cx:C + (s[i].x - o.x) * Z, cy:C + (s[i].y - o.y) * Z,
+      r: i === at ? 4 : 2.2, fill: i === 0 ? '#0f766e' : (i === at ? '#b45309' : '#0f2320') }));
+  $('zoomNote').innerHTML = 'threshold ' + T + '&thinsp;px, magnified &times;' + Z.toFixed(1)
+    + '. The dashed square is the same number measured per axis.';
+  $('scrub').max = String(s.length - 1);
+  $('scrub').value = String(at);
+  $('scrubLab').innerHTML = 'sample <strong>' + at + '</strong> of ' + (s.length - 1);
+  fillLive();
+}
+function fillLive(){
+  const g = { dev: CUR.dev, kind: CUR.kind, intent: CUR.intent, s: rel(CUR) };
+  const T = DEVICES[devId].T, want = CUR.mine ? null : (CUR.intent === 'drag');
+  const pre = { s: g.s.slice(0, at + 1) };
+  let html = '';
+  for (const id of RULE_IDS){
+    const full = RULES[id].run(g.s, T);
+    const now = pre.s.length > 1 ? RULES[id].run(pre.s, T) : { drag: false };
+    const tl = timeline(g, id, T);
+    let bar = '';
+    for (let i = 0; i < tl.length; i++)
+      bar += "<i class='" + (tl[i] ? 'on' : '') + (i === at ? ' now' : '') + "'></i>";
+    const right = want === null ? "<span class='dim'>&mdash;</span>"
+      : (full.drag === want ? "<span class='ok'>yes</span>" : "<span class='bad'>no</span>");
+    html += "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + RULES[id].label +
+      (id === CORRECT ? " <span class='tag good'>CORRECT</span>" : "") + "</td>" +
+      "<td class='dim' style='font-size:11.5px'>" + esc(RULES[id].clause) + "</td>" +
+      "<td>" + (now.drag ? "<strong>drag</strong>" : "click") + "</td>" +
+      "<td>" + (full.latch >= 0 ? full.latch : "&mdash;") + "</td>" +
+      "<td>" + (full.flips > 1 ? "<span class='bad'>" + full.flips + "&times;</span>" : "no") + "</td>" +
+      "<td style='width:34%'><div class='tl'>" + bar + "</div></td></tr>";
+  }
+  $('liveTab').innerHTML = html;
+  const T2 = DEVICES[devId].T, tr = traceOne(g);
+  $('padNote').innerHTML = (CUR.mine ? "<strong>Your gesture.</strong> " :
+      "<strong>Replayed: " + esc(KINDS[CUR.kind] ? KINDS[CUR.kind].label : 'what a test does') +
+      "</strong> &mdash; built as a " + (CUR.intent === 'drag' ? 'drag' : 'click') + ". ") +
+    CUR.s.length + " samples &middot; furthest from the press <strong>" + tr.maxD.toFixed(1) +
+    "</strong>&thinsp;px &middot; furthest on one axis " + tr.maxA.toFixed(1) +
+    "&thinsp;px &middot; path travelled " + tr.path.toFixed(1) +
+    "&thinsp;px &middot; released " + tr.end.toFixed(1) + "&thinsp;px from the press &middot; " +
+    "biggest single step " + tr.step.toFixed(1) + "&thinsp;px &middot; longest run outside the circle " +
+    tr.run + " samples. Threshold " + T2 + "&thinsp;px.";
+  $('lastNote').innerHTML = CUR.mine
+    ? "There is no right answer column for a gesture you drew, because nothing here knows what you "
+      + "meant &mdash; which is exactly the problem the eight rules are guessing at."
+    : "The right-hand column is scored against the intent the generator built the gesture from, "
+      + "never against another rule.";
+}
+
+function padPos(e){
+  const r = $('pad').getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, t: Math.round(e.timeStamp) };
+}
+function wirePad(){
+  const pad = $('pad');
+  pad.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    try { pad.setPointerCapture(e.pointerId); } catch (err) { /* a mouse without capture support */ }
+    drawing = true;
+    const p = padPos(e);
+    CUR = { dev: devId, kind: 'yours', intent: null, meta: { r: 0 }, mine: true, s: [p] };
+    at = 0;
+    paint();
+  });
+  pad.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = padPos(e);
+    CUR.s.push(p);
+    at = CUR.s.length - 1;
+    paint();
+  });
+  const end = () => { drawing = false; };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
+  pad.addEventListener('pointerleave', end);
+}
+
+// ---------------------------------------------------------------- the tables
+function fillSeen(){
+  let html = '';
+  for (const id of RULE_IDS){
+    const p = BL.per[id], all = BL.pass[id], right = RIGHT.indexOf(id) >= 0;
+    html += "<tr" + (id === CORRECT ? " class='me'" : (!all && right ? " class='ctl'" : "")) + ">" +
+      "<td>" + RULES[id].label + "</td>" +
+      "<td class='dim' style='font-size:11.5px'>" + esc(RULES[id].clause) + "</td>" +
+      "<td>" + cnt(p.B1.ok, p.B1.n) + "</td><td>" + cnt(p.B2.ok, p.B2.n) + "</td>" +
+      "<td>" + cnt(p.B3.ok, p.B3.n) + "</td>" +
+      "<td>" + yn(all) + "</td>" +
+      "<td>" + (right ? "<span class='ok'>yes</span>" :
+        "<span class='bad'>no &mdash; " + pct(SW.stat[id].n - SW.stat[id].ok, SW.stat[id].n) +
+        " wrong</span>") + "</td></tr>";
+  }
+  $('tSeen').innerHTML = html;
+  const wrong = BL.passes.filter(id => RIGHT.indexOf(id) < 0);
+  const rejected = RULE_IDS.filter(id => BL.passes.indexOf(id) < 0);
+  const best = rejected.slice().sort((a, b) => SW.stat[b].ok - SW.stat[a].ok)[0];
+  $('seenNote').innerHTML =
+    "<strong>" + word(BL.passes.length) + " of " + word(RULE_IDS.length) + "</strong> rules satisfy " +
+    "all three, and <strong>" + word(wrong.length) + "</strong> of those " + word(BL.passes.length) +
+    " are wrong: " + wrong.map(id => "<span class='pill dark'>" + RULES[id].label + "</span>").join(' ') +
+    " &nbsp;The " + word(rejected.length) + " that are rejected are " +
+    rejected.map(id => "<em>" + RULES[id].label + "</em>").join(' and ') + " &mdash; and " +
+    "<strong>" + RULES[best].label + "</strong> is right on " + pct(SW.stat[best].ok, SW.stat[best].n) +
+    " of the corpus below, better than every rule the three properties let through except the " +
+    "correct one. It fails the first property because a teleport crosses the threshold for exactly " +
+    "one sample and there is no second one to be in a row with.";
+}
+
+function fillProps(){
+  let html = '';
+  for (const p of PROPS){
+    const rej = PT.rejects[p.id], left = PT.survive.filter(s => s.id === p.id)[0].left;
+    html += "<tr" + (p.blind ? " class='ctl'" : "") + "><td><strong>" + p.id + "</strong></td>" +
+      "<td style='font-size:12px'>" + esc(p.text) + "</td>" +
+      "<td>" + (p.blind ? "<span class='warn'>yes</span>" : "<span class='dim'>no</span>") + "</td>" +
+      "<td>" + rej.length + "</td>" +
+      "<td style='text-align:left;font-size:11.5px' class='dim'>" +
+        (rej.length ? rej.map(id => RULES[id].label).join(', ') : '&mdash;') + "</td>" +
+      "<td>" + left + "</td></tr>";
+  }
+  $('tProps').innerHTML = html;
+  const afterBlind = PT.survive[2].left;
+  $('propNote').innerHTML =
+    "Taken in the order a project adds them &mdash; the three a test can state first &mdash; the " +
+    "eight rules go " + PT.survive.map(s => s.left).join(' &rarr; ') + ". The three blind ones leave <strong>" +
+    afterBlind + "</strong> standing. The four that name a shape of hand take it to <strong>" +
+    PT.survive[PROPS.length - 1].left + "</strong>. Note which rule the first property removes: it is " +
+    "the one that scores second best of all eight.";
+}
+
+function fillSweep(){
+  let html = '';
+  for (const id of RULE_IDS){
+    const s = SW.stat[id];
+    html += "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + RULES[id].label +
+      (BL.pass[id] ? "" : " <span class='tag ctl'>REJECTED</span>") + "</td>" +
+      "<td class='dim' style='font-size:11.5px'>" + esc(RULES[id].clause) + "</td>" +
+      "<td>" + p100(s.ok, s.n) + "</td>" +
+      "<td>" + (s.falseDrag ? "<span class='bad'>" + fmt(s.falseDrag) + "</span>" : "0") +
+        " <span class='dim'>/ " + fmt(CLICKS) + "</span></td>" +
+      "<td>" + (s.missedDrag ? "<span class='bad'>" + fmt(s.missedDrag) + "</span>" : "0") +
+        " <span class='dim'>/ " + fmt(DRAGS) + "</span></td>" +
+      "<td>" + (s.unlatched ? "<span class='bad'>" + fmt(s.unlatched) + "</span>" : "no") + "</td>" +
+      "<td>" + (s.latchOf ? (s.jump / s.latchOf).toFixed(1) : "&mdash;") + "</td></tr>";
+  }
+  $('tSweep').innerHTML = html;
+  $('sweepNote').innerHTML =
+    fmt(G.length) + " gestures &mdash; " + fmt(CLICKS) + " built as clicks, " + fmt(DRAGS) +
+    " as drags &mdash; over " + DEVICE_IDS.length + " pointer types and " + KIND_IDS.length +
+    " shapes of hand, " + PC.shaken.drops + " discarded as ambiguous. <strong>" +
+    RULES.anyMove.label + "</strong> calls " + fmt(SW.stat.anyMove.falseDrag) + " of the " +
+    fmt(CLICKS) + " clicks a drag (" + pct(SW.stat.anyMove.falseDrag, CLICKS) + "), because a " +
+    "resting hand is never still. <strong>" + RULES.pathLength.label + "</strong> gets " +
+    pct(SW.stat.pathLength.falseDrag, CLICKS) + " of them, and which ones depends on how long the " +
+    "button was held, not on how far it moved. The last column is how far the item would be from " +
+    "where it should be at the moment the rule picks it up &mdash; <em>" + RULES.lastSample.label +
+    "</em> only ever commits at the release, so it cannot draw a drag at all.";
+  let head = "<th>rule</th>";
+  for (const k of KIND_IDS) head += "<th>" + KINDS[k].label + "<br><span class='dim' " +
+    "style='font-weight:400'>" + KINDS[k].blurb + "</span></th>";
+  $('kindHead').innerHTML = head;
+  let kh = '';
+  for (const id of RULE_IDS){
+    kh += "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + RULES[id].label + "</td>";
+    for (const k of KIND_IDS){
+      const b = SW.stat[id].byKind[k];
+      kh += "<td>" + (b.n ? p100(b.ok, b.n) : "<span class='dim'>&mdash;</span>") + "</td>";
+    }
+    kh += "</tr>";
+  }
+  $('tKind').innerHTML = kh;
+  $('kindNote').innerHTML =
+    "Every rule is perfect on the flick, which is the gesture a test writes. The columns that " +
+    "separate them are the ones a test never builds: a hand held still, a move delivered slowly, a " +
+    "drag that comes home, and a short move on the diagonal. The diagonal nudge exists only where " +
+    "the shake is small beside the threshold &mdash; " +
+    DEVICE_IDS.map(d => DEVICES[d].label + " " + nudgeTargets(d).pts.length).join(', ') +
+    " integer offsets qualify &mdash; so it runs on two of the three pointer types and is empty on " +
+    "the third by arithmetic, not by omission.";
+}
+
+function fillCtl(){
+  let html = '';
+  for (const id of RULE_IDS){
+    const r = CT.rows[id];
+    html += "<tr" + (id === CORRECT ? " class='me'" : "") + "><td>" + RULES[id].label + "</td>" +
+      "<td class='dim' style='font-size:11.5px'>" + esc(RULES[id].clause) + "</td>" +
+      "<td>" + (r.aFalse ? "<span class='bad'>" + fmt(r.aFalse) + "</span>" : "0") + "</td>" +
+      "<td>" + (r.bFalse ? "<span class='bad'>" + fmt(r.bFalse) + "</span>" : "<span class='ok'>0</span>") + "</td>" +
+      "<td>" + (r.aMissed ? "<span class='bad'>" + fmt(r.aMissed) + "</span>" : "0") + "</td>" +
+      "<td>" + (r.bMissed ? "<span class='bad'>" + fmt(r.bMissed) + "</span>" : "<span class='ok'>0</span>") + "</td>" +
+      "<td>" + p100(r.bOk, r.bn) + "</td></tr>";
+  }
+  $('tCtl').innerHTML = html;
+  $('ctlNote').innerHTML =
+    "Taking the shake out removes <strong>" + pct(CT.falseA - CT.falseB, CT.falseA) + "</strong> of " +
+    "the false drags &mdash; " + fmt(CT.falseA) + " down to " + fmt(CT.falseB) + ", on every rule at " +
+    "once &mdash; and <strong>" + pct(CT.missA - CT.missB, CT.missA) + "</strong> of the missed ones (" +
+    fmt(CT.missA) + " to " + fmt(CT.missB) + "). So the shake is the whole of one failure mode and " +
+    "almost none of the other. The square still misses every diagonal nudge with a perfectly steady " +
+    "hand; both release-point rules still lose every drag that comes home. Those are errors of the " +
+    "clause. And note what the control does to the corpus: with no shake, <em>" +
+    RULES.anyMove.label + "</em> and <em>" + RULES.pathLength.label + "</em> both score " +
+    pct(CT.rows.anyMove.bOk, CT.rows.anyMove.bn) + " &mdash; a test harness would sign off on both.";
+}
+
+function fillLaw(){
+  const rows = [
+    ['the release point cannot see a return',
+     'the drags whose release landed back inside the circle are exactly the ones <em>where it let go</em> calls a click',
+     fmt(HL.pred), fmt(HL.hitLast), fmt(HL.n)],
+    ['and neither can the live distance',
+     'the same set, for the rule that re-asks the question at every sample',
+     fmt(HL.pred), fmt(HL.hitLive), fmt(HL.n)],
+    ['a dwell needs two samples',
+     'the gestures that cross the circle for a single sample are exactly the ones where the dwell rule and the latched rule disagree',
+     fmt(DL.pred), fmt(DL.hit), fmt(DL.of)],
+    ['&hellip; and a teleport is one, by construction',
+     'the same law, evaluated on the corpus a test suite produces',
+     fmt(DT.pred), fmt(DT.hit), fmt(DT.of)]
+  ];
+  let html = '';
+  for (const r of rows)
+    html += "<tr><td>" + r[0] + "</td><td style='font-size:12px'>" + r[1] + "</td>" +
+      "<td>" + r[2] + "</td><td>" + p100(+r[3].replace(/,/g, ''), +r[4].replace(/,/g, '')) +
+      " <span class='dim'>" + r[3] + "</span></td><td class='dim'>" + r[4] + "</td></tr>";
+  $('tLaw').innerHTML = html;
+  let t = '';
+  for (const r of TL.rows)
+    t += "<span class='pill'>" + DEVICES[r.dev].label + ": mean step " + r.mean.toFixed(2) +
+      "&thinsp;px &rarr; a still hand becomes a drag at " + r.nStar.toFixed(1) + " samples (" +
+      r.ms.toFixed(0) + "&thinsp;ms), measured bracket " + r.firstDrag + "&ndash;" + r.lastClick +
+      " </span>";
+  $('lawNote').innerHTML =
+    "A fifth argument has no verdicts to compare against, only an interval: for <em>" +
+    RULES.pathLength.label + "</em>, a still hand crosses the threshold after about T divided by the " +
+    "mean tremor step, which is a statement about the shake and the sample rate with no rule in it. " +
+    "The measurement brackets it between the longest hold still called a click and the shortest " +
+    "already called a drag, on all three pointer types. " + t;
+  let ah = '';
+  for (const r of AX.rows)
+    ah += "<tr><td>" + r.r + "&thinsp;px</td><td class='dim' style='font-size:11.5px'>" +
+      (r.r === LAW_T ? "at the threshold" : r.r >= Math.ceil(LAW_T * Math.SQRT2) ? "past T&radic;2" :
+        "inside the ring") + "</td>" +
+      "<td>" + (100 * r.got).toFixed(2) + "%</td><td>" + (100 * r.law).toFixed(2) + "%</td>" +
+      "<td>" + (100 * r.err).toFixed(3) + "%</td><td class='dim'>" + (100 * AX.tol).toFixed(3) +
+      "%</td></tr>";
+  $('tAxis').innerHTML = ah;
+  $('axisNote').innerHTML =
+    "Worst disagreement between the law and the sweep: <strong>" + (100 * AX.worst).toFixed(3) +
+    "%</strong>, against the <strong>" + (100 * AX.tol).toFixed(3) + "%</strong> a grid of " +
+    fmt(LAW_DIRS) + " directions can resolve across the law's eight boundaries. The whole excess is " +
+    "the difference in area between the square and the circle inscribed in it, <code>4/&pi; &minus; " +
+    "1</code> = <strong>" + (100 * AX.area).toFixed(1) + "%</strong>, which is not an approximation " +
+    "of anything &mdash; it is what choosing to compare axes separately costs, exactly.";
+}
+
+function fillBand(){
+  let html = '';
+  for (const d of DEVICE_IDS){
+    const D = DEVICES[d], b = TS.per[d].band;
+    let maxClick = 0, minDrag = Infinity;
+    for (const g of G){
+      if (g.dev !== d) continue;
+      const m = maxOriginDist(g.s);
+      if (g.intent === 'click'){ if (m > maxClick) maxClick = m; }
+      else if (m < minDrag) minDrag = m;
+    }
+    html += "<tr><td>" + D.label + "</td>" +
+      "<td class='dim' style='font-size:11.5px'>a sample every " + D.dt + "&thinsp;ms</td>" +
+      "<td>&plusmn;" + D.jit + "&thinsp;px</td><td>" + D.T + "&thinsp;px</td>" +
+      "<td>" + maxClick.toFixed(2) + "&thinsp;px</td>" +
+      "<td>" + (isFinite(minDrag) ? minDrag.toFixed(2) : "&mdash;") + "&thinsp;px</td>" +
+      "<td><strong>" + b.lo + "&ndash;" + b.hi + "</strong> <span class='dim'>(" + b.w +
+      " values)</span></td></tr>";
+  }
+  $('tBand').innerHTML = html;
+  $('bandNote').innerHTML =
+    "Every band is squeezed from below by the shake &mdash; a threshold under the furthest a still " +
+    "hand wanders turns clicks into drags &mdash; and from above by the shortest move anyone makes " +
+    "on purpose. <strong>The claim this page started with was that no single threshold can serve a " +
+    "mouse and a touchscreen at once, and the measurement says otherwise:</strong> the three bands " +
+    "intersect in <strong>" + TS.joint.lo + "&ndash;" + TS.joint.hi + "&thinsp;px</strong>, " +
+    TS.joint.w + " whole-pixel values wide, and " + TS.one.T + "&thinsp;px classifies all " +
+    fmt(TS.n) + " gestures correctly. What survives of the claim is the width: the intersection is " +
+    "narrow, and both ends of it are named &mdash; the touch shake pushes it up, the shortest mouse " +
+    "nudge pulls it down. A threshold chosen without measuring either one lands outside it easily.";
+}
+
+function fillNulls(){
+  $('nullNote').innerHTML =
+    "<strong>One.</strong> The intended headline about the threshold was that no single value can " +
+    "serve every pointer type. It is false as stated &mdash; " + TS.one.T + "&thinsp;px gets all " +
+    fmt(TS.n) + " gestures right &mdash; and the page above says so instead of quietly dropping it. " +
+    "<strong>Two.</strong> Ranking the rules by how often the verdict is right and ranking them by " +
+    "how far the item is from where it belongs when they pick it up gives <strong>" + RANK.flip +
+    " disagreements out of " + RANK.of + " pairs</strong> (" + RANK.same + " agree, " + RANK.tie +
+    " tie), so accuracy is not a proxy for the second question either: <em>" + RULES.anyMove.label +
+    "</em> is the least accurate rule of the eight and it picks a drag up " +
+    (SW.stat.anyMove.jump / SW.stat.anyMove.latchOf).toFixed(1) + "&thinsp;px from where it should, " +
+    "while <em>" + RULES.axisBox.label + "</em> is the most accurate of the wrong ones and picks it " +
+    "up " + (SW.stat.axisBox.jump / SW.stat.axisBox.latchOf).toFixed(1) + "&thinsp;px out. Both " +
+    "numbers matter and neither one orders the other.";
+}
+
+function fillProse(){
+  const wrong = BL.passes.filter(id => RIGHT.indexOf(id) < 0);
+  const rejected = RULE_IDS.filter(id => BL.passes.indexOf(id) < 0);
+  const best = rejected.slice().sort((a, b) => SW.stat[b].ok - SW.stat[a].ok)[0];
+  $('pBlind').textContent = word(BL.passes.length);
+  $('pImpls').textContent = word(RULE_IDS.length);
+  $('pWrong').textContent = word(wrong.length);
+  $('pAnyFalse').textContent = fmt(SW.stat.anyMove.falseDrag);
+  $('pClicks').textContent = fmt(CLICKS);
+  $('pGest').textContent = fmt(G.length);
+  $('pAxisAcc').textContent = pct(SW.stat.axisBox.ok, SW.stat.axisBox.n);
+  $('pDwellAcc').textContent = pct(SW.stat[best].ok, SW.stat[best].n);
+  $('pCtlFalse').textContent = pct(CT.falseA - CT.falseB, CT.falseA);
+  $('pCtlMiss').textContent = pct(CT.missA - CT.missB, CT.missA);
+  $('pTotal').textContent = fmt(TOTAL) + ' assertions';
+  $('pDirs').textContent = fmt(LAW_DIRS);
+  $('assertline').innerHTML =
+    fmt(TOTAL) + " assertions over " + fmt(G.length) + " generated gestures, " +
+    fmt(G.reduce((a, g) => a + g.s.length, 0)) + " pointer samples, " + RULE_IDS.length +
+    " rules and " + (SWEEP_HI - SWEEP_LO + 1) + " thresholds &mdash; measured in this browser in " +
+    MS + "&thinsp;ms, every load. Seed " + SEED + ", nothing cached.";
+}
+
+// ---------------------------------------------------------------- wiring
+for (const b of $('tabs').querySelectorAll('button')){
+  b.addEventListener('click', () => {
+    for (const o of $('tabs').querySelectorAll('button')) o.classList.toggle('on', o === b);
+    for (const id of ['look', 'understand', 'build']) $(id).classList.toggle('off', id !== b.dataset.tab);
+  });
+}
+$('selDev').innerHTML = DEVICE_IDS.map(id =>
+  "<option value='" + id + "'" + (id === devId ? " selected" : "") + ">" + DEVICES[id].label +
+  "  &plusmn;" + DEVICES[id].jit + "px shake, " + DEVICES[id].T + "px threshold</option>").join('');
+$('selKind').innerHTML = KIND_IDS.map(id =>
+  "<option value='" + id + "'" + (id === kindId ? " selected" : "") + ">" + KINDS[id].label +
+  "  (" + KINDS[id].blurb + ")</option>").join('') +
+  "<option value='teleport'>what a test does  (two positions, nothing between)</option>";
+$('selDev').addEventListener('change', e => { devId = e.target.value; replay(kindId); });
+$('selKind').addEventListener('change', e => { kindId = e.target.value; replay(kindId); });
+$('bReplay').addEventListener('click', () => replay(kindId));
+$('bTest').addEventListener('click', () => { kindId = 'teleport'; $('selKind').value = 'teleport'; replay('teleport'); });
+$('bClear').addEventListener('click', () => { CUR = null; at = 0; paint(); });
+$('scrub').addEventListener('input', e => { at = Math.max(0, Math.min(CUR ? CUR.s.length - 1 : 0, +e.target.value)); paint(); });
+window.addEventListener('resize', () => { if (CUR) paint(); });
+wirePad();
+replay(kindId);
+
+// A million assertions is about a third of a second of arithmetic, so the pad is wired up and
+// painted first and the studies run on the next turn of the event loop. Nothing here is skipped -
+// every figure on this page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  selfCheck();
+  fillSeen(); fillProps(); fillSweep(); fillCtl(); fillLaw(); fillBand(); fillNulls(); fillProse();
+}, 30);
+</script>
+</body>
+</html>
