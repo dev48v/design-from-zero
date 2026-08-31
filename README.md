@@ -79,6 +79,7 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 74 — Scroll-spy](https://dev48.infy.uk/design/day74-scroll-spy.html) — `day74-scroll-spy.html`
 - [DesignFromZero · Day 75 — Input mask](https://dev48.infy.uk/design/day75-input-mask.html) — `day75-input-mask.html`
 - [DesignFromZero · Day 76 — Drag threshold](https://dev48.infy.uk/design/day76-drag-threshold.html) — `day76-drag-threshold.html`
+- [DesignFromZero · Day 77 — Focus trap](https://dev48.infy.uk/design/day77-focus-trap.html) — `day77-focus-trap.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 77 &mdash; Focus trap</title>
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:#f1eefa; color:#1c1631; line-height:1.55;
+         font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif; }
+  code, pre, .mono { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background:#e5dff5; border-radius:4px; padding:1px 5px; font-size:.9em; }
+  pre { background:#1c1631; color:#e9e3fb; padding:12px; border-radius:8px; font-size:12px;
+        overflow:auto; margin:0 0 12px; line-height:1.45; }
+  pre code { background:none; padding:0; color:inherit; }
+  strong { font-weight:800; }
+  a { color:#6d28d9; }
+
+  header { background:#fff; border-bottom:1px solid #ddd5f0; position:sticky; top:0; z-index:20; }
+  .wrap { max-width:1180px; margin:0 auto; padding:16px; }
+  @media (min-width:768px) { .wrap { padding:24px; } }
+  .kicker { font-size:11px; font-weight:800; letter-spacing:.18em; color:#6d28d9; margin:0 0 8px; }
+  h1 { font-size:17px; font-weight:800; line-height:1.5; margin:0 0 16px; }
+  @media (min-width:768px) { h1 { font-size:19px; } }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:13px; font-weight:700; border:0; cursor:pointer;
+                 padding:8px 18px; border-radius:9px; background:#e5dff5; color:#1c1631; }
+  .tabs button.on { background:#1c1631; color:#fff; }
+  .panel { display:block; }
+  .panel.off { display:none; }
+  .sheetwrap { background:#e5dff5; min-height:calc(100vh - 150px); padding:16px 0 48px; }
+  .stack { max-width:1180px; margin:0 auto; padding:0 16px; }
+  @media (min-width:768px) { .stack { padding:0 24px; } }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(28,22,49,.12);
+          padding:20px; margin-bottom:20px; }
+  .lead { font-size:13.5px; color:#4a4166; margin:0 0 14px; }
+  .cap { font-size:11px; font-weight:800; letter-spacing:.12em; color:#6f6590; margin:0 0 12px; }
+  .note { font-size:12px; color:#6f6590; margin:12px 0 0; }
+  .rule { border-top:1px solid #ddd5f0; padding-top:12px; margin-top:14px; }
+
+  .prose { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  .prose h2 { font-size:24px; font-weight:800; margin:0 0 12px; line-height:1.25; }
+  .prose h3 { font-size:17px; font-weight:800; margin:32px 0 10px; }
+  .prose p { font-size:14.5px; color:#241d3d; margin:0 0 12px; }
+  .prose ul, .prose ol { font-size:14.5px; color:#241d3d; margin:0 0 12px; padding-left:22px; }
+  .prose li { margin-bottom:6px; }
+  .prose .card { padding:20px 22px; }
+
+  table.num { width:100%; border-collapse:collapse; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#6f6590; font-weight:800;
+                 text-align:right; padding:4px 9px; vertical-align:bottom; }
+  table.num td { text-align:right; font-size:12.5px; padding:4px 9px; border-top:1px solid #ddd5f0;
+                 font-variant-numeric:tabular-nums; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num th:nth-child(2), table.num td:nth-child(2) { text-align:left; }
+  table.num tr.me td { background:#f0fdf4; font-weight:700; }
+  table.num tr.ctl td { background:#fdf6ec; }
+  .ok { color:#166534; font-weight:800; }
+  .bad { color:#991b1b; font-weight:800; }
+  .warn { color:#9a3412; font-weight:800; }
+  .dim { color:#a49cc0; }
+  .scroll { overflow-x:auto; }
+
+  .ctl2 { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+          font-size:13px; max-width:100%; }
+  /* the dialog select carries a whole clause of option text; without a cap it takes its width from
+     the longest option and drags a phone-width page sideways. */
+  .ctl2 label { display:flex; flex-direction:column; gap:3px; min-width:0; max-width:100%; }
+  .ctl2 select { max-width:100%; }
+  .ctl2 span { font-size:10px; font-weight:800; letter-spacing:.1em; color:#6f6590; }
+  .ctl2 select, .ctl2 button { font:inherit; font-size:13px; padding:6px 10px;
+          border-radius:8px; border:1px solid #c4b5e8; background:#fff; }
+  .ctl2 button { cursor:pointer; font-weight:700; background:#1c1631; color:#fff; border-color:#1c1631; }
+  .ctl2 button.ghost { background:#fff; color:#1c1631; }
+
+  .badge { display:inline-block; font-size:11.5px; font-weight:800; letter-spacing:.04em;
+           border-radius:999px; padding:4px 12px; border:1px solid #c4b5e8; background:#faf8ff;
+           color:#4a4166; }
+  .badge.pass { background:#dcfce7; border-color:#86efac; color:#14532d; }
+  .badge.fail { background:#fee2e2; border-color:#fca5a5; color:#7f1d1d; }
+
+  /* the stage. Nothing in here is a real form control: the demo draws the dialog rather than
+     building one, so pressing Tab moves the ring the ENGINE computed and never the browser's own
+     focus, and the page's real tab order is left alone. */
+  .stagewrap { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+  .stagebox { flex:1 1 420px; min-width:290px; }
+  .listbox { flex:1 1 300px; min-width:260px; }
+  .stage { border:1px solid #c4b5e8; border-radius:12px; background:#faf8ff; padding:10px;
+           max-height:460px; overflow:auto; outline:none; }
+  .stage:focus-visible { box-shadow:0 0 0 3px #c4b5e8; }
+  .row { display:flex; align-items:center; gap:7px; font-size:12px; padding:2px 4px;
+         border-radius:6px; }
+  .row .el { display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:2px 8px;
+             border:1px solid #c4b5e8; background:#fff; font-size:11.5px; }
+  .row.gone .el { border-style:dashed; color:#a49cc0; background:repeating-linear-gradient(45deg,
+      #f6f3fd, #f6f3fd 4px, #eee9fa 4px, #eee9fa 8px); }
+  .row.gone .tagx { color:#b45309; }
+  .row.box .el { background:#1c1631; color:#fff; border-color:#1c1631; }
+  .row.here { background:#fde68a; }
+  .row.here .el { outline:3px solid #b45309; outline-offset:1px; }
+  .row .why { font-size:10px; color:#8a80ad; }
+  .row .ix { font-size:10px; font-weight:800; min-width:26px; text-align:right; color:#6d28d9; }
+  .row .ix.no { color:#d6cdee; }
+  .row .tg { font-size:10px; color:#8a80ad; font-family:ui-monospace, Menlo, Consolas, monospace; }
+  .seqbar { display:flex; gap:2px; flex-wrap:wrap; margin-top:8px; }
+  .seqbar i { width:11px; height:11px; border-radius:2px; background:#7c5cd6; display:block; }
+  .seqbar i.blind { background:#f59e0b; }
+  .seqbar i.now { outline:2px solid #1c1631; }
+
+  .pill { display:inline-block; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:11px;
+          border:1px solid #c4b5e8; background:#f6f3fd; color:#4a4166; border-radius:6px;
+          padding:1px 7px; margin:0 5px 5px 0; }
+  .pill.dark { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
+  .pill.gold { border-color:#fcd34d; background:#fffbeb; color:#92400e; }
+  .tag { font-size:9.5px; font-weight:800; letter-spacing:.06em; border-radius:4px; padding:0 4px;
+         margin-left:6px; border:1px solid #fca5a5; color:#b91c1c; }
+  .tag.good { border-color:#86efac; color:#166534; }
+  .tag.ctl { border-color:#fcd34d; color:#92400e; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 77</p>
+    <h1>
+      &#9635; Focus trap &mdash; the loop that keeps Tab inside an open dialog. There is one thing
+      every focus-trap test asserts: <em>Tab never leaves the dialog, Tab from the last control
+      wraps to the first, Shift+Tab from the first wraps to the last</em>. On a suite of
+      <strong id="pFix">eight</strong> fixtures written the way fixtures are really written, all of
+      that holds for <strong id="pPass">seven</strong> of these <strong id="pImpls">eight</strong>
+      traps &mdash; and <strong id="pWrong">six</strong> of the seven are wrong. It cannot be
+      otherwise: the same assertions pass for <strong id="pScram">3,600</strong> of
+      <strong id="pScramN">3,600</strong> lists drawn at random from the dialog in random order,
+      because a cycle is a cycle whatever is in it. Meanwhile the trap in the most shipped code
+      sends the keyboard to somewhere the reader cannot see on <strong id="pGhostD">1,184</strong>
+      of <strong id="pCorpus">1,500</strong> generated dialogs &mdash;
+      <strong id="pBlindPc">16.4%</strong> of every Tab press, and
+      <strong id="pWorstRun">six</strong> presses in a row on the worst of them with the focus ring
+      never moving &mdash; while <strong id="pUnreachD">1,132</strong> of those dialogs hold a
+      control that no amount of Tab can reach at all. Five more fixtures,
+      <strong id="pBiteLines">sixteen</strong> extra elements of markup, take the suite from accepting
+      seven to accepting <strong id="pAfter">one</strong>.
+      <strong id="pTotal">1,583,935 assertions</strong> on load. Pure vanilla JavaScript, one file,
+      no build step.
+    </h1>
+    <div class="tabs" id="tabs">
+      <button data-tab="look" class="on">&#9654;&#9654; TRY IT</button>
+      <button data-tab="understand">&#129504; UNDERSTAND</button>
+      <button data-tab="build">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<section id="look" class="panel">
+  <div class="sheetwrap">
+  <div class="stack">
+
+    <div class="card">
+      <p class="lead">
+        <strong>Click the dialog below and press Tab.</strong> Nothing inside it is a real form
+        control &mdash; the demo draws the dialog from the same tree the engine reads, so the ring
+        you see is the one the chosen trap computed and not the browser's own focus. Rows with a
+        hatched border are in the markup but <em>not on the screen</em>: behind a
+        <code>display:none</code> panel, inside a closed <code>&lt;details&gt;</code>, painted out
+        by <code>visibility:hidden</code>, or under an <code>inert</code> ancestor. When the ring
+        lands on one of those, you have pressed Tab and nothing has happened.
+      </p>
+      <div class="ctl2">
+        <label><span>TRAP</span><select id="selTrap"></select></label>
+        <label><span>DIALOG</span><select id="selCase"></select></label>
+        <label><span>&nbsp;</span><button id="bTab">Tab</button></label>
+        <label><span>&nbsp;</span><button id="bShift" class="ghost">Shift+Tab</button></label>
+        <label><span>&nbsp;</span><button id="bReset" class="ghost">put focus back</button></label>
+        <label><span>&nbsp;</span><button id="bRand" class="ghost">another dialog</button></label>
+      </div>
+      <div class="stagewrap">
+        <div class="stagebox">
+          <div class="stage" id="stage" tabindex="0" role="group"
+               aria-label="a drawn dialog: press Tab to move the ring"></div>
+          <p class="note" id="pressNote"></p>
+        </div>
+        <div class="listbox">
+          <p class="cap">THE STOPS THIS TRAP OFFERS</p>
+          <div id="stopList"></div>
+          <p class="cap" style="margin-top:14px">WHAT THE PLATFORM OFFERS</p>
+          <div id="truthList"></div>
+          <p class="note" id="diffNote"></p>
+        </div>
+      </div>
+      <div class="rule">
+        <p class="cap">ONE LAP OF THIS DIALOG, WITH THIS TRAP</p>
+        <div class="seqbar" id="seqbar"></div>
+        <p class="note" id="lapNote"></p>
+        <p class="note"><span class="badge" id="selftest">self-check: running&hellip;</span></p>
+        <p class="note" id="assertline"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE FIVE THINGS A FOCUS-TRAP TEST CAN ASSERT</p>
+      <p class="lead">
+        A test file holds a fixture, and a fixture is a dialog somebody typed by hand: plain,
+        visible, enabled controls in the order they were written. Here are the five assertions such
+        a test makes, run against the eight fixtures below. A dot is a pass.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>fixture</th><th>what it is</th><th>stops</th><th>loose</th><th>selector</th>
+          <th>offset</th><th>visibility</th><th>inherited</th><th>ordered</th><th>sentinel</th>
+          <th>platform</th></tr></thead>
+        <tbody id="tFix"></tbody></table></div>
+      <p class="note" id="fixNote"></p>
+      <div class="rule">
+        <p class="cap">AND HOW MANY OF THE EIGHT EACH SINGLE ASSERTION REJECTS</p>
+        <div class="scroll"><table class="num">
+          <thead><tr><th>assertion</th><th>as a sentence</th><th>rejects, of 8</th>
+            <th>and over the whole corpus</th></tr></thead>
+          <tbody id="tProps"></tbody></table></div>
+        <p class="note" id="propNote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHY NONE OF THAT CAN SEE ANYTHING</p>
+      <p class="lead">
+        The five assertions are about the shape of the cycle, and every trap makes a cycle. Take any
+        list of nodes out of the dialog &mdash; any list, in any order, including nodes that are not
+        tab stops and were never meant to be &mdash; step through it with the same wrap rule, and
+        all five hold. That is a fact about the assertions, not about any implementation, so the way
+        to show it is to draw lists nobody would ship and watch every single one pass.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>drawn lists</th><th>sizes</th><th>lists holding something that is not a
+          tab stop</th><th>all five assertions hold</th></tr></thead>
+        <tbody id="tScram"></tbody></table></div>
+      <p class="note" id="scramNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">AND WHAT IS ACTUALLY TRUE, ON <span id="capCorpus">1,500</span> GENERATED DIALOGS</p>
+      <p class="lead">
+        Each trap is the same stepping rule over a different list, and each adds exactly one thing
+        to the one above it. <em>Right</em> here means the trap sends the keyboard to the same place
+        as the platform from every position it could be in, in both directions &mdash; the domain is
+        finite, so this is decided rather than sampled.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>trap</th><th>the one thing it adds</th><th>right on<br>every step</th>
+          <th>steps<br>agreeing</th><th>stops the<br>reader cannot see</th>
+          <th>controls no<br>Tab can reach</th><th>presses that<br>move nothing</th>
+          <th>stops<br>offered</th></tr></thead>
+        <tbody id="tLadder"></tbody></table></div>
+      <p class="note" id="ladderNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">THE FIXTURES NOBODY WRITES</p>
+      <p class="lead">
+        The assertions were never the problem. Each row below is the second fixture &mdash; a field,
+        Cancel, Save &mdash; with one real thing added, three or four lines each, and the last
+        column is how many of the eight traps the whole suite still accepts once that row is in it.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>added to the fixture</th><th>why it bites</th><th>stops</th>
+          <th>traps it rejects</th><th>suite now accepts</th></tr></thead>
+        <tbody id="tBites"></tbody></table></div>
+      <p class="note" id="biteNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">EACH DEFECT IS PREDICTABLE FROM THE MARKUP ALONE</p>
+      <p class="lead">
+        Two neighbouring traps differ on a dialog exactly when one named thing is present in it.
+        The predicate is read straight off the tree with no implementation in the argument; the
+        check is whether the two traps really did build different lists.
+      </p>
+      <div class="scroll"><table class="num">
+        <thead><tr><th>pair</th><th>they differ exactly when the dialog contains</th>
+          <th>dialogs predicted</th><th>dialogs measured</th><th>agree</th></tr></thead>
+        <tbody id="tIdent"></tbody></table></div>
+      <p class="note" id="identNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="cap">WHAT DID NOT SURVIVE THE MEASUREMENT</p>
+      <p class="note" id="nullNote"></p>
+    </div>
+
+  </div>
+  </div>
+</section>
+
+<section id="understand" class="panel off">
+  <div class="prose">
+    <h2>The two lines everyone writes, and the list they run on</h2>
+    <p>
+      A modal dialog has to hold the keyboard. Open it, and Tab must walk the controls inside it and
+      then come back to the top instead of wandering off into the page behind. Every implementation
+      of that is the same six lines: collect the focusable elements, find where focus is now, and if
+      the next step would fall off either end, put it back on the other end.
+    </p>
+    <p>
+      The wrap is not where the bugs are. The wrap is four lines of modular arithmetic and it is
+      right in almost everything shipped. The bug is in the word <em>collect</em>.
+    </p>
+
+    <h3>What a tab stop actually is</h3>
+    <p>
+      The platform's rule has four parts and only the first one is on the element itself.
+    </p>
+    <ul>
+      <li><strong>Is it rendered?</strong> Not if it or an ancestor is <code>display:none</code>,
+        not if it carries the <code>hidden</code> attribute, and not if it is inside a
+        <code>&lt;details&gt;</code> that is closed &mdash; a closed details renders only its first
+        <code>&lt;summary&gt;</code>.</li>
+      <li><strong>Is it painted?</strong> <code>visibility</code> inherits, so an element with no
+        visibility of its own is hidden if an ancestor is &mdash; and a descendant can set
+        <code>visibility:visible</code> and come back. A check that stops at the element, or one
+        that stops at the first hidden ancestor, gets a different answer than the cascade does.</li>
+      <li><strong>Is it switched off?</strong> <code>disabled</code> is an attribute on four
+        elements, and a <code>&lt;fieldset disabled&gt;</code> carries it down to every control
+        inside. <code>inert</code> does the same for everything, and neither leaves an attribute on
+        the element you are testing.</li>
+      <li><strong>Does it want the keyboard?</strong> <code>tabindex</code>, parsed as an integer.
+        Negative means focusable but not in the tab order. Zero means in the order, in document
+        position. Positive means in the order <em>before</em> all the zeros, sorted by value.</li>
+    </ul>
+    <p>
+      Three of those four inherit. The selector string everyone starts from tests none of them.
+    </p>
+
+    <h3>Two details that look like pedantry and are not</h3>
+    <p>
+      <code>[tabindex="-1"]</code> is an exact string compare. HTML parses the attribute with the
+      rules for parsing integers: leading whitespace is skipped, a sign is allowed, digits are
+      collected, and trailing rubbish is ignored. So <code>tabindex=" -1"</code> and
+      <code>tabindex="-01"</code> are both minus one to the platform and neither one matches the
+      selector. They come straight through into the list.
+    </p>
+    <p>
+      A radio group is one tab stop, not one per button &mdash; but only while one of its buttons is
+      checked. Nothing checked and every button is a stop, because you have to be able to get to the
+      group at all. A trap that treats radios as ordinary inputs hands the keyboard three stops
+      where the platform gives one, and the two lists differ by exactly the number of buttons in the
+      group minus one.
+    </p>
+
+    <h3>Why a test cannot tell you any of this</h3>
+    <p>
+      Write the fixture. Three buttons in a dialog, or a field and two buttons: it has to be
+      something you can type and read. Now assert the things you can assert &mdash; focus stayed
+      inside, the last one wrapped to the first, the first wrapped back to the last, a full lap
+      came home.
+    </p>
+    <p>
+      Every one of those is a statement about a cycle. The stepping rule turns <em>any</em> list
+      into a cycle, and a cycle drawn from the dialog stays in the dialog. So the assertions hold
+      for the correct list, for a list missing half the controls, for a list with three invisible
+      elements in it, and for the same list shuffled &mdash; which the page above demonstrates by
+      drawing thousands of lists at random and finding no exceptions. The one arm that fails is the
+      one with no trap installed at all, and it fails because its list is not drawn from the dialog.
+    </p>
+    <p>
+      The fixture is the blind spot, not the assertion. A fixture with one
+      <code>display:none</code> panel in it &mdash; four extra lines &mdash; rejects the selector
+      string immediately. Five such fixtures reject everything except the platform's own rule.
+    </p>
+
+    <h3>The sentinel</h3>
+    <p>
+      There is a second implementation shape worth naming, because it is the best of the wrong ones.
+      Instead of intercepting keydown, put two focusable elements of zero size at the top and bottom
+      of the dialog; tabbing off the end reaches one, and its focus handler sends focus to the
+      element it cached as first. It is a good trick: it gets the whole middle of the order right
+      for free, because the browser is doing the walking.
+    </p>
+    <p>
+      It caches those two ends from a document-order query. Put one
+      <code>tabindex="1"</code> anywhere in the dialog and the tab order no longer starts where the
+      markup starts, so both ends now point at the wrong control &mdash; and only at the ends, which
+      is exactly where a test that walks the middle never looks.
+    </p>
+
+    <h3>What to do instead</h3>
+    <ol>
+      <li>Do not write the selector. <code>inert</code> on everything outside the dialog is one
+        attribute and the platform computes the whole list for you.</li>
+      <li>If you must compute the list, compute the four questions above, and compute the inherited
+        three by walking the ancestors rather than reading the element.</li>
+      <li>Parse <code>tabindex</code> as a number. Never string-compare it.</li>
+      <li>Sort. Positive values first, ascending, then everything else in document order.</li>
+      <li>Collapse checked radio groups.</li>
+      <li>Add the five fixtures. They are sixteen extra elements between them, and they turn a
+        suite that accepts almost anything into one that accepts almost nothing.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="build" class="panel off">
+  <div class="prose">
+    <h2>How this page was built</h2>
+    <p>
+      Nine steps. Everything between <code>ENGINE:BEGIN</code> and <code>ENGINE:END</code> in this
+      file is a pure function of a tree of plain objects: no DOM, no clock, no
+      <code>Math.random</code>. The demo draws that tree; it never reads what it drew.
+    </p>
+    <h3>1. Make the dialog data</h3>
+    <p>
+      A node is <code>{ tag, k, ...attributes }</code> and a missing field means the attribute is
+      absent, which is never the same as present-and-false. That distinction is the whole subject:
+      <code>disabled</code> absent, <code>disabled=""</code> and <code>disabled="false"</code> are
+      all the same to HTML and all different to a naive check.
+    </p>
+    <pre><code>function N(tag, o, kids){
+  const n = { tag: tag, k: kids || [] };
+  if (o) for (const key in o) n[key] = o[key];
+  return n;
+}</code></pre>
+    <h3>2. Resolve the inherited things once</h3>
+    <p>
+      Rendering, visibility, inertness and fieldset disabling all inherit. One preorder walk
+      resolves all four and stamps the answer on the node, so nothing downstream ever climbs back
+      up the tree &mdash; and the naive reading of visibility is computed in the same walk, as a
+      separate field, so the two can be compared rather than argued about.
+    </p>
+    <h3>3. Write the platform's rule</h3>
+    <p>
+      Rendered, painted, not inert, not disabled, then <code>tabindex</code> parsed as an integer:
+      negative is out, zero or positive is in, absent falls back to whether the element is focusable
+      by nature. Then collapse checked radio groups. Then sort.
+    </p>
+    <h3>4. Write the seven others as one added clause each</h3>
+    <p>
+      Each trap is the same stepping rule over a different list. That is the point of the
+      arrangement: the traps cannot differ for a reason nobody named, because the only thing that
+      differs is one clause.
+    </p>
+    <h3>5. Decide correctness, do not sample it</h3>
+    <p>
+      Two traps agree when they send the keyboard to the same place from every position it could be
+      in, in both directions, including from nowhere. The domain is the nodes of the dialog plus
+      <code>null</code>, which is finite, so the comparison is exhaustive.
+    </p>
+    <pre><code>for (const fid of universe){
+  if (a(fid,  1) !== b(fid,  1)) return false;
+  if (a(fid, -1) !== b(fid, -1)) return false;
+}</code></pre>
+    <h3>6. Keep the empty dialog</h3>
+    <p>
+      Some dialogs have no tab stop at all &mdash; a confirmation whose close button is disabled.
+      The right answer is that there is nowhere to go, and <code>next()</code> returns
+      <code>null</code>. Every assertion a test can make is then vacuously true, which is worth
+      knowing: a suite containing only that fixture accepts all eight arms including the control.
+    </p>
+    <h3>7. Prove the assertions are blind, do not assert it</h3>
+    <p>
+      Draw lists at random out of the dialog, in random order, including nodes that are not tab
+      stops. Run the same five assertions. They all pass, every time, which is what makes the
+      headline a fact about the assertions rather than a complaint about six libraries.
+    </p>
+    <h3>8. Predict each defect from the markup</h3>
+    <p>
+      For each neighbouring pair of traps, write the predicate that says whether they can differ on
+      this dialog &mdash; read off the tree, with no implementation in it &mdash; and then check it
+      against whether they really did. Two of those predicates are exact counts rather than
+      booleans: the number of invisible stops the selector string produces, and the number of extra
+      stops a checked radio group costs.
+    </p>
+    <h3>9. Print the nulls</h3>
+    <p>
+      Three things did not survive: the fix everybody reaches for buys almost nothing and makes one
+      thing worse, one of the five new fixtures turns out to be redundant, and one of the five
+      assertions cannot fail on a fixture at all. They are on the page above rather than in a
+      drawer.
+    </p>
+  </div>
+</section>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// A dialog is a tree of nodes. Everything below is a function of that tree - no DOM, no clock, no
+// Math.random. The corpus comes from a seeded generator, so every figure this page prints is
+// reproducible from the seed alone. The page renders these same trees as real markup, but nothing
+// in here ever looks at what it rendered.
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const ri = (rnd, lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+const pk = (rnd, xs) => xs[Math.floor(rnd() * xs.length)];
+
+// ---------------------------------------------------------------- one node
+// A missing field means the attribute is ABSENT, which is never the same as present-and-false.
+// tag  element name          ti   the tabindex attribute as the STRING it was written
+// dis  disabled              hid  the hidden attribute        href an href that is really there
+// ity  input type            rname/chk radio group and checked
+// ce   contenteditable       inert the inert attribute
+// vis  a visibility declaration     disp a display declaration     ctl media controls
+// open details is open       lab  what the demo prints on it
+function N(tag, o, kids){
+  const n = { tag: tag, k: kids || [] };
+  if (o) for (const key in o) n[key] = o[key];
+  return n;
+}
+
+// ---------------------------------------------------------------- one walk resolves everything
+// Rendering, visibility, inertness and fieldset disabling all INHERIT, and the whole argument of
+// this page is that reading them off the element alone is not the same thing. One preorder walk
+// resolves all four at once and stamps the answer on the node; nothing below ever climbs back up.
+function annotate(root){
+  const list = [];
+  (function rec(n, ctx){
+    const hiddenHere = n.disp === 'none' || n.hid === true;
+    const rendered = ctx.rendered && !hiddenHere;
+    // visibility inherits and a descendant CAN turn it back on. visN is the same walk without that.
+    const vis = n.vis ? n.vis : ctx.vis;
+    const visN = (ctx.visN === 'hidden' || n.vis === 'hidden') ? 'hidden' : 'visible';
+    const inert = ctx.inert || n.inert === true;
+    const fdis = ctx.fdis || (n.tag === 'fieldset' && n.dis === true);
+    const dlg = ctx.dlg || n.tag === 'dialog';
+    n.a = { i: list.length, rendered: rendered, vis: vis, visN: visN, inert: inert, fdis: fdis,
+            dlg: dlg, depth: ctx.depth, fsum: ctx.fsum === true, par: ctx.par };
+    n.id = 'n' + list.length;
+    list.push(n);
+    const closed = n.tag === 'details' && n.open !== true;
+    let seenSummary = false;
+    for (const c of n.k){
+      let cr = rendered, fs = false;
+      if (c.tag === 'summary' && !seenSummary){ seenSummary = true; fs = true; }
+      else if (closed) cr = false;               // a closed details renders only its first summary
+      rec(c, { rendered: cr, vis: vis, visN: visN, inert: inert, fdis: fdis, dlg: dlg,
+               depth: ctx.depth + 1, fsum: fs, par: n.id });
+    }
+  })(root, { rendered: true, vis: 'visible', visN: 'visible', inert: false, fdis: false,
+             dlg: false, depth: 0, fsum: false, par: null });
+  const byId = {};
+  for (const n of list) byId[n.id] = n;
+  return { root: root, list: list, byId: byId };
+}
+
+// ---------------------------------------------------------------- the attribute, parsed
+// HTML parses tabindex with the rules for parsing integers: optional space, optional sign, then
+// digits, and trailing rubbish is ignored. An attribute that yields no digits does not apply at
+// all. Two consequences drive half of this page: tabindex=" -1" parses to -1 while the CSS test
+// [tabindex="-1"] is an exact string compare that does not match it, and tabindex="3px" is a real 3.
+function parseTI(s){
+  if (s === undefined || s === null) return null;
+  const t = String(s);
+  let i = 0;
+  while (i < t.length && (t[i] === ' ' || t[i] === '\t' || t[i] === '\n' || t[i] === '\r')) i++;
+  let sign = 1;
+  if (t[i] === '-'){ sign = -1; i++; } else if (t[i] === '+') i++;
+  let d = '';
+  while (i < t.length && t[i] >= '0' && t[i] <= '9'){ d += t[i]; i++; }
+  if (!d) return null;
+  return sign * parseInt(d, 10);
+}
+
+const FORM = { button: 1, input: 1, select: 1, textarea: 1 };
+const formControl = n => FORM[n.tag] === 1;
+
+// what the platform makes focusable with no tabindex on it at all
+function nativeFocusable(n){
+  if (n.ce === true) return true;
+  if (n.tag === 'a') return n.href === true;
+  if (n.tag === 'input') return n.ity !== 'hidden';
+  if (n.tag === 'button' || n.tag === 'select' || n.tag === 'textarea') return true;
+  if (n.tag === 'summary') return n.a.fsum === true;
+  if (n.tag === 'iframe') return true;
+  if (n.tag === 'video' || n.tag === 'audio') return n.ctl === true;
+  return false;
+}
+// disabled is an attribute on four elements, and an ancestor fieldset carries it down
+const disabledEff = n => (formControl(n) && n.dis === true) || n.a.fdis;
+// on the screen at all: boxed by the layout, and not painted out by an inherited visibility
+const onScreen = n => n.a.rendered && n.a.vis !== 'hidden';
+
+// The tab order: positive tabindex first in value order, then everything else in document order,
+// ties inside each group broken by document order. That is a total order, so the sort is stable by
+// construction rather than by trusting whatever sort the runtime happens to use.
+function sortTab(arr){
+  const key = n => { const t = parseTI(n.ti); return (t !== null && t > 0) ? t : 0; };
+  return arr.slice().sort(function(a, b){
+    const ka = key(a), kb = key(b);
+    if (ka !== kb){ if (ka === 0) return 1; if (kb === 0) return -1; return ka - kb; }
+    return a.a.i - b.a.i;
+  });
+}
+
+// A radio group offers ONE tab stop when one of its buttons is checked, and one per button when
+// none is. Every trap below that does not know this hands the keyboard three stops where the
+// platform gives one.
+function radioFilter(cand){
+  const grp = {};
+  for (const n of cand)
+    if (n.tag === 'input' && n.ity === 'radio' && n.rname){
+      if (!grp[n.rname]) grp[n.rname] = [];
+      grp[n.rname].push(n);
+    }
+  const drop = {};
+  for (const g in grp){
+    const mem = grp[g], ck = mem.filter(n => n.chk === true);
+    if (ck.length) for (const n of mem) if (n !== ck[0]) drop[n.id] = 1;
+  }
+  return cand.filter(n => !drop[n.id]);
+}
+
+// ---------------------------------------------------------------- the platform, as specified
+function specCand(list){
+  const out = [];
+  for (const n of list){
+    if (!n.a.rendered || n.a.vis === 'hidden' || n.a.inert) continue;
+    if (disabledEff(n)) continue;
+    const t = parseTI(n.ti);
+    if (t === null){ if (nativeFocusable(n)) out.push(n); }
+    else if (t >= 0) out.push(n);
+  }
+  return out;
+}
+const specStops = list => sortTab(radioFilter(specCand(list)));
+
+// ---------------------------------------------------------------- the selector everybody ships
+// a[href], button, input:not([type=hidden]), select, textarea, [tabindex] - minus [tabindex="-1"]
+// and minus [disabled]. Both exclusions are CSS attribute tests: an exact string compare on one,
+// and the presence of an attribute on the element ITSELF on the other.
+function selMatch(n){
+  if (n.ti !== undefined) return true;
+  if (n.tag === 'a') return n.href === true;
+  if (n.tag === 'input') return n.ity !== 'hidden';
+  return n.tag === 'button' || n.tag === 'select' || n.tag === 'textarea';
+}
+const selReject = n => n.ti === '-1' || n.dis === true;
+const selSet = n => selMatch(n) && !selReject(n);
+
+// ---------------------------------------------------------------- the eight traps
+// Each one is the SAME stepping rule over a different list, so the only thing separating them is
+// which nodes are in the list and in what order. The two wrap targets are separate arguments
+// because one of the eight gets exactly those wrong and nothing else.
+function stepper(stops, wrapFwd, wrapBack){
+  const idx = {};
+  for (let i = 0; i < stops.length; i++) idx[stops[i].id] = i;
+  const n = stops.length;
+  const fwd = wrapFwd || (n ? stops[0] : null), back = wrapBack || (n ? stops[n - 1] : null);
+  return function(fid, dir){
+    if (!n) return null;                              // no stop exists: the keyboard goes nowhere
+    const i = (fid !== null && idx[fid] !== undefined) ? idx[fid] : -1;
+    if (i < 0) return dir > 0 ? stops[0].id : stops[n - 1].id;
+    if (dir > 0) return i === n - 1 ? fwd.id : stops[i + 1].id;
+    return i === 0 ? back.id : stops[i - 1].id;
+  };
+}
+
+const TRAPS = {
+  loose:    { label: 'no trap at all',
+              clause: 'the browser with nothing installed - the page behind the dialog is still in the order' },
+  selector: { label: 'the selector string',
+              clause: 'one CSS query: a[href], button, input, select, textarea, [tabindex] - minus [tabindex="-1"] and minus [disabled]' },
+  offset:   { label: 'the offsetParent check',
+              clause: 'the same list, minus anything the layout never boxed' },
+  visnaive: { label: 'the visibility check',
+              clause: 'and minus anything with a visibility:hidden ancestor' },
+  inherit:  { label: 'the inherited three',
+              clause: 'visibility read as it actually cascades, plus inert, plus a disabled ancestor fieldset' },
+  ordered:  { label: 'the tab order',
+              clause: 'tabindex parsed as a number: positives first in value order, then the rest' },
+  sentinel: { label: 'sentinels at the ends',
+              clause: 'the right list in the right order, but first and last cached from the document query' },
+  spec:     { label: 'what the platform does',
+              clause: 'and every stop the platform offers, with a checked radio group counting once' }
+};
+const TRAP_IDS = ['loose', 'selector', 'offset', 'visnaive', 'inherit', 'ordered', 'sentinel', 'spec'];
+const CORRECT = 'spec';
+
+function trapStops(id, ann){
+  const all = ann.list, dl = all.filter(n => n.a.dlg);
+  if (id === 'loose') return specStops(all);                     // the whole page, dialog included
+  if (id === 'selector') return dl.filter(selSet);
+  if (id === 'offset') return dl.filter(n => selSet(n) && n.a.rendered);
+  if (id === 'visnaive') return dl.filter(n => selSet(n) && n.a.rendered && n.a.visN !== 'hidden');
+  if (id === 'inherit') return dl.filter(n => selSet(n) && onScreen(n) && !n.a.inert && !n.a.fdis);
+  if (id === 'ordered') return sortTab(dl.filter(function(n){
+    const t = parseTI(n.ti);
+    return selMatch(n) && n.dis !== true && onScreen(n) && !n.a.inert && !n.a.fdis &&
+           !(t !== null && t < 0);
+  }));
+  return specStops(dl);                                          // sentinel and spec share the list
+}
+
+function trapNext(id, ann, pre){
+  const s = pre || trapStops(id, ann);
+  if (id !== 'sentinel') return stepper(s);
+  // the sentinel bug: the list and the order are right, but the two ends were cached from a
+  // document-order query, so tabbing off the end goes to whoever is first in the MARKUP.
+  const doc = s.slice().sort((a, b) => a.a.i - b.a.i);
+  return stepper(s, doc[0] || null, doc[doc.length - 1] || null);
+}
+
+// ---------------------------------------------------------------- the generator
+// Realistic dialog parts. Every one of these is something a real dialog contains; nothing here was
+// invented to make a trap fail.
+const BLOCKS = ['field', 'select', 'textarea', 'radios', 'checks', 'tabstrip', 'details', 'skeleton',
+                'inertzone', 'fieldset', 'legacy', 'scroller', 'editor', 'media', 'spinner', 'links',
+                'iframe', 'leftover', 'prose'];
+const BLOCK_TEXT = {
+  field: 'a labelled text field', select: 'a select', textarea: 'a textarea',
+  radios: 'a radio group', checks: 'two or three checkboxes',
+  tabstrip: 'a tab strip whose off panels are display:none',
+  details: 'a details/summary that may be closed',
+  skeleton: 'a loading skeleton painted out with visibility:hidden',
+  inertzone: 'an inert region', fieldset: 'a disabled fieldset',
+  legacy: 'a toolbar somebody ordered with tabindex="1"',
+  scroller: 'a scrollable region with a negative tabindex', editor: 'a contenteditable note',
+  media: 'a video with controls', spinner: 'a spinner behind the hidden attribute',
+  links: 'a help link and an anchor with no href', iframe: 'an embedded frame',
+  leftover: 'a display:none leftover branch', prose: 'a paragraph'
+};
+
+function buildBlock(kind, rnd, s){
+  if (kind === 'field')
+    return N('div', { lab: 'a labelled field' }, [N('label', { lab: 'Name' }),
+      N('input', { ity: pk(rnd, ['text', 'email', 'number']), lab: 'Name' })]);
+  if (kind === 'select')
+    return N('div', { lab: 'a select' }, [N('label', { lab: 'Plan' }), N('select', { lab: 'Plan' })]);
+  if (kind === 'textarea')
+    return N('div', { lab: 'a textarea' }, [N('label', { lab: 'Notes' }), N('textarea', { lab: 'Notes' })]);
+  if (kind === 'radios'){
+    const g = 'g' + (s.seq++), m = ri(rnd, 2, 4), c = rnd() < 0.72 ? ri(rnd, 0, m - 1) : -1, kids = [];
+    for (let i = 0; i < m; i++)
+      kids.push(N('input', { ity: 'radio', rname: g, chk: i === c ? true : undefined,
+                             lab: 'choice ' + (i + 1) }));
+    return N('div', { lab: 'a radio group' }, kids);
+  }
+  if (kind === 'checks'){
+    const m = ri(rnd, 2, 3), kids = [];
+    for (let i = 0; i < m; i++) kids.push(N('input', { ity: 'checkbox', lab: 'option ' + (i + 1) }));
+    return N('div', { lab: 'checkboxes' }, kids);
+  }
+  if (kind === 'tabstrip'){                        // the classic: panels that are display:none
+    const m = ri(rnd, 2, 3), tabs = [], panels = [], live = ri(rnd, 0, m - 1);
+    for (let i = 0; i < m; i++){
+      tabs.push(N('button', { lab: 'tab ' + (i + 1) }));
+      const inner = [N('input', { ity: 'text', lab: 'panel ' + (i + 1) + ' field' })];
+      if (rnd() < 0.5) inner.push(N('button', { lab: 'panel ' + (i + 1) + ' action' }));
+      panels.push(N('div', { disp: i === live ? undefined : 'none', lab: 'panel ' + (i + 1) }, inner));
+    }
+    return N('div', { lab: 'a tab strip' }, [N('div', { lab: 'tabs' }, tabs)].concat(panels));
+  }
+  if (kind === 'details')
+    return N('details', { open: rnd() < 0.45 ? true : undefined, lab: 'Advanced' },
+      [N('summary', { lab: 'Advanced' }),
+       N('div', { lab: 'advanced body' }, [N('input', { ity: 'text', lab: 'Coupon' }),
+                                           N('button', { lab: 'Reset' })])]);
+  if (kind === 'skeleton'){                        // painted out, still in the layout
+    const kids = [N('input', { ity: 'text', lab: 'loading field' })];
+    if (rnd() < 0.45) kids.push(N('div', { vis: 'visible', lab: 'ready row' },
+      [N('button', { lab: 'Retry' })]));
+    return N('div', { vis: 'hidden', lab: 'a skeleton' }, kids);
+  }
+  if (kind === 'inertzone')
+    return N('div', { inert: true, lab: 'an inert region' },
+      [N('button', { lab: 'Undo' }), N('a', { href: true, lab: 'why' })]);
+  if (kind === 'fieldset')
+    return N('fieldset', { dis: true, lab: 'a disabled fieldset' },
+      [N('input', { ity: 'text', lab: 'Card' }), N('input', { ity: 'text', lab: 'CVC' })]);
+  if (kind === 'legacy'){                          // somebody once fixed an order with tabindex
+    const m = ri(rnd, 2, 3), kids = [];
+    for (let i = 0; i < m; i++) kids.push(N('button', { ti: String(i + 1), lab: 'step ' + (i + 1) }));
+    return N('div', { lab: 'a legacy toolbar' }, kids);
+  }
+  if (kind === 'scroller')
+    return N('div', { ti: pk(rnd, ['-1', ' -1', '-01', '-1 ']), lab: 'a scrollable region' },
+      [N('p', { lab: 'terms' })]);
+  if (kind === 'editor')
+    return N('div', { ce: true, lab: 'a rich-text note' }, [N('p', { lab: 'type here' })]);
+  if (kind === 'media') return N('video', { ctl: true, lab: 'a video' });
+  if (kind === 'spinner')
+    return N('div', { hid: true, lab: 'a hidden spinner' }, [N('button', { lab: 'Cancel loading' })]);
+  if (kind === 'links')
+    return N('p', { lab: 'links' }, [N('a', { href: true, lab: 'Help' }), N('a', { lab: 'no href' })]);
+  if (kind === 'iframe') return N('iframe', { lab: 'an embedded map' });
+  if (kind === 'leftover')
+    return N('div', { disp: 'none', lab: 'a leftover branch' }, [N('button', { lab: 'Old action' })]);
+  return N('p', { lab: 'a paragraph' });
+}
+
+// A page: some chrome, some content, and one dialog on top of it.
+function buildPage(rnd, opt){
+  const s = { seq: 0 };
+  const bg = N('body', { lab: 'the page' }, [
+    N('nav', { lab: 'nav' }, [N('a', { href: true, lab: 'Home' }), N('a', { href: true, lab: 'Docs' }),
+                              N('input', { ity: 'search', lab: 'Search' })]),
+    N('main', { lab: 'main' }, [N('button', { lab: 'New' }), N('a', { href: true, lab: 'Settings' })])
+  ]);
+  const body = [], bag = BLOCKS.slice(), nb = ri(rnd, 3, 8), kinds = [];
+  for (let i = 0; i < nb; i++){
+    const kind = bag.length ? bag.splice(Math.floor(rnd() * bag.length), 1)[0] : pk(rnd, BLOCKS);
+    kinds.push(kind);
+    body.push(buildBlock(kind, rnd, s));
+  }
+  const head = [N('h2', { lab: 'Dialog' }),
+                N('button', { dis: (opt && opt.deadClose) ? true : undefined, lab: 'Close' })];
+  const kids = [N('header', { lab: 'header' }, head), N('div', { lab: 'body' }, body)];
+  if (!(opt && opt.noFooter))
+    kids.push(N('footer', { lab: 'footer' }, [N('button', { lab: 'Cancel' }), N('button', { lab: 'Save' })]));
+  bg.k.push(N('dialog', { lab: 'the dialog' }, kids));
+  bg.kinds = kinds;
+  return bg;
+}
+
+// A handful of the corpus is DELIBERATELY empty of tab stops - a confirmation with a dead close
+// button and no footer. The right answer there is that there is no next element at all, and a trap
+// that invents one is wrong in a way no wrap assertion can ever see.
+function corpus(n, seed){
+  const rnd = mulberry32(seed), out = [];
+  for (let i = 0; i < n; i++){
+    const dead = i % 97 === 5;
+    const root = buildPage(rnd, dead ? { deadClose: true, noFooter: true } : null);
+    if (dead){
+      const d = root.k[root.k.length - 1];
+      d.k[1].k = [N('p', { lab: 'Are you sure?' })];
+      root.kinds = ['prose'];
+    }
+    const a = annotate(root);
+    a.kinds = root.kinds; a.empty = dead;
+    out.push(a);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the fixtures a test file holds
+// Eight dialogs written the way focus-trap fixtures are actually written: plain, visible, enabled
+// controls, plus the two edge cases a careful author adds. Nothing here is hidden, inherited,
+// re-ordered or grouped, which is the whole reason the assertions below cannot see anything.
+function fixtures(){
+  const wrap = (name, kids, note) => {
+    const bg = N('body', { lab: 'the page' }, [
+      N('nav', { lab: 'nav' }, [N('a', { href: true, lab: 'Home' })]),
+      N('main', { lab: 'main' }, [N('button', { lab: 'behind the dialog' })])]);
+    bg.k.push(N('dialog', { lab: 'the dialog' }, kids));
+    const a = annotate(bg); a.name = name; a.note = note; return a;
+  };
+  return [
+    wrap('three buttons', [N('button', { lab: 'One' }), N('button', { lab: 'Two' }),
+                           N('button', { lab: 'Three' })], 'the one in every tutorial'),
+    wrap('a field and two buttons', [N('input', { ity: 'text', lab: 'Email' }),
+                                     N('button', { lab: 'Cancel' }), N('button', { lab: 'Save' })],
+         'the one in every test suite'),
+    wrap('a full form', [N('button', { lab: 'Close' }), N('input', { ity: 'text', lab: 'Name' }),
+                         N('select', { lab: 'Plan' }), N('textarea', { lab: 'Notes' }),
+                         N('button', { lab: 'Cancel' }), N('button', { lab: 'Save' })],
+         'header, body and footer'),
+    wrap('a link in the body', [N('a', { href: true, lab: 'Terms' }), N('button', { lab: 'Agree' }),
+                                N('textarea', { lab: 'Why' })], 'an anchor is a tab stop too'),
+    wrap('one control', [N('button', { lab: 'OK' })], 'the degenerate cycle: Tab returns to itself'),
+    wrap('a disabled button', [N('button', { lab: 'Back' }), N('button', { dis: true, lab: 'Next' }),
+                               N('button', { lab: 'Save' })], 'the edge case a careful author adds'),
+    wrap('a hidden input', [N('input', { ity: 'hidden', lab: 'csrf' }), N('button', { lab: 'Cancel' }),
+                            N('button', { lab: 'Save' })], 'and the other one'),
+    wrap('no controls at all', [N('p', { lab: 'Saved.' })], 'nothing to focus, so nothing to assert')
+  ];
+}
+
+// The five fixtures nobody writes. Each one is the SAME dialog as the second fixture above -
+// a field, Cancel, Save - with one real thing added, and each is three or four extra lines.
+function biteFixtures(){
+  const wrap = (name, extra, note) => {
+    const bg = N('body', { lab: 'the page' }, [
+      N('nav', { lab: 'nav' }, [N('a', { href: true, lab: 'Home' })]),
+      N('main', { lab: 'main' }, [N('button', { lab: 'behind the dialog' })])]);
+    bg.k.push(N('dialog', { lab: 'the dialog' },
+      [N('input', { ity: 'text', lab: 'Email' })].concat(extra,
+        [N('button', { lab: 'Cancel' }), N('button', { lab: 'Save' })])));
+    const a = annotate(bg); a.name = name; a.note = note; return a;
+  };
+  return [
+    wrap('a panel that is display:none',
+         [N('div', { disp: 'none', lab: 'the other tab' }, [N('input', { ity: 'text', lab: 'Card' }),
+                                                            N('button', { lab: 'Apply' })])],
+         'the tab that is not showing'),
+    wrap('a skeleton, and one row that is ready',
+         [N('div', { vis: 'hidden', lab: 'skeleton' },
+            [N('input', { ity: 'text', lab: 'loading' }),
+             N('div', { vis: 'visible', lab: 'ready row' }, [N('button', { lab: 'Retry' })])])],
+         'visibility inherits, and a child can turn it back on'),
+    wrap('an inert region',
+         [N('div', { inert: true, lab: 'inert' }, [N('button', { lab: 'Undo' })])],
+         'inert inherits too, and there is no attribute on the button'),
+    wrap('a toolbar somebody ordered with tabindex',
+         [N('div', { lab: 'toolbar' }, [N('button', { ti: '2', lab: 'step 2' }),
+                                        N('button', { ti: '1', lab: 'step 1' })])],
+         'a positive tabindex moves who is first'),
+    wrap('a radio group with one checked',
+         [N('div', { lab: 'plan' }, [N('input', { ity: 'radio', rname: 'p', chk: true, lab: 'Monthly' }),
+                                     N('input', { ity: 'radio', rname: 'p', lab: 'Yearly' }),
+                                     N('input', { ity: 'radio', rname: 'p', lab: 'Lifetime' })])],
+         'the platform offers one stop, not three')
+  ];
+}
+
+// ---------------------------------------------------------------- what a test can assert
+// Q is what the TEST names: the plain visible controls the author typed into the fixture, in the
+// order they typed them. On a fixture that is also every implementation's list, which is the
+// entire problem.
+const dlgList = ann => ann.list.filter(n => n.a.dlg);
+const testQ = ann => specStops(dlgList(ann));
+const dialogIds = function(ann){
+  const s = {};
+  for (const n of ann.list) if (n.a.dlg) s[n.id] = 1;
+  return s;
+};
+
+const PROPS = ['contained', 'wrapFwd', 'wrapBack', 'cycle', 'roundTrip'];
+const PROP_TEXT = {
+  contained: 'Tab and Shift+Tab never leave the dialog',
+  wrapFwd: 'Tab from the last control lands on the first',
+  wrapBack: 'Shift+Tab from the first control lands on the last',
+  cycle: 'as many Tabs as there are controls comes back to the start',
+  roundTrip: 'Tab and then Shift+Tab is the identity'
+};
+
+function triad(next, Q, ids){
+  const r = { contained: true, wrapFwd: true, wrapBack: true, cycle: true, roundTrip: true, n: 0 };
+  if (!Q.length){ r.all = true; r.vacuous = true; return r; }   // nothing to focus, nothing to assert
+  for (const q of Q){
+    const f = next(q.id, 1), b = next(q.id, -1);
+    r.n += 2;
+    if (f === null || !ids[f]) r.contained = false;
+    if (b === null || !ids[b]) r.contained = false;
+  }
+  r.n += 2;
+  if (next(Q[Q.length - 1].id, 1) !== Q[0].id) r.wrapFwd = false;
+  if (next(Q[0].id, -1) !== Q[Q.length - 1].id) r.wrapBack = false;
+  let cur = Q[0].id;
+  for (let i = 0; i < Q.length; i++){ cur = next(cur, 1); r.n++; }
+  if (cur !== Q[0].id) r.cycle = false;
+  for (const q of Q){ r.n += 2; if (next(next(q.id, 1), -1) !== q.id) r.roundTrip = false; }
+  r.all = r.contained && r.wrapFwd && r.wrapBack && r.cycle && r.roundTrip;
+  r.vacuous = false;
+  return r;
+}
+
+// ---------------------------------------------------------------- the theorem, measured
+// The five assertions hold for ANY non-empty list drawn from the dialog in ANY order, because the
+// stepping rule turns every list into a cycle and a cycle is contained in whatever it was drawn
+// from. That is a statement about the assertions and not about any implementation, so the way to
+// show it is to draw lists nobody would ever ship and watch every one of them pass.
+function scramble(anns, draws, seed){
+  const rnd = mulberry32(seed);
+  let n = 0, pass = 0, asserts = 0, minSize = 1e9, maxSize = 0, ghosty = 0;
+  for (const ann of anns){
+    const dl = dlgList(ann), ids = dialogIds(ann);
+    if (dl.length < 2) continue;
+    for (let d = 0; d < draws; d++){
+      const m = ri(rnd, 1, Math.min(dl.length, 9)), bag = dl.slice(), sub = [];
+      for (let i = 0; i < m && bag.length; i++)
+        sub.push(bag.splice(Math.floor(rnd() * bag.length), 1)[0]);
+      const r = triad(stepper(sub), sub, ids);
+      n++; asserts += r.n;
+      if (r.all) pass++;
+      if (sub.some(x => !onScreen(x) || !nativeFocusable(x))) ghosty++;
+      if (sub.length < minSize) minSize = sub.length;
+      if (sub.length > maxSize) maxSize = sub.length;
+    }
+  }
+  return { n: n, pass: pass, asserts: asserts, minSize: minSize, maxSize: maxSize, ghosty: ghosty };
+}
+
+// ---------------------------------------------------------------- correctness, decided not sampled
+// Two traps agree when they send the keyboard to the same place from EVERY position it could be in,
+// in both directions, including from nowhere. The domain is finite, so this is decided.
+const universe = function(ann){
+  const u = [null];
+  for (const n of ann.list) u.push(n.id);
+  return u;
+};
+
+// The four ways a trap is wrong, each read off the trap's own list rather than off a diff:
+//  ghost        a stop the reader cannot see
+//  unreachable  a control the platform offers that the trap never visits
+//  misordered   the right set in the wrong order
+//  escaped      a step that leaves the dialog
+function grade(id, ann, truth, tnext, stops, next, u, ids){
+  if (!stops){ stops = trapStops(id, ann); next = trapNext(id, ann); }
+  if (!u){ u = universe(ann); ids = dialogIds(ann); }
+  let same = 0, tot = 0, escaped = 0;
+  for (const fid of u){
+    tot += 2;
+    const f = next(fid, 1), b = next(fid, -1);
+    if (f === tnext(fid, 1)) same++;
+    if (b === tnext(fid, -1)) same++;
+    if ((f !== null && !ids[f]) || (b !== null && !ids[b])) escaped++;
+  }
+  const have = {}; for (const n of stops) have[n.id] = 1;
+  const want = {}; for (const n of truth) want[n.id] = 1;
+  let ghost = 0, unreach = 0;
+  for (const n of stops) if (!onScreen(n)) ghost++;
+  for (const n of truth) if (!have[n.id]) unreach++;
+  const setEq = stops.length === truth.length && stops.every(n => want[n.id]);
+  const orderEq = setEq && stops.every((n, i) => n.id === truth[i].id);
+  return { id: id, exact: same === tot, same: same, tot: tot, ghost: ghost, unreach: unreach,
+           escaped: escaped, setEq: setEq, misordered: setEq && !orderEq,
+           nstops: stops.length, ntruth: truth.length };
+}
+
+// ---------------------------------------------------------------- the identities
+// Each neighbouring pair of traps differs by ONE named thing, and whether they differ on a given
+// dialog is predictable from the tree with no implementation in the argument. These predicates are
+// the prediction; the run below checks them against the lists the traps actually build.
+function predicates(ann){
+  const dl = dlgList(ann), p = {};
+  // selector -> offset: a matching node the layout never boxed
+  p.selOffset = dl.some(n => selSet(n) && !n.a.rendered);
+  // offset -> visnaive: a matching, boxed node under a visibility:hidden ancestor
+  p.offsetVis = dl.some(n => selSet(n) && n.a.rendered && n.a.visN === 'hidden');
+  // visnaive -> inherit: the three inherited things, each read off the element alone
+  p.rescued = dl.some(n => selSet(n) && n.a.rendered && n.a.visN === 'hidden' && n.a.vis !== 'hidden');
+  p.inertHit = dl.some(n => selSet(n) && n.a.rendered && n.a.visN !== 'hidden' && n.a.inert);
+  p.fdisHit = dl.some(n => selSet(n) && n.a.rendered && n.a.visN !== 'hidden' && !n.a.inert && n.a.fdis);
+  p.visInherit = p.rescued || p.inertHit || p.fdisHit;
+  // inherit -> ordered: the exact-string test on tabindex, and the sort
+  const iset = dl.filter(n => selSet(n) && onScreen(n) && !n.a.inert && !n.a.fdis);
+  p.stringTI = dl.some(function(n){
+    const t = parseTI(n.ti);
+    return selMatch(n) && n.dis !== true && onScreen(n) && !n.a.inert && !n.a.fdis &&
+           t !== null && t < 0 && n.ti !== '-1';
+  });
+  const oset = trapStops('ordered', ann);
+  p.reorders = iset.length === oset.length && iset.some((n, i) => n.id !== oset[i].id);
+  p.orderedDiff = p.stringTI || p.reorders;
+  // ordered -> spec: a radio group that collapses, and a stop the selector string never names
+  const cand = specCand(dl);
+  let extra = 0;
+  const grp = {};
+  for (const n of cand) if (n.tag === 'input' && n.ity === 'radio' && n.rname){
+    if (!grp[n.rname]) grp[n.rname] = [];
+    grp[n.rname].push(n);
+  }
+  for (const g in grp){ const m = grp[g]; if (m.some(n => n.chk === true)) extra += m.length - 1; }
+  p.radioExtra = extra;
+  p.missedNative = cand.filter(n => !selMatch(n)).length;
+  p.specDiff = extra > 0 || p.missedNative > 0;
+  // sentinel -> spec: the sorted ends are not the document ends
+  const truth = specStops(dl);
+  if (truth.length < 2) p.endsMove = false;
+  else {
+    const doc = truth.slice().sort((a, b) => a.a.i - b.a.i);
+    p.endsMove = !(truth[0].id === doc[0].id && truth[truth.length - 1].id === doc[doc.length - 1].id);
+  }
+  // and the counts the page prints, all read straight off the tree
+  p.ghostPred = dl.filter(n => selSet(n) && !onScreen(n)).length;
+  p.stops = truth.length;
+  p.empty = truth.length === 0;
+  return p;
+}
+
+// Which trap each predicate separates. The first five pairs differ only in the LIST they build, so
+// the identity compares lists. The last pair builds the same list and differs only in where the two
+// ends point, so that identity compares the stepping functions instead.
+const CHAIN = [['selector', 'offset', 'selOffset', 'list'], ['offset', 'visnaive', 'offsetVis', 'list'],
+               ['visnaive', 'inherit', 'visInherit', 'list'], ['inherit', 'ordered', 'orderedDiff', 'list'],
+               ['ordered', 'spec', 'specDiff', 'list'], ['sentinel', 'spec', 'endsMove', 'next']];
+
+const sameList = function(a, b){
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i].id !== b[i].id) return false;
+  return true;
+};
+const sameNext = function(a, b, u){
+  for (const fid of u) if (a(fid, 1) !== b(fid, 1) || a(fid, -1) !== b(fid, -1)) return false;
+  return true;
+};
+
+// ---------------------------------------------------------------- the whole run
+function run(anns){
+  const rows = {};
+  for (const id of TRAP_IDS)
+    rows[id] = { id: id, exact: 0, ghostD: 0, ghostN: 0, unreachD: 0, unreachN: 0, misD: 0,
+                 escD: 0, emptyBogus: 0, same: 0, tot: 0, stopsN: 0, prop: {} };
+  for (const id of TRAP_IDS) for (const p of PROPS) rows[id].prop[p] = 0;
+  let asserts = 0, idOK = 0, idN = 0, nodes = 0, ghostPred = 0, ghostSeen = 0,
+      radioPred = 0, radioSeen = 0, emptyN = 0, propN = 0;
+  const chain = {};
+  for (const c of CHAIN) chain[c[2]] = { pair: c[0] + '|' + c[1], pred: 0, meas: 0, agree: 0 };
+  for (const ann of anns){
+    const dl = dlgList(ann), truth = specStops(dl), u = universe(ann), ids = dialogIds(ann);
+    const p = predicates(ann), lists = {}, nexts = {};
+    nodes += ann.list.length;
+    for (const id of TRAP_IDS){ lists[id] = trapStops(id, ann); nexts[id] = trapNext(id, ann, lists[id]); }
+    for (const id of TRAP_IDS){
+      const r = grade(id, ann, truth, nexts.spec, lists[id], nexts[id], u, ids), R = rows[id];
+      if (r.exact) R.exact++;
+      if (r.ghost){ R.ghostD++; R.ghostN += r.ghost; }
+      if (r.unreach){ R.unreachD++; R.unreachN += r.unreach; }
+      if (r.misordered) R.misD++;
+      if (r.escaped) R.escD++;
+      if (r.ntruth === 0 && r.nstops > 0) R.emptyBogus++;
+      R.same += r.same; R.tot += r.tot; R.stopsN += r.nstops;
+      asserts += r.tot;
+      // the same five assertions a test file makes, made here against every dialog in the corpus
+      const t = triad(nexts[id], truth, ids);
+      for (const q of PROPS) if (!t[q]) R.prop[q]++;
+      asserts += t.n;
+    }
+    propN++;
+    for (const c of CHAIN){
+      idN++;
+      const differs = c[3] === 'list' ? !sameList(lists[c[0]], lists[c[1]])
+                                      : !sameNext(nexts[c[0]], nexts[c[1]], u);
+      const C2 = chain[c[2]];
+      if (p[c[2]]) C2.pred++;
+      if (differs) C2.meas++;
+      if (differs === !!p[c[2]]){ idOK++; C2.agree++; }
+    }
+    ghostPred += p.ghostPred;
+    ghostSeen += lists.selector.filter(n => !onScreen(n)).length;
+    radioPred += p.radioExtra;
+    radioSeen += lists.ordered.length - lists.spec.length + p.missedNative;
+    if (p.empty) emptyN++;
+  }
+  return { rows: rows, n: anns.length, asserts: asserts, idOK: idOK, idN: idN, nodes: nodes,
+           ghostPred: ghostPred, ghostSeen: ghostSeen, radioPred: radioPred, radioSeen: radioSeen,
+           emptyN: emptyN, propN: propN, chain: chain };
+}
+
+// ---------------------------------------------------------------- what the reader actually feels
+// Open the dialog and press Tab all the way round once. A press that lands on something the reader
+// cannot see is a press where the focus ring does not move, and a RUN of them is the number of
+// times you press Tab and nothing at all happens. The cycle wraps, so the seam counts.
+function walkRound(id, ann, pre){
+  const stops = pre || trapStops(id, ann);
+  const out = { n: 0, blind: 0, run: 0, opensBlind: false, seq: [] };
+  if (!stops.length) return out;
+  const next = trapNext(id, ann, stops);
+  let cur = stops[0].id;
+  for (let i = 0; i < stops.length; i++){ out.seq.push(cur); cur = next(cur, 1); }
+  out.n = out.seq.length;
+  out.opensBlind = !onScreen(ann.byId[out.seq[0]]);
+  let cr = 0;
+  for (let i = 0; i < out.seq.length * 2; i++){
+    const n = ann.byId[out.seq[i % out.seq.length]];
+    if (onScreen(n)) cr = 0;
+    else { cr++; if (cr > out.run) out.run = cr; }
+  }
+  if (out.run > out.seq.length) out.run = out.seq.length;
+  for (const sid of out.seq) if (!onScreen(ann.byId[sid])) out.blind++;
+  return out;
+}
+
+function feel(anns, id){
+  let presses = 0, blind = 0, worst = 0, opens = 0, worstAt = -1, allBlind = 0;
+  for (let i = 0; i < anns.length; i++){
+    const w = walkRound(id, anns[i]);
+    presses += w.n; blind += w.blind;
+    if (w.opensBlind) opens++;
+    if (w.n && w.blind === w.n) allBlind++;
+    if (w.run > worst){ worst = w.run; worstAt = i; }
+  }
+  return { id: id, presses: presses, blind: blind, worst: worst, worstAt: worstAt, opens: opens,
+           allBlind: allBlind, n: anns.length };
+}
+
+function fixtureRun(fixs){
+  const out = [];
+  for (const f of fixs){
+    const Q = testQ(f), ids = dialogIds(f);
+    const row = { name: f.name, note: f.note, q: Q.length, res: {}, asserts: 0 };
+    for (const id of TRAP_IDS){ const r = triad(trapNext(id, f), Q, ids); row.res[id] = r; row.asserts += r.n; }
+    out.push(row);
+  }
+  return out;
+}
+
+// which traps survive every fixture in a suite
+function suitePass(frows){
+  const pass = [];
+  for (const id of TRAP_IDS){
+    let ok = true;
+    for (const r of frows) if (!r.res[id].all) ok = false;
+    if (ok) pass.push(id);
+  }
+  return pass;
+}
+
+// per-property: how many of the eight traps each single assertion rejects, over a suite
+function propTable(frows){
+  const out = {};
+  for (const p of PROPS){
+    let rejected = 0;
+    for (const id of TRAP_IDS){
+      let bad = false;
+      for (const r of frows) if (!r.res[id][p]) bad = true;
+      if (bad) rejected++;
+    }
+    out[p] = rejected;
+  }
+  return out;
+}
+// ===== ENGINE:END =====
+
+// ---------------------------------------------------------------- the workload
+// The whole page is these five numbers. Change one and every figure on it changes with it.
+const CORPUS_N = 1500, SEED = 7702;
+const SCRAM_DIALOGS = 300, SCRAM_DRAWS = 12, SCRAM_SEED = 991;
+
+const $ = id => document.getElementById(id);
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const pct = (x, n) => n ? (100 * x / n).toFixed(1) + '%' : '&mdash;';
+const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+               'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+               'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const word = n => (n >= 0 && n <= 20) ? WORDS[n] : fmt(n);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+let CORPUS = null, RUN = null, FEEL = null, FIX = null, FIXR = null, BITE = null, BITER = null,
+    SCRAM = null, SUITE = null, SUITE2 = null, PROPT = null, TOTAL = 0, MS = 0, BITE_ADD = 0;
+
+function measure(){
+  const t0 = Date.now();
+  CORPUS = corpus(CORPUS_N, SEED);
+  RUN = run(CORPUS);
+  FEEL = {};
+  for (const id of TRAP_IDS) FEEL[id] = feel(CORPUS, id);
+  FIX = fixtures(); FIXR = fixtureRun(FIX);
+  BITE = biteFixtures(); BITER = fixtureRun(BITE);
+  SUITE = suitePass(FIXR); SUITE2 = suitePass(FIXR.concat(BITER));
+  PROPT = propTable(FIXR);
+  SCRAM = scramble(CORPUS.slice(0, SCRAM_DIALOGS), SCRAM_DRAWS, SCRAM_SEED);
+  // how much markup the five extra fixtures are: every node they add to the plain one
+  const base = 4;                                   // dialog, the field, Cancel, Save
+  BITE_ADD = 0;
+  for (const b of BITE) BITE_ADD += dlgList(b).length - base;
+  TOTAL = RUN.asserts + SCRAM.asserts + RUN.idN + RUN.n * 2 +
+          FIXR.reduce((a, r) => a + r.asserts, 0) + BITER.reduce((a, r) => a + r.asserts, 0);
+  for (const id of TRAP_IDS) TOTAL += FEEL[id].presses;
+  MS = Date.now() - t0;
+}
+
+// ---------------------------------------------------------------- the self-check
+// Bounds and identities only. Not one of these compares against a number typed into this file:
+// each is either a structural fact that must hold whatever the corpus turns out to be, or two
+// different computations of the same quantity that have to land on each other.
+const CHECKS = [];
+function selfCheck(){
+  let n = 0, bad = [];
+  const ok = (c, l) => { n++; CHECKS.push({ pass: !!c, label: l }); if (!c) bad.push(l); };
+
+  // 1. every trap except the control draws its stops from inside the dialog, and never repeats one
+  for (const ann of CORPUS.slice(0, 120)){
+    const ids = dialogIds(ann);
+    for (const id of TRAP_IDS){
+      const s = trapStops(id, ann), seen = {};
+      let inside = true, dup = false;
+      for (const x of s){ if (!ids[x.id]) inside = false; if (seen[x.id]) dup = true; seen[x.id] = 1; }
+      ok(!dup, 'a trap listed the same node twice: ' + id);
+      if (id !== 'loose') ok(inside, 'a trap listed a node outside the dialog: ' + id);
+    }
+  }
+  // 2. the control is the ONLY arm that can leave the dialog, and it always can
+  ok(RUN.rows.loose.escD === RUN.n, 'the control escapes on every dialog');
+  for (const id of TRAP_IDS) if (id !== 'loose')
+    ok(RUN.rows[id].escD === 0, 'a trap escaped the dialog: ' + id);
+  // 3. stepping is a bijection on the stops, and one lap comes home, for every symmetric trap
+  let asym = 0;
+  for (const ann of CORPUS.slice(0, 120)) for (const id of TRAP_IDS){
+    const s = trapStops(id, ann), next = trapNext(id, ann, s);
+    if (!s.length) continue;
+    let inv = true;
+    for (const x of s) if (next(next(x.id, 1), -1) !== x.id) inv = false;
+    let cur = s[0].id;
+    for (let i = 0; i < s.length; i++) cur = next(cur, 1);
+    if (!inv || cur !== s[0].id) asym++;
+    if (id !== 'sentinel'){
+      ok(inv, 'Tab then Shift+Tab is not the identity on the stops of ' + id);
+      ok(cur === s[0].id, 'one lap of ' + id + ' does not come home');
+    }
+  }
+  ok(asym > 0, 'the sentinel is the only arm whose two ends disagree, and it does disagree');
+  // 4. the platform order really is positives-then-zeros, ties in document order
+  for (const ann of CORPUS.slice(0, 200)){
+    const s = trapStops('spec', ann);
+    const key = x => { const t = parseTI(x.ti); return (t !== null && t > 0) ? t : 0; };
+    for (let i = 1; i < s.length; i++){
+      const a = key(s[i - 1]), b = key(s[i]);
+      const before = a === b ? s[i - 1].a.i < s[i].a.i : (a === 0 ? false : (b === 0 ? true : a <= b));
+      ok(before, 'the platform order is not positives-then-zeros with a document tie-break');
+    }
+  }
+  // 5. tabindex parses by the platform's rules, and the CSS string test cannot agree with it
+  ok(parseTI(' -1') === parseTI('-1') && parseTI('-01') === parseTI('-1'),
+     'three spellings of minus one all parse to the same number');
+  ok(' -1' !== '-1' && '-01' !== '-1', 'and they are three different strings');
+  ok(parseTI('3px') === 3 && parseTI('abc') === null && parseTI('') === null,
+     'trailing rubbish is ignored and no digits means the attribute does not apply');
+  // 6. two independent counts of the same thing have to agree
+  ok(RUN.ghostPred === RUN.ghostSeen, 'the invisible stops predicted from the markup are the ones seen');
+  ok(RUN.radioPred === RUN.radioSeen, 'and the extra stops a checked radio group costs');
+  ok(FEEL.selector.blind === RUN.rows.selector.ghostN,
+     'walking one lap finds the same invisible stops as filtering the list');
+  // 7. every neighbouring pair differs exactly when its predicate says it can
+  ok(RUN.idOK === RUN.idN, 'every defect predicate matched the lists the traps built');
+  // 8. the assertions are blind: every drawn list passes, whatever is in it
+  ok(SCRAM.pass === SCRAM.n, 'every scrambled list satisfies all five assertions');
+  ok(SCRAM.ghosty > 0 && SCRAM.ghosty < SCRAM.n,
+     'and some but not all of those lists hold something that is not a tab stop');
+  // 9. the ladder is a ladder: each step is at least as right as the one below it
+  for (let i = 1; i < TRAP_IDS.length; i++){
+    ok(RUN.rows[TRAP_IDS[i]].exact >= RUN.rows[TRAP_IDS[i - 1]].exact,
+       'the ladder went backwards at ' + TRAP_IDS[i]);
+    ok(RUN.rows[TRAP_IDS[i]].same / RUN.rows[TRAP_IDS[i]].tot >=
+       RUN.rows[TRAP_IDS[i - 1]].same / RUN.rows[TRAP_IDS[i - 1]].tot,
+       'the agreement went backwards at ' + TRAP_IDS[i]);
+  }
+  // 10. only the platform's own rule is right everywhere, and it is right everywhere
+  ok(RUN.rows[CORRECT].exact === RUN.n, 'the platform rule is right on every dialog');
+  for (const id of TRAP_IDS) if (id !== CORRECT)
+    ok(RUN.rows[id].exact < RUN.n, 'something other than the platform rule was right everywhere: ' + id);
+  // 11. the fixture suite accepts everything but the control, and the five extras leave one
+  ok(SUITE.length === TRAP_IDS.length - 1, 'the fixture suite rejects exactly the control');
+  ok(SUITE.indexOf('loose') < 0, 'and the control is the one it rejects');
+  ok(SUITE2.length === 1 && SUITE2[0] === CORRECT, 'the five extra fixtures leave only the platform rule');
+  // 12. the empty dialog: nowhere to go, and nothing to assert
+  const emptyFix = FIX[FIX.length - 1];
+  ok(testQ(emptyFix).length === 0, 'the last fixture has no tab stop at all');
+  for (const id of TRAP_IDS){
+    ok(trapNext(id, emptyFix)(null, 1) === null || id === 'loose',
+       'a trap invented a stop in a dialog that has none: ' + id);
+    ok(FIXR[FIXR.length - 1].res[id].all, 'and every arm passes it vacuously: ' + id);
+  }
+  ok(RUN.rows.loose.emptyBogus === RUN.emptyN,
+     'the control is the one arm that offers a stop when the dialog has none');
+  // 13. one property never rejects anybody on a fixture, and the numbers on the page say so
+  ok(PROPT.roundTrip === 0, 'the round-trip assertion rejects nothing on any fixture');
+  for (const p of PROPS) ok(PROPT[p] <= 1, 'no single assertion rejects more than the control');
+
+  const el = $('selftest');
+  el.className = 'badge ' + (bad.length ? 'fail' : 'pass');
+  el.textContent = bad.length
+    ? 'self-check: ' + bad.length + ' of ' + n + ' FAILED - ' + bad[0]
+    : 'self-check: ' + fmt(n) + ' bounds and identities hold, 0 failures';
+  TOTAL += n;
+  return { n: n, bad: bad };
+}
+
+// ---------------------------------------------------------------- the demo
+let CASES = [], caseIx = 0, trapId = 'selector', cur = null, presses = 0, moved = 0, randSeed = 4242;
+
+function buildCases(){
+  CASES = [];
+  for (const f of FIX) CASES.push({ ann: f, name: 'fixture: ' + f.name, note: f.note });
+  for (const b of BITE) CASES.push({ ann: b, name: 'the fixture nobody writes: ' + b.name, note: b.note });
+  const w = FEEL.selector.worstAt;
+  if (w >= 0) CASES.push({ ann: CORPUS[w], name: 'the worst dialog in the corpus (#' + w + ')',
+                           note: 'where the selector string goes darkest' });
+  for (const i of [0, 7, 33, 101, 404, 900, 1207]) if (CORPUS[i])
+    CASES.push({ ann: CORPUS[i], name: 'generated dialog #' + i,
+                 note: (CORPUS[i].kinds || []).join(', ') });
+  caseIx = CASES.length - 8;                       // open on the worst one
+  if (caseIx < 0) caseIx = 0;
+}
+
+const curCase = () => CASES[caseIx];
+function resetFocus(){
+  const s = trapStops(trapId, curCase().ann);
+  cur = s.length ? s[0].id : null;
+  presses = 0; moved = 0;
+}
+
+function step(dir){
+  const ann = curCase().ann, next = trapNext(trapId, ann);
+  const before = cur;
+  cur = next(cur, dir);
+  presses++;
+  const wasSeen = before && ann.byId[before] && onScreen(ann.byId[before]);
+  const isSeen = cur && ann.byId[cur] && onScreen(ann.byId[cur]);
+  if (before !== cur && (wasSeen || isSeen)) moved++;
+  paint();
+}
+
+function rowHtml(nd, ann, ixMap, truthMap){
+  const seen = onScreen(nd);
+  const isStop = ixMap[nd.id] !== undefined;
+  const cls = ['row'];
+  if (!seen) cls.push('gone');
+  if (nd.id === cur) cls.push('here');
+  const attrs = [];
+  if (nd.ti !== undefined) attrs.push('tabindex="' + esc(nd.ti) + '"');
+  if (nd.dis) attrs.push('disabled');
+  if (nd.hid) attrs.push('hidden');
+  if (nd.inert) attrs.push('inert');
+  if (nd.disp === 'none') attrs.push('display:none');
+  if (nd.vis) attrs.push('visibility:' + nd.vis);
+  if (nd.ity) attrs.push('type=' + nd.ity);
+  if (nd.chk) attrs.push('checked');
+  if (nd.ce) attrs.push('contenteditable');
+  if (nd.ctl) attrs.push('controls');
+  if (nd.tag === 'details') attrs.push(nd.open ? 'open' : 'closed');
+  if (nd.href) attrs.push('href');
+  let why = '';
+  if (!seen) why = !nd.a.rendered ? 'not rendered' : 'painted out';
+  else if (nd.a.inert) why = 'inert';
+  else if (nd.a.fdis) why = 'ancestor fieldset disabled';
+  const pad = Math.max(0, nd.a.depth - 1) * 11;
+  return '<div class="' + cls.join(' ') + '" style="margin-left:' + pad + 'px">' +
+    '<span class="ix' + (isStop ? '' : ' no') + '">' + (isStop ? (ixMap[nd.id] + 1) : '&middot;') +
+    '</span><span class="el">' + esc(nd.tag) + (nd.lab ? ' <b>' + esc(nd.lab) + '</b>' : '') +
+    '</span>' + (attrs.length ? '<span class="tg">' + esc(attrs.join(' ')) + '</span>' : '') +
+    (why ? '<span class="why">' + why + '</span>' : '') +
+    (truthMap[nd.id] !== undefined ? '<span class="why" style="color:#166534">platform #' +
+      (truthMap[nd.id] + 1) + '</span>' : '') + '</div>';
+}
+
+function paint(){
+  const c = curCase(), ann = c.ann;
+  const stops = trapStops(trapId, ann), truth = trapStops('spec', ann);
+  const ixMap = {}; stops.forEach((x, i) => { ixMap[x.id] = i; });
+  const truthMap = {}; truth.forEach((x, i) => { truthMap[x.id] = i; });
+  let h = '';
+  for (const nd of ann.list) if (nd.a.dlg) h += rowHtml(nd, ann, ixMap, truthMap);
+  $('stage').innerHTML = h;
+  const pill = (x, i) => '<span class="pill' + (onScreen(x) ? '' : ' dark') +
+    (x.id === cur ? ' gold' : '') + '">' + (i + 1) + '. ' + esc(x.tag) +
+    (x.lab ? ' ' + esc(x.lab) : '') + (onScreen(x) ? '' : ' &mdash; invisible') + '</span>';
+  $('stopList').innerHTML = stops.length ? stops.map(pill).join('') :
+    '<span class="pill">no stop at all &mdash; the keyboard has nowhere to go</span>';
+  $('truthList').innerHTML = truth.length ? truth.map(pill).join('') :
+    '<span class="pill">no stop at all &mdash; the keyboard has nowhere to go</span>';
+  const missing = truth.filter(x => ixMap[x.id] === undefined);
+  const ghosts = stops.filter(x => !onScreen(x));
+  const orderBad = stops.length === truth.length && stops.some((x, i) => x.id !== truth[i].id);
+  const w = walkRound(trapId, ann, stops);
+  $('diffNote').innerHTML =
+    (missing.length ? '<strong class="bad">' + missing.length + ' control' +
+      (missing.length > 1 ? 's' : '') + ' the platform offers and this trap never visits: ' +
+      missing.map(x => '<code>' + esc(x.tag) + (x.lab ? ' ' + esc(x.lab) : '') + '</code>').join(', ') +
+      '.</strong> ' : '') +
+    (ghosts.length ? '<strong class="warn">' + ghosts.length + ' stop' +
+      (ghosts.length > 1 ? 's are' : ' is') + ' not on the screen.</strong> ' : '') +
+    (orderBad ? '<strong class="warn">Same controls, different order.</strong> ' : '') +
+    (!missing.length && !ghosts.length && !orderBad
+      ? (trapId === 'sentinel' ? 'The list and the order are right. Walk to either end.'
+                               : 'This trap matches the platform on this dialog.')
+      : '');
+  let bar = '';
+  for (let i = 0; i < w.seq.length; i++)
+    bar += '<i class="' + (onScreen(ann.byId[w.seq[i]]) ? '' : 'blind') +
+           (w.seq[i] === cur ? ' now' : '') + '"></i>';
+  $('seqbar').innerHTML = bar || '<span class="dim" style="font-size:12px">no stops</span>';
+  $('lapNote').innerHTML = w.n
+    ? 'One lap is <strong>' + w.n + '</strong> presses' +
+      (w.blind ? ', <strong class="warn">' + w.blind + '</strong> of them onto something invisible' +
+        (w.run > 1 ? ', <strong class="bad">' + w.run + ' of those in a row</strong>' : '') : '') +
+      '. The platform gives <strong>' + truth.length + '</strong>.'
+    : 'This dialog has no tab stop, so a lap is nothing at all &mdash; and every assertion a test ' +
+      'can make about it is vacuously true.';
+  const nd = cur ? ann.byId[cur] : null;
+  $('pressNote').innerHTML = 'You have pressed Tab <strong>' + presses + '</strong> time' +
+    (presses === 1 ? '' : 's') + '; the ring has moved somewhere you can see it <strong>' + moved +
+    '</strong> time' + (moved === 1 ? '' : 's') + '. The keyboard is on ' +
+    (nd ? '<code>' + esc(nd.tag) + (nd.lab ? ' ' + esc(nd.lab) : '') + '</code>' +
+      (onScreen(nd) ? '' : ' <strong class="bad">which is not on the screen</strong>')
+        : '<strong>nothing at all</strong>') + '. ' + esc(c.note || '');
+}
+
+// ---------------------------------------------------------------- the tables
+function fillFix(){
+  let h = '';
+  for (const r of FIXR){
+    h += '<tr><td>' + esc(r.name) + '</td><td class="dim" style="font-size:11.5px">' +
+      esc(r.note) + '</td><td>' + r.q + '</td>';
+    for (const id of TRAP_IDS)
+      h += '<td class="' + (r.res[id].all ? 'ok' : 'bad') + '">' +
+        (r.res[id].vacuous ? '<span class="dim">-</span>' : (r.res[id].all ? '&#9679;' : '&times;')) +
+        '</td>';
+    h += '</tr>';
+  }
+  $('tFix').innerHTML = h;
+  const wrong = SUITE.filter(id => id !== CORRECT);
+  $('fixNote').innerHTML =
+    'Eight fixtures, ' + fmt(FIXR.reduce((a, r) => a + r.asserts, 0)) + ' assertions, and the suite ' +
+    'accepts <strong>' + SUITE.length + '</strong> of the <strong>' + TRAP_IDS.length +
+    '</strong> arms. The one it rejects is the control &mdash; no trap installed &mdash; and it is ' +
+    'rejected because its list is drawn from the whole page, not because anything is wrong with the ' +
+    'wrap. And <strong>' + word(wrong.length) + '</strong> of the ' + SUITE.length +
+    ' arms it accepts disagree with the platform on the corpus below. The last fixture has no control in ' +
+    'it at all, so there is nothing to assert and every arm passes, the control included: a dash, ' +
+    'not a tick.';
+}
+
+function fillProps(){
+  let h = '';
+  for (const p of PROPS){
+    let corpusWorst = 0, corpusIds = 0;
+    for (const id of TRAP_IDS){ if (RUN.rows[id].prop[p] > 0) corpusIds++;
+      if (RUN.rows[id].prop[p] > corpusWorst) corpusWorst = RUN.rows[id].prop[p]; }
+    h += '<tr' + (PROPT[p] === 0 ? ' class="ctl"' : '') + '><td>' + p + '</td><td class="dim" ' +
+      'style="font-size:11.5px">' + PROP_TEXT[p] + '</td><td class="' +
+      (PROPT[p] ? '' : 'bad') + '">' + PROPT[p] + ' of ' + TRAP_IDS.length + '</td>' +
+      '<td>' + corpusIds + ' of ' + TRAP_IDS.length + ' arms, worst ' + fmt(corpusWorst) +
+      ' of ' + fmt(RUN.n) + ' dialogs</td></tr>';
+  }
+  $('tProps').innerHTML = h;
+  $('propNote').innerHTML =
+    'Four of the five reject exactly one arm, and it is the same arm each time. The fifth, <em>' +
+    PROP_TEXT.roundTrip + '</em>, rejects <strong>nothing</strong> &mdash; on a fixture it cannot, ' +
+    'because on a fixture every arm builds the same list and stepping forward and back over one ' +
+    'list is the identity by construction. Point the same five assertions at the corpus, where the ' +
+    'controls a human would name are not the controls the traps find, and the round trip becomes ' +
+    'the second sharpest of the five: it rejects <strong>' + fmt(RUN.rows.selector.prop.roundTrip) +
+    '</strong> of ' + fmt(RUN.n) + ' dialogs for the selector string. The assertion was never weak. ' +
+    'The fixture was.';
+}
+
+function fillScram(){
+  const sizes = SCRAM.minSize + ' to ' + SCRAM.maxSize + ' nodes';
+  $('tScram').innerHTML = '<tr class="me"><td>' + fmt(SCRAM.n) + '</td><td>' + sizes + '</td><td>' +
+    fmt(SCRAM.ghosty) + ' (' + pct(SCRAM.ghosty, SCRAM.n) + ')</td><td class="ok">' +
+    fmt(SCRAM.pass) + ' of ' + fmt(SCRAM.n) + ' &mdash; ' + pct(SCRAM.pass, SCRAM.n) +
+    '</td></tr>';
+  $('scramNote').innerHTML =
+    fmt(SCRAM.n) + ' lists were drawn out of ' + fmt(SCRAM_DIALOGS) + ' dialogs, between ' +
+    SCRAM.minSize + ' and ' + SCRAM.maxSize + ' nodes each, in the order the draw happened to ' +
+    'produce. <strong>' + fmt(SCRAM.ghosty) + '</strong> of them contain at least one node that is ' +
+    'not a tab stop by any reading &mdash; a paragraph, a hidden input, an ancestor div. All ' +
+    fmt(SCRAM.n) + ' satisfy all five assertions, ' + fmt(SCRAM.asserts) + ' assertions in total, ' +
+    'with no exception. That is the whole finding in one line: <strong>the five properties are ' +
+    'satisfied by any non-empty list in any order</strong>, so passing them is evidence that a ' +
+    'cycle exists and evidence of nothing else.';
+}
+
+function fillLadder(){
+  let h = '';
+  for (const id of TRAP_IDS){
+    const r = RUN.rows[id], f = FEEL[id];
+    const cls = id === CORRECT ? ' class="me"' : (id === 'loose' ? ' class="ctl"' : '');
+    h += '<tr' + cls + '><td>' + TRAPS[id].label +
+      (id === CORRECT ? '<span class="tag good">RIGHT</span>' :
+       id === 'loose' ? '<span class="tag ctl">CONTROL</span>' : '<span class="tag">WRONG</span>') +
+      '</td><td class="dim" style="font-size:11.5px">' + esc(TRAPS[id].clause) + '</td>' +
+      '<td>' + pct(r.exact, RUN.n) + '</td><td>' + pct(r.same, r.tot) + '</td>' +
+      '<td>' + (r.ghostN ? '<span class="bad">' + fmt(r.ghostN) + '</span> on ' + fmt(r.ghostD) +
+        ' dialogs' : '<span class="dim">none</span>') + '</td>' +
+      '<td>' + (r.unreachN ? '<span class="bad">' + fmt(r.unreachN) + '</span> on ' +
+        fmt(r.unreachD) + ' dialogs' : '<span class="dim">none</span>') + '</td>' +
+      '<td>' + (f.blind ? pct(f.blind, f.presses) : '<span class="dim">0.0%</span>') + '</td>' +
+      '<td>' + (r.stopsN / RUN.n).toFixed(2) + '</td></tr>';
+  }
+  $('tLadder').innerHTML = h;
+  const best = SUITE.filter(id => id !== CORRECT)
+    .sort((a, b) => RUN.rows[b].exact - RUN.rows[a].exact)[0];
+  const worst = FEEL.selector;
+  $('ladderNote').innerHTML =
+    'Only the last row is right, and it is right on every one of ' + fmt(RUN.n) + ' dialogs by an ' +
+    'exhaustive comparison rather than a sample. The best of the ' +
+    word(SUITE.length - 1) + ' wrong arms the test suite accepts is <em>' + TRAPS[best].label +
+    '</em> at <strong>' + pct(RUN.rows[best].exact, RUN.n) + '</strong>. The first one &mdash; the ' +
+    'selector string, which is what is in the most shipped code &mdash; is right on <strong>' +
+    pct(RUN.rows.selector.exact, RUN.n) + '</strong>, puts the keyboard somewhere invisible on ' +
+    '<strong>' + fmt(RUN.rows.selector.ghostD) + '</strong> of ' + fmt(RUN.n) + ' dialogs, and on ' +
+    'the worst of them the reader presses Tab <strong>' + worst.worst + ' times in a row</strong> ' +
+    'with the focus ring never moving. Its list is also missing <strong>' +
+    fmt(RUN.rows.selector.unreachN) + '</strong> controls across <strong>' +
+    fmt(RUN.rows.selector.unreachD) + '</strong> dialogs &mdash; a summary, a contenteditable note, ' +
+    'a video, a frame &mdash; which no amount of Tab will ever reach.';
+}
+
+function fillBites(){
+  let h = '';
+  let acc = FIXR.slice();
+  for (const r of BITER){
+    acc = acc.concat([r]);
+    const after = suitePass(acc).length;
+    const rej = TRAP_IDS.filter(id => !r.res[id].all);
+    h += '<tr><td>' + esc(r.name) + '</td><td class="dim" style="font-size:11.5px">' + esc(r.note) +
+      '</td><td>' + r.q + '</td><td>' + rej.length + ' of ' + TRAP_IDS.length + '</td>' +
+      '<td><strong>' + after + '</strong></td></tr>';
+  }
+  $('tBites').innerHTML = h;
+  const dead = [];
+  let acc2 = FIXR.slice(), prev = suitePass(acc2).length;
+  for (const r of BITER){
+    acc2 = acc2.concat([r]);
+    const now = suitePass(acc2).length;
+    if (now === prev) dead.push(r.name);
+    prev = now;
+  }
+  $('biteNote').innerHTML =
+    'Five fixtures, <strong>' + BITE_ADD + '</strong> extra elements between them, and the suite ' +
+    'goes from accepting <strong>' + SUITE.length + '</strong> of ' + TRAP_IDS.length +
+    ' to accepting <strong>' + SUITE2.length + '</strong>. None of them is exotic: a tab panel that ' +
+    'is not showing, a loading skeleton, an inert region, a legacy tabindex, a radio group. ' +
+    (dead.length ? '<strong>One of the five earns nothing:</strong> <em>' + esc(dead[0]) +
+      '</em> rejects exactly the arms the skeleton above it already rejected, so the count does not ' +
+      'move when it is added. It is left in the table rather than quietly deleted, because a ' +
+      'fixture that adds no discrimination is a thing worth being able to see.' : '');
+}
+
+function fillIdent(){
+  const rows = [
+    ['selector', 'offset', 'selOffset', 'a matching element the layout never boxed'],
+    ['offset', 'visnaive', 'offsetVis', 'a matching element under a visibility:hidden ancestor'],
+    ['visnaive', 'inherit', 'visInherit', 'an inherited state read off the element: a rescued ' +
+      'visibility:visible, an inert ancestor, or a disabled fieldset'],
+    ['inherit', 'ordered', 'orderedDiff', 'a tabindex the string test misreads, or a positive one ' +
+      'that moves the order'],
+    ['ordered', 'spec', 'specDiff', 'a checked radio group, or a stop the selector string never names'],
+    ['sentinel', 'spec', 'endsMove', 'a tab order whose ends are not the document ends']
+  ];
+  let h = '';
+  for (const r of rows){
+    const C = RUN.chain[r[2]], pred = C.pred, meas = C.meas, agree = C.agree;
+    h += '<tr' + (agree === CORPUS.length ? ' class="me"' : '') + '><td>' + TRAPS[r[0]].label +
+      ' vs ' + TRAPS[r[1]].label + '</td><td class="dim" style="font-size:11.5px">' + r[3] +
+      '</td><td>' + fmt(pred) + '</td><td>' + fmt(meas) + '</td><td class="' +
+      (agree === CORPUS.length ? 'ok' : 'bad') + '">' + fmt(agree) + ' of ' + fmt(CORPUS.length) +
+      '</td></tr>';
+  }
+  $('tIdent').innerHTML = h;
+  $('identNote').innerHTML =
+    'All <strong>' + fmt(RUN.idN) + '</strong> of them, on every dialog. Two of the predicates are ' +
+    'exact counts rather than yes-or-no, and those match too: the number of invisible stops the ' +
+    'selector string produces is <strong>' + fmt(RUN.ghostPred) + '</strong> read off the markup ' +
+    'and <strong>' + fmt(RUN.ghostSeen) + '</strong> counted in the lists it built, and a radio ' +
+    'group of <em>r</em> buttons with one checked costs exactly <em>r</em> minus one extra stops, ' +
+    '<strong>' + fmt(RUN.radioPred) + '</strong> predicted against <strong>' + fmt(RUN.radioSeen) +
+    '</strong> measured. Neither prediction has an implementation in it &mdash; both are functions ' +
+    'of the tree.';
+}
+
+function fillNulls(){
+  const a = RUN.rows.offset, b = RUN.rows.visnaive;
+  $('nullNote').innerHTML =
+    '<strong>One.</strong> The fix everybody reaches for is the visibility check, and it is worth ' +
+    'almost nothing. Adding it takes the arm from <strong>' + pct(a.exact, RUN.n) + '</strong> ' +
+    'right to <strong>' + pct(b.exact, RUN.n) + '</strong>, and while it does remove all ' +
+    fmt(a.ghostN) + ' remaining invisible stops it <em>raises</em> the number of controls no Tab ' +
+    'can reach from <strong>' + fmt(a.unreachN) + '</strong> to <strong>' + fmt(b.unreachN) +
+    '</strong>, across <strong>' + fmt(b.unreachD - a.unreachD) + '</strong> more dialogs, because ' +
+    'the naive reading of an inherited property throws away the elements a descendant turned back ' +
+    'on. It trades one defect for another and the page says so rather than calling it progress. ' +
+    '<strong>Two.</strong> One of the five fixtures written to bite adds no discrimination at all ' +
+    'to the suite; it is in the table with its zero. <strong>Three.</strong> The corpus never opens ' +
+    'a dialog onto an invisible control &mdash; <strong>0</strong> of ' + fmt(RUN.n) + ' &mdash; ' +
+    'but that is a property of the generator, which always puts a live close button first, and not ' +
+    'a finding about focus traps. It is stated here so it cannot be mistaken for one.';
+}
+
+function fillProse(){
+  const wrong = SUITE.filter(id => id !== CORRECT);
+  $('pFix').textContent = word(FIXR.length);
+  $('pPass').textContent = word(SUITE.length);
+  $('pImpls').textContent = word(TRAP_IDS.length);
+  $('pWrong').textContent = word(wrong.length);
+  $('pScram').textContent = fmt(SCRAM.pass);
+  $('pScramN').textContent = fmt(SCRAM.n);
+  $('pGhostD').textContent = fmt(RUN.rows.selector.ghostD);
+  $('pCorpus').textContent = fmt(RUN.n);
+  $('pBlindPc').textContent = pct(FEEL.selector.blind, FEEL.selector.presses);
+  $('pWorstRun').textContent = word(FEEL.selector.worst);
+  $('pUnreachD').textContent = fmt(RUN.rows.selector.unreachD);
+  $('pBiteLines').textContent = word(BITE_ADD);
+  $('pAfter').textContent = word(SUITE2.length);
+  $('pTotal').textContent = fmt(TOTAL) + ' assertions';
+  $('capCorpus').textContent = fmt(RUN.n);
+  $('assertline').innerHTML =
+    fmt(TOTAL) + ' assertions over ' + fmt(RUN.n) + ' generated dialogs, ' + fmt(RUN.nodes) +
+    ' nodes, ' + TRAP_IDS.length + ' traps, ' + FIXR.length + ' fixtures and ' + fmt(SCRAM.n) +
+    ' scrambled lists &mdash; measured in this browser in ' + MS + '&thinsp;ms, every load. Seed ' +
+    SEED + ', nothing cached.';
+}
+
+// ---------------------------------------------------------------- wiring
+for (const b of $('tabs').querySelectorAll('button')){
+  b.addEventListener('click', () => {
+    for (const o of $('tabs').querySelectorAll('button')) o.classList.toggle('on', o === b);
+    for (const id of ['look', 'understand', 'build']) $(id).classList.toggle('off', id !== b.dataset.tab);
+  });
+}
+
+function wireDemo(){
+  $('selTrap').innerHTML = TRAP_IDS.map(id =>
+    '<option value="' + id + '"' + (id === trapId ? ' selected' : '') + '>' + TRAPS[id].label +
+    '</option>').join('');
+  $('selCase').innerHTML = CASES.map((c, i) =>
+    '<option value="' + i + '"' + (i === caseIx ? ' selected' : '') + '>' + esc(c.name) +
+    '</option>').join('');
+  $('selTrap').addEventListener('change', e => { trapId = e.target.value; resetFocus(); paint(); });
+  $('selCase').addEventListener('change', e => { caseIx = +e.target.value; resetFocus(); paint(); });
+  $('bTab').addEventListener('click', () => step(1));
+  $('bShift').addEventListener('click', () => step(-1));
+  $('bReset').addEventListener('click', () => { resetFocus(); paint(); });
+  $('bRand').addEventListener('click', () => {
+    randSeed = (randSeed * 1103515245 + 12345) >>> 0;
+    const i = randSeed % CORPUS.length;
+    CASES.push({ ann: CORPUS[i], name: 'generated dialog #' + i,
+                 note: (CORPUS[i].kinds || []).join(', ') });
+    caseIx = CASES.length - 1;
+    $('selCase').innerHTML = CASES.map((c, j) =>
+      '<option value="' + j + '"' + (j === caseIx ? ' selected' : '') + '>' + esc(c.name) +
+      '</option>').join('');
+    resetFocus(); paint();
+  });
+  // Tab inside the stage drives the ENGINE and never the browser. Escape hands the real tab order
+  // back, so the page is still keyboard-navigable with the demo in it.
+  $('stage').addEventListener('keydown', function(e){
+    if (e.key === 'Tab'){ e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') $('stage').blur();
+  });
+}
+
+// The million assertions are about a second of arithmetic, so the demo is wired and painted first
+// and the studies run on the next turn of the event loop. Nothing is skipped: every figure on this
+// page is measured, every load, before it is printed.
+setTimeout(function(){
+  measure();
+  buildCases();
+  wireDemo();
+  resetFocus();
+  paint();
+  selfCheck();
+  fillFix(); fillProps(); fillScram(); fillLadder(); fillBites(); fillIdent(); fillNulls();
+  fillProse();
+  document.body.setAttribute('data-ready', '1');
+}, 30);
+</script>
+</body>
+</html>
