@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 82 &mdash; Command palette</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#0f766e; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:560px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num td.txt { text-align:left; }
+  tr.here td { background:#f0fdfa; font-weight:700; }
+  tr.dim td { color:#94a3b8; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:800; }
+  .pill.good { background:#dcfce7; color:#166534; }
+  .pill.bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  #selftest div { display:grid; grid-template-columns:52px 1fr; gap:8px; font-size:12.5px; padding:3px 0; border-top:1px solid var(--line); align-items:start; }
+  #selftest div span.m { grid-column:2; font-size:11.5px; color:#64748b; }
+  .ctl { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; }
+  .ctl input[type=range] { flex:1; min-width:150px; }
+  .ctl input[type=number] { width:74px; font:inherit; padding:5px 7px; border:1px solid var(--line); border-radius:7px; }
+  footer { border-top:1px solid var(--line); margin-top:28px; padding:18px 0 40px; font-size:13px; color:#475569; }
+  footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 82</p>
+    <h1>
+      The command palette &mdash; storing the selection as an index is why Enter sometimes runs the wrong command.
+    </h1>
+    <div class="tabs">
+      <button id="tabLook" class="tab-active" onclick="showTab('look')">Look</button>
+      <button id="tabUnd" onclick="showTab('und')">Understand</button>
+      <button id="tabBuild" onclick="showTab('build')">Build</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="look" class="stack">
+  <div class="card">
+    <h2>Type, and watch the score</h2>
+    <p>
+      A command palette matches <b>subsequences</b>, not substrings: typing
+      <code>gp</code> should find <i>Git: Push</i>. Matched characters are bold
+      below, and the score is the one the ranking actually sorts on.
+    </p>
+    <div class="ctl">
+      <span class="lbl" style="margin:0">QUERY</span>
+      <input type="text" id="q" placeholder="try gp, ap, cm, permalink" style="flex:1;min-width:180px;font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px" />
+    </div>
+    <div class="tblwrap"><table class="num" id="tList"></table></div>
+    <p class="note" id="listNote"></p>
+  </div>
+</section>
+
+<section id="und" class="stack hidden">
+  <div class="card">
+    <h2>What each matched character is worth</h2>
+    <p>
+      The weights <b>are</b> the design. A letter at the start of a word is
+      worth seven points; one adjacent to the previous match, five; a letter
+      buried mid-string, barely one &mdash; and less the deeper it sits.
+    </p>
+    <div class="tblwrap"><table class="num" id="tScore"></table></div>
+    <div style="height:14px"></div>
+    <div class="tblwrap"><table class="num" id="tQueries"></table></div>
+    <p class="note">
+      Seven queries against fifteen commands. <code>zzz</code> is there to show
+      the empty case is a case.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>The bug every palette has shipped at least once</h2>
+    <p>
+      The list changes on every keystroke. If the selection is stored as an
+      <b>index</b>, row 3 of the old list becomes row 3 of a different list
+      &mdash; and the next Enter runs a command the user never looked at.
+    </p>
+    <div class="tblwrap"><table class="num" id="tSel"></table></div>
+    <p class="note">
+      The fix is one line: store the <b>id</b>, and fall back to the top only
+      when that id is no longer in the list.
+    </p>
+  </div>
+</section>
+
+<section id="build" class="stack hidden">
+  <div class="card">
+    <h2>Scoring, and why the match is a DP rather than a scan</h2>
+    <p>
+      A greedy left-to-right matcher finds <i>a</i> match, not the
+      <i>best-scoring</i> one. The difference shows up exactly on the queries
+      people type: short initialisms over multi-word commands.
+    </p>
+    <pre id="codeMatch"></pre>
+  </div>
+  <div class="card">
+    <h2>The selection, as a pure reducer</h2>
+    <pre id="codeReduce"></pre>
+  </div>
+  <div class="card">
+    <h2>Self-check</h2>
+    <p class="note" style="margin:0 0 10px">
+      Running in your browser now, against the same engine as the tables above.
+    </p>
+    <div id="selftest"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0">
+      DesignFromZero &middot; Day 82 &middot; Command palette.
+      Tomorrow: the split button, and the affordance nobody finds.
+    </p>
+  </div>
+</footer>
+</div>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// ======================================================================
+// A command palette - the Raycast / Cmd-K pattern.
+//
+// The visible part is a list that filters as you type. The part that
+// decides whether it feels good is the RANKING, and the part that decides
+// whether it is usable at all is what happens to the selection when the
+// list changes underneath it.
+//
+// This block holds both, and no DOM: matching, scoring, ranking, and the
+// selection state machine as a pure reducer.
+// ======================================================================
+const ENGINE = (() => {
+
+  // ------------------------------------------------------- the matcher
+  // Subsequence matching: "gp" matches "git push" because g then p appear in
+  // order. That is the behaviour people expect from these palettes, and it is
+  // NOT the same as substring matching.
+  //
+  // The scoring is where palettes differ. Greedy left-to-right matching finds
+  // A match but often the wrong one: in "application preferences", query "ap"
+  // greedily takes the a and p of "application" (adjacent, great) - but in
+  // "add package", greedy takes a[dd] p[ackage] which is TWO word starts, and
+  // a scorer that only rewards adjacency would rank it lower. So the match is
+  // chosen by score, not by position.
+  function matchPositions(text, query) {
+    const t = text.toLowerCase(), q = query.toLowerCase();
+    if (q === "") return [];
+    // DP over (query index, text index) keeping the best-scoring path.
+    const n = t.length, m = q.length;
+    if (m > n) return null;
+    const NEG = -1e9;
+    // best[j] = { score, pos[] } for having matched j query chars so far
+    let prev = new Array(m + 1).fill(null);
+    prev[0] = { score: 0, pos: [], last: -2 };
+    for (let i = 0; i < n; i++) {
+      const next = prev.slice();
+      for (let j = m - 1; j >= 0; j--) {
+        const from = prev[j];
+        if (!from) continue;
+        if (t[i] !== q[j]) continue;
+        const s = from.score + charScore(t, i, from.last);
+        if (!next[j + 1] || s > next[j + 1].score) {
+          next[j + 1] = { score: s, pos: from.pos.concat(i), last: i };
+        }
+      }
+      prev = next;
+    }
+    return prev[m] ? prev[m].pos : null;
+  }
+
+  // What one matched character is worth. The weights ARE the design.
+  function charScore(t, i, last) {
+    let s = 1;
+    if (i === last + 1) s += 5;                    // adjacent to the previous match
+    if (i === 0) s += 8;                           // very start of the string
+    else {
+      const p = t[i - 1];
+      if (p === " " || p === "-" || p === "_" || p === "/") s += 7;   // start of a word
+    }
+    s -= Math.min(i, 10) * 0.08;                   // later in the string is worth less
+    return s;
+  }
+
+  function score(text, query) {
+    if (query === "") return 0;
+    const pos = matchPositions(text, query);
+    if (pos === null) return null;
+    let s = 0, last = -2;
+    for (const i of pos) { s += charScore(text.toLowerCase(), i, last); last = i; }
+    // shorter targets win ties - "git" beats "git push" for query "git"
+    s -= text.length * 0.03;
+    return s;
+  }
+
+  // --------------------------------------------------------- the ranking
+  // Ties are broken by a STABLE key, never by the array order the data
+  // happened to arrive in. Two runs with the same query must give the same
+  // list, or the selected row moves under the user's finger for no reason.
+  function rank(items, query, recents) {
+    recents = recents || {};
+    const scored = [];
+    for (const it of items) {
+      const base = query === "" ? 0 : score(it.name, query);
+      if (base === null) {
+        // fall back to the subtitle, at a discount - a palette that only
+        // searches titles cannot find "copy as markdown" from "markdown"
+        const alt = it.detail ? score(it.detail, query) : null;
+        if (alt === null) continue;
+        scored.push({ item: it, score: alt * 0.6, via: "detail" });
+        continue;
+      }
+      scored.push({ item: it, score: base, via: "name" });
+    }
+    for (const s of scored) s.score += (recents[s.item.id] || 0) * 2.5;
+    scored.sort((a, b) =>
+      (b.score - a.score) ||
+      (a.item.name.length - b.item.name.length) ||
+      (a.item.name < b.item.name ? -1 : a.item.name > b.item.name ? 1 : 0) ||
+      (a.item.id < b.item.id ? -1 : 1));
+    return scored;
+  }
+
+  // ------------------------------------------- the selection state machine
+  // A palette's real bug surface. The list changes on every keystroke, and
+  // the selected index has to mean something afterwards.
+  //
+  // KEEPING THE INDEX is wrong: row 3 of the old list is a different command
+  // in the new one, so the user presses Enter and runs something they never
+  // looked at. The selection follows the ID, and falls back to 0 only when
+  // that id is gone.
+  function reduce(state, action, items) {
+    const list = rank(items, state.query, state.recents).map((s) => s.item);
+    switch (action.type) {
+      case "query": {
+        const q = action.value;
+        const nextList = rank(items, q, state.recents).map((s) => s.item);
+        const keep = nextList.findIndex((i) => i.id === state.selectedId);
+        return {
+          ...state, query: q,
+          selectedId: nextList.length ? (keep >= 0 ? state.selectedId : nextList[0].id) : null
+        };
+      }
+      case "down": {
+        if (!list.length) return state;
+        const i = list.findIndex((x) => x.id === state.selectedId);
+        // wraps - a palette that stops at the bottom makes people hold the key
+        return { ...state, selectedId: list[(i + 1 + list.length) % list.length].id };
+      }
+      case "up": {
+        if (!list.length) return state;
+        const i = list.findIndex((x) => x.id === state.selectedId);
+        return { ...state, selectedId: list[(i - 1 + list.length) % list.length].id };
+      }
+      case "run": {
+        if (!state.selectedId) return state;
+        const r = { ...state.recents };
+        r[state.selectedId] = (r[state.selectedId] || 0) + 1;
+        return { ...state, recents: r, ran: state.selectedId, open: false };
+      }
+      case "open":  return { ...state, open: true, query: "", ran: null };
+      case "close": return { ...state, open: false };
+      default: throw new Error("unknown action: " + action.type);
+    }
+  }
+
+  function initial(items) {
+    return { query: "", selectedId: items.length ? items[0].id : null,
+             recents: {}, open: false, ran: null };
+  }
+
+  // ------------------------------------------------------------- the data
+  const COMMANDS = [
+    { id: "c1",  name: "Git: Push",                 detail: "push the current branch" },
+    { id: "c2",  name: "Git: Pull",                 detail: "fetch and merge" },
+    { id: "c3",  name: "Git: Add Package",          detail: "stage a package directory" },
+    { id: "c4",  name: "Application Preferences",   detail: "open settings" },
+    { id: "c5",  name: "Copy as Markdown",          detail: "copy selection as markdown" },
+    { id: "c6",  name: "Copy Deep Link",            detail: "copy a permalink" },
+    { id: "c7",  name: "Open Terminal",             detail: "new shell in this folder" },
+    { id: "c8",  name: "Toggle Dark Mode",          detail: "switch the colour scheme" },
+    { id: "c9",  name: "Search Files",              detail: "find a file by name" },
+    { id: "c10", name: "Search in Files",           detail: "grep the project" },
+    { id: "c11", name: "Rename Symbol",             detail: "rename across the project" },
+    { id: "c12", name: "Go to Definition",          detail: "jump to where it is declared" },
+    { id: "c13", name: "Format Document",           detail: "apply the formatter" },
+    { id: "c14", name: "Add Package",               detail: "install a dependency" },
+    { id: "c15", name: "Run Tests",                 detail: "run the test suite" }
+  ];
+
+  return { matchPositions, charScore, score, rank, reduce, initial, COMMANDS };
+})();
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["look", "und", "build"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabLook").classList.toggle("tab-active", name === "look");
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selftest").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+const C = ENGINE.COMMANDS;
+
+// ---------------------------------------------------------------- LOOK
+function renderList(q) {
+  const res = ENGINE.rank(C, q, {});
+  const rows = res.slice(0, 7).map((r, i) => ({
+    cls: i === 0 ? "here" : "",
+    cells: [highlight(r.item.name, q), r.item.detail, r.via, r.score.toFixed(2)]
+  }));
+  if (!rows.length) rows.push({ cls: "dim", cells: ["(nothing matches)", "", "", ""] });
+  table("tList", ["command", "detail", "matched on", "score"], rows);
+  el("listNote").textContent =
+    res.length + " of " + C.length + " commands match " +
+    (q === "" ? "the empty query" : '"' + q + '"') + ".";
+}
+
+function highlight(name, q) {
+  const pos = q === "" ? [] : ENGINE.matchPositions(name, q);
+  if (!pos) return name;
+  const set = new Set(pos);
+  let out = "";
+  for (let i = 0; i < name.length; i++) {
+    const ch = name[i] === "<" ? "&lt;" : name[i];
+    out += set.has(i) ? "<b>" + ch + "</b>" : ch;
+  }
+  return out;
+}
+
+el("q").addEventListener("input", () => renderList(el("q").value));
+renderList("");
+
+// --------------------------------------------------------- UNDERSTAND
+{
+  const rows = [];
+  for (const q of ["gp", "ap", "cm", "sf", "git", "pack", "zzz"]) {
+    const res = ENGINE.rank(C, q, {});
+    rows.push({ cls: "", cells: [
+      '"' + q + '"', res.length,
+      res.length ? res[0].item.name : "-",
+      res.length ? res[0].score.toFixed(2) : "-",
+      res.length > 1 ? res[1].item.name : "-"
+    ]});
+  }
+  table("tQueries", ["query", "matches", "top result", "its score", "runner-up"], rows);
+}
+
+{
+  const rows = [];
+  const probes = [
+    ["start of the string", "Push", 0],
+    ["start of a word", "Git: Push", 5],
+    ["adjacent to the last match", "Push", 1],
+    ["deep in the string", "Application Preferences", 18]
+  ];
+  for (const [label, text, i] of probes) {
+    const last = label.indexOf("adjacent") === 0 ? i - 1 : -2;
+    rows.push({ cls: "", cells: [label, text, i, ENGINE.charScore(text.toLowerCase(), i, last).toFixed(2)] });
+  }
+  table("tScore", ["what the character is", "in", "index", "worth"], rows);
+}
+
+{
+  // the selection bug, demonstrated two ways
+  const rows = [];
+  let st = ENGINE.initial(C);
+  st = ENGINE.reduce(st, { type: "open" }, C);
+  st = ENGINE.reduce(st, { type: "query", value: "c" }, C);
+  st = ENGINE.reduce(st, { type: "down" }, C);
+  st = ENGINE.reduce(st, { type: "down" }, C);
+  const beforeList = ENGINE.rank(C, st.query, st.recents).map((s) => s.item);
+  const beforeIdx = beforeList.findIndex((x) => x.id === st.selectedId);
+  const beforeName = beforeList[beforeIdx].name;
+
+  const after = ENGINE.reduce(st, { type: "query", value: "co" }, C);
+  const afterList = ENGINE.rank(C, after.query, after.recents).map((s) => s.item);
+  const afterIdx = afterList.findIndex((x) => x.id === after.selectedId);
+  const naive = afterList[beforeIdx];
+
+  rows.push({ cls: "", cells: ["before, query \"c\"", "row " + beforeIdx, beforeName, "-"] });
+  rows.push({ cls: "here", cells: ["after, query \"co\" - follow the ID",
+    "row " + afterIdx, afterList[afterIdx].name,
+    afterList[afterIdx].name === beforeName ? "same command" : "id was filtered out"] });
+  rows.push({ cls: "dim", cells: ["if it had kept the INDEX instead",
+    "row " + beforeIdx, naive ? naive.name : "(out of range)",
+    naive && naive.name !== beforeName ? "DIFFERENT COMMAND under the cursor" : "-"] });
+  table("tSel", ["state", "position", "selected command", "what happened"], rows);
+}
+
+// --------------------------------------------------------------- BUILD
+el("codeMatch").textContent = [String(ENGINE.charScore), "", String(ENGINE.matchPositions)].join("\n");
+el("codeReduce").textContent = String(ENGINE.reduce);
+
+selfCheckPanel((t) => {
+  // --- matching
+  t("an empty query matches every command", (() => {
+    return ENGINE.rank(C, "", {}).length === C.length;
+  })());
+
+  t("a subsequence matches, a non-subsequence does not", (() => {
+    return ENGINE.matchPositions("git push", "gp") !== null &&
+           ENGINE.matchPositions("git push", "pg") === null;
+  })(), '"gp" is in order, "pg" is not');
+
+  t("matched positions are strictly increasing and in range", (() => {
+    for (const it of C) {
+      for (const q of ["g", "gp", "co", "ter", "pack", "ap"]) {
+        const p = ENGINE.matchPositions(it.name, q);
+        if (p === null) continue;
+        if (p.length !== q.length) return false;
+        for (let i = 1; i < p.length; i++) if (p[i] <= p[i - 1]) return false;
+        if (p[0] < 0 || p[p.length - 1] >= it.name.length) return false;
+      }
+    }
+    return true;
+  })());
+
+  t("every matched position really holds that character", (() => {
+    for (const it of C) {
+      for (const q of ["gp", "co", "ap", "sf", "rt"]) {
+        const p = ENGINE.matchPositions(it.name, q);
+        if (p === null) continue;
+        const lower = it.name.toLowerCase();
+        for (let i = 0; i < q.length; i++) if (lower[p[i]] !== q[i]) return false;
+      }
+    }
+    return true;
+  })(), "the highlight is drawn from these, so a wrong index is a visible bug");
+
+  t("matching ignores case in both directions", (() => {
+    return ENGINE.score("Git: Push", "GP") !== null && ENGINE.score("GIT: PUSH", "gp") !== null;
+  })());
+
+  t("a query longer than the text never matches", (() => {
+    return ENGINE.matchPositions("ab", "abc") === null;
+  })());
+
+  // --- scoring
+  t("a word-start match outscores the same letter mid-word", (() => {
+    const a = ENGINE.charScore("git push", 4, -2);       // the p of push
+    const b = ENGINE.charScore("git push", 6, -2);       // the s of push
+    return a > b;
+  })(), "7 points for following a space - this is what makes initialisms rank");
+
+  t("adjacency is worth more than distance", (() => {
+    const adjacent = ENGINE.charScore("abcdef", 3, 2);
+    const apart = ENGINE.charScore("abcdef", 3, 0);
+    return adjacent > apart;
+  })());
+
+  t("INVERSION: a GREEDY matcher scores lower than the DP on a real command", (() => {
+    // greedy takes the first 'a' and the first 'p' it sees
+    const text = "add package", q = "ap";
+    const lower = text.toLowerCase();
+    let last = -2, greedy = 0, j = 0;
+    for (let i = 0; i < lower.length && j < q.length; i++) {
+      if (lower[i] === q[j]) { greedy += ENGINE.charScore(lower, i, last); last = i; j++; }
+    }
+    const best = ENGINE.score(text, q) + text.length * 0.03;
+    return best >= greedy;
+  })(), "the best match is chosen by score, not by the first one found");
+
+  t("a shorter command wins a tie", (() => {
+    const r = ENGINE.rank(C, "add package", {});
+    return r[0].item.name === "Add Package";
+  })(), '"Add Package" beats "Git: Add Package" on the same query');
+
+  t("the detail field is searched, at a discount", (() => {
+    const r = ENGINE.rank(C, "permalink", {});
+    return r.length > 0 && r[0].via === "detail" && r[0].item.name === "Copy Deep Link";
+  })(), "the word appears in no command NAME at all");
+
+  // --- ranking stability
+  t("ranking the same query twice gives the identical order", (() => {
+    for (const q of ["", "c", "gp", "search", "a"]) {
+      const a = ENGINE.rank(C, q, {}).map((r) => r.item.id).join(",");
+      const b = ENGINE.rank(C, q, {}).map((r) => r.item.id).join(",");
+      if (a !== b) return false;
+    }
+    return true;
+  })(), "ties break on a stable key, never on array order");
+
+  t("ranking does not depend on the input order", (() => {
+    const shuffled = C.slice().reverse();
+    for (const q of ["c", "s", "git", "a"]) {
+      const a = ENGINE.rank(C, q, {}).map((r) => r.item.id).join(",");
+      const b = ENGINE.rank(shuffled, q, {}).map((r) => r.item.id).join(",");
+      if (a !== b) return false;
+    }
+    return true;
+  })(), "reversed input, identical output - otherwise the list jumps");
+
+  t("scores come back in non-increasing order", (() => {
+    for (const q of ["c", "gp", "pack", "se"]) {
+      const r = ENGINE.rank(C, q, {});
+      for (let i = 1; i < r.length; i++) if (r[i].score > r[i - 1].score + 1e-12) return false;
+    }
+    return true;
+  })());
+
+  t("a recently-run command rises", (() => {
+    const before = ENGINE.rank(C, "s", {}).findIndex((r) => r.item.id === "c15");
+    const after = ENGINE.rank(C, "s", { c15: 3 }).findIndex((r) => r.item.id === "c15");
+    return after < before;
+  })(), "Run Tests, after three runs, on the query \"s\"");
+
+  // --- the selection state machine
+  t("INVERSION: keeping the INDEX across a filter selects a different command", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "query", value: "c" }, C);
+    st = ENGINE.reduce(st, { type: "down" }, C);
+    st = ENGINE.reduce(st, { type: "down" }, C);
+    const beforeList = ENGINE.rank(C, "c", st.recents).map((s) => s.item);
+    const idx = beforeList.findIndex((x) => x.id === st.selectedId);
+    const afterList = ENGINE.rank(C, "co", st.recents).map((s) => s.item);
+    return !afterList[idx] || afterList[idx].id !== st.selectedId;
+  })(), "row 3 of the old list is a different row 3 - this is the Enter-ran-the-wrong-thing bug");
+
+  t("CONTROL: following the ID keeps the same command selected", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "query", value: "co" }, C);
+    const id = st.selectedId;
+    const next = ENGINE.reduce(st, { type: "query", value: "cop" }, C);
+    const list = ENGINE.rank(C, "cop", next.recents);
+    const stillThere = list.some((r) => r.item.id === id);
+    return stillThere ? next.selectedId === id : next.selectedId === list[0].item.id;
+  })(), "and falls back to the top only when the id is filtered away");
+
+  t("the selection is always a command that is actually visible", (() => {
+    let st = ENGINE.initial(C);
+    for (const q of ["", "c", "co", "cop", "copy", "copyz", "copy", "g", ""]) {
+      st = ENGINE.reduce(st, { type: "query", value: q }, C);
+      const list = ENGINE.rank(C, q, st.recents).map((s) => s.item);
+      if (!list.length) { if (st.selectedId !== null) return false; continue; }
+      if (!list.some((x) => x.id === st.selectedId)) return false;
+    }
+    return true;
+  })(), "including through a query that matches nothing and back again");
+
+  // The first version of this assumed the selection sits at row 0 after a
+  // query. It does not, and that is the ID rule working: "Git: Push" was
+  // already selected and it survives the query "git", so it keeps its place
+  // at row 1 rather than being yanked to the top. The wrap has to be measured
+  // from wherever the selection actually is.
+  t("arrow keys wrap at both ends", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "query", value: "git" }, C);
+    const list = ENGINE.rank(C, "git", st.recents).map((s) => s.item);
+    const at = list.findIndex((x) => x.id === st.selectedId);
+    const up = ENGINE.reduce(st, { type: "up" }, C);
+    const expectUp = list[(at - 1 + list.length) % list.length].id;
+    if (up.selectedId !== expectUp) return false;
+    const down = ENGINE.reduce(st, { type: "down" }, C);
+    if (down.selectedId !== list[(at + 1) % list.length].id) return false;
+    let cur = st;
+    for (let i = 0; i < list.length; i++) cur = ENGINE.reduce(cur, { type: "down" }, C);
+    return cur.selectedId === st.selectedId;
+  })(), "a full cycle of Down returns to where it started, from any start");
+
+  t("Up from the TOP really does land on the last row", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "query", value: "sea" }, C);
+    const list = ENGINE.rank(C, "sea", st.recents).map((s) => s.item);
+    st = { ...st, selectedId: list[0].id };
+    return ENGINE.reduce(st, { type: "up" }, C).selectedId === list[list.length - 1].id;
+  })(), "the wrap itself, pinned at the boundary rather than wherever we happened to be");
+
+  t("arrows on an empty list do not throw or select anything", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "query", value: "zzzzz" }, C);
+    const d = ENGINE.reduce(st, { type: "down" }, C);
+    const u = ENGINE.reduce(st, { type: "up" }, C);
+    return d.selectedId === null && u.selectedId === null;
+  })());
+
+  t("running a command records it and closes the palette", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "open" }, C);
+    st = ENGINE.reduce(st, { type: "query", value: "term" }, C);
+    const id = st.selectedId;
+    const after = ENGINE.reduce(st, { type: "run" }, C);
+    return after.ran === id && after.open === false && after.recents[id] === 1;
+  })());
+
+  t("reopening clears the query but keeps the history", (() => {
+    let st = ENGINE.initial(C);
+    st = ENGINE.reduce(st, { type: "open" }, C);
+    st = ENGINE.reduce(st, { type: "query", value: "term" }, C);
+    st = ENGINE.reduce(st, { type: "run" }, C);
+    const re = ENGINE.reduce(st, { type: "open" }, C);
+    return re.query === "" && re.open === true && Object.keys(re.recents).length === 1;
+  })());
+
+  t("an unknown action throws rather than silently doing nothing", (() => {
+    try { ENGINE.reduce(ENGINE.initial(C), { type: "wat" }, C); return false; } catch { return true; }
+  })());
+});
+</script>
+</body>
+</html>
