@@ -79,7 +79,13 @@ Every lesson is a single, self-contained HTML file with three tabs — 👁 **LO
 - [DesignFromZero · Day 74 — Scroll-spy](https://dev48.infy.uk/design/day74-scroll-spy.html) — `day74-scroll-spy.html`
 - [DesignFromZero · Day 75 — Input mask](https://dev48.infy.uk/design/day75-input-mask.html) — `day75-input-mask.html`
 - [DesignFromZero · Day 76 — Drag threshold](https://dev48.infy.uk/design/day76-drag-threshold.html) — `day76-drag-threshold.html`
-- [DesignFromZero · Day 77 — Focus trap](https://dev48.infy.uk/design/day77-focus-trap.html) — `day77-focus-trap.html`
+- [DesignFromZero · Day 77 — Focus trap](https://dev48.in/design/day77-focus-trap.html) — `day77-focus-trap.html`
+- [DesignFromZero · Day 78 — Scroll restoration](https://dev48.in/design/day78-scroll-restoration.html) — `day78-scroll-restoration.html`
+- [DesignFromZero · Day 79 — Optimistic UI](https://dev48.in/design/day79-optimistic-ui.html) — `day79-optimistic-ui.html`
+- [DesignFromZero · Day 80 — Roving tabindex](https://dev48.in/design/day80-roving-tabindex.html) — `day80-roving-tabindex.html`
+- [DesignFromZero · Day 81 — Dynamic Island](https://dev48.in/design/day81-dynamic-island.html) — `day81-dynamic-island.html`
+- [DesignFromZero · Day 82 — Command palette](https://dev48.in/design/day82-raycast-palette.html) — `day82-raycast-palette.html`
+- [DesignFromZero · Day 83 — Presence Cursors](https://dev48.in/design/day83-presence-cursors.html) — `day83-presence-cursors.html`
 
 ---
 Part of **Zero to Hero** — build something real from scratch, every day: https://dev48v.infy.uk

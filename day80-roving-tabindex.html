@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 80 &mdash; Roving tabindex</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#0e7490; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  .grid3 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  .grid4 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  @media (min-width:768px){ .grid3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+                            .grid4 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:520px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num tr.here td { background:#ecfeff; font-weight:700; }
+  table.num tr.dim td { color:#94a3b8; }
+  table.num td.txt { text-align:left; font-size:11.5px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:800; }
+  .good { background:#dcfce7; color:#166534; }
+  .stop { background:#fef3c7; color:#92400e; }
+  .bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  select, input[type=range], input[type=text] { border:1px solid #cbd5e1; border-radius:8px; padding:7px 10px; font:inherit; font-size:13px; width:100%; margin-top:4px; background:#fff; }
+  input[type=range] { padding:0; }
+  label.f { font-size:13px; display:block; }
+  .callout { background:#ecfeff; border-left:4px solid var(--accent); padding:14px; border-radius:0 8px 8px 0; }
+  .callout p { font-size:13.5px; margin:0; }
+  a { color:var(--accent); }
+  .prose { max-width:760px; margin:0 auto; }
+  .bar { display:block; height:9px; background:#cffafe; border-radius:3px; position:relative; min-width:110px; }
+  .bar i { position:absolute; top:0; left:0; height:9px; background:var(--accent); border-radius:3px; }
+  .sc { font-size:12.5px; line-height:1.6; }
+  .sc div { display:flex; gap:8px; align-items:baseline; }
+  .sc .m { color:#94a3b8; font-variant-numeric:tabular-nums; }
+  .strip { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 0; }
+  .strip b { font:inherit; font-size:12px; font-weight:700; padding:6px 11px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; }
+  .strip b.on { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .strip b.off { color:#cbd5e1; border-style:dashed; }
+  .strip b i { font-style:normal; font-variant-numeric:tabular-nums; opacity:.55; margin-left:5px; font-size:11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 80</p>
+    <h1>
+      &#9000; Roving tabindex &mdash; a toolbar is <strong>one</strong> tab stop, not one per button.
+      <strong>The engine is a keyboard state machine, not a browser</strong>: an abstract item list, a
+      <code>reduce(state, key)</code>, and an exhaustive walk of every reachable state over
+      <strong>240 enumerated item configurations</strong> and <strong>79,968 key events</strong>, so
+      every figure below is a count. &#128308; <strong>The number that matters is not how fast the arrows
+      are &mdash; it is the number the widget adds to the page&rsquo;s tab order.</strong> Across item
+      counts 1&hellip;50 the roving widget contributes <strong>1</strong> tab stop at every single size;
+      the default markup &mdash; every button focusable, which is what you get by writing no code at all
+      &mdash; contributes <strong>50</strong> at 50 items, and <strong>1,275</strong> summed across
+      the sweep against the roving widget&rsquo;s <strong>50</strong>. &#128308; Over the walk the
+      invariant &ldquo;exactly one item carries <code>tabindex="0"</code>&rdquo; held
+      <strong>80,208 of 80,208</strong> times and the active item was a disabled item <strong>0</strong>
+      times &mdash; including the configurations where the first item is disabled, the last item is
+      disabled, and every item but one is disabled. &#128308; And the third option,
+      <code>aria-activedescendant</code>, ties roving on that headline number at <strong>1</strong> tab
+      stop. It is not a worse answer, it is a <em>different</em> one: DOM focus never moves, so
+      <code>:focus</code> never fires on the item and the element the browser thinks is focused is never
+      the element the user is on.
+    </h1>
+
+    <div class="tabs">
+      <button id="tabLook" class="tab-active" onclick="showTab('look')">&#128065; LOOK</button>
+      <button id="tabUnd" onclick="showTab('und')">&#129504; UNDERSTAND</button>
+      <button id="tabBuild" onclick="showTab('build')">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<main id="look" class="wrap stack">
+  <div class="callout">
+    <p>
+      <strong>Tab is for moving between widgets. Arrows are for moving inside one.</strong> That sentence
+      is the whole pattern, and the only mechanism it needs is this: exactly one item carries
+      <code>tabindex="0"</code>, every other item carries <code>tabindex="-1"</code>, and the arrow keys
+      move which one that is. The page scores the three implementations on what a keyboard user actually
+      pays &mdash; keystrokes &mdash; and on whether the invariant survives every key you can press.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Three ways to build a composite widget</h2>
+    <div class="grid3" style="margin:12px 0">
+      <label class="f">Items in the widget: <b id="nv">8</b>
+        <input type="range" id="n" min="1" max="12" value="8" />
+      </label>
+      <label class="f">Which items are disabled
+        <select id="pat">
+          <option value="none" selected>none</option>
+          <option value="first">the first one</option>
+          <option value="last">the last one</option>
+          <option value="firstlast">first and last</option>
+          <option value="alternate">every other one</option>
+          <option value="allbutmid">all but one in the middle</option>
+        </select>
+      </label>
+      <label class="f">Wrap at the ends
+        <select id="wrap">
+          <option value="1" selected>yes - cyclic</option>
+          <option value="0">no - clamp</option>
+        </select>
+      </label>
+    </div>
+    <div class="strip" id="strip"></div>
+    <p class="note" id="stripNote"></p>
+    <div class="tblwrap" style="margin-top:14px"><table class="num" id="tMain"></table></div>
+    <p class="note" id="mainNote"></p>
+  </div>
+
+  <div class="grid4">
+    <div class="card"><p class="lbl">ROVING, TAB STOPS AT 50 ITEMS</p><p class="big ok" id="kA">&mdash;</p>
+      <p class="note">and at 1 item, and at every size in between</p></div>
+    <div class="card"><p class="lbl">DEFAULT MARKUP, TAB STOPS AT 50</p><p class="big warn" id="kB">&mdash;</p>
+      <p class="note">nobody chose this; it is what no code does</p></div>
+    <div class="card"><p class="lbl">INVARIANT HELD, OVER THE WALK</p><p class="big" id="kC">&mdash;</p>
+      <p class="note">exactly one tabindex=0, after every key</p></div>
+    <div class="card"><p class="lbl">ACTIVE ITEM WAS DISABLED</p><p class="big" id="kD">&mdash;</p>
+      <p class="note">times, from any starting state</p></div>
+  </div>
+</main>
+
+<main id="und" class="wrap stack hidden">
+  <div class="card">
+    <h3 style="margin-top:0">1. The cost is linear in a number nobody chose</h3>
+    <p>
+      Put ten buttons in a toolbar and write no <code>tabindex</code> at all. All ten are focusable,
+      because buttons are. A keyboard user who does not want the toolbar now presses Tab ten times to get
+      past it, and hears ten stops where the design has one control. Nobody decided that. It is the
+      default, and it scales with a number &mdash; how many buttons the toolbar happens to have &mdash;
+      that has nothing to do with how many <em>things</em> the toolbar is.
+    </p>
+    <div class="tblwrap"><table class="num" id="tGrow"></table></div>
+    <p class="note" id="growNote"></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">2. The invariant is one line, and it is the whole correctness story</h3>
+    <p>
+      <strong>Exactly one item has <code>tabindex="0"</code>.</strong> Not &ldquo;usually one&rdquo;. If it
+      is ever zero, Tab skips the widget entirely and the user can never get in. If it is ever two, the
+      widget has quietly grown a second tab stop and the bug is invisible to everyone using a mouse. Every
+      arrow key, Home, End, Escape and every typed letter has to preserve it, from every reachable state
+      &mdash; which is a thing you can check by walking them all rather than by trying a few.
+    </p>
+    <div class="tblwrap"><table class="num" id="tInv"></table></div>
+    <p class="note" id="invNote"></p>
+    <p class="note">
+      &#128308; The second row is the one that catches real bugs: <strong>the active item is never a
+      disabled item</strong>. It is easy to satisfy on the happy path and easy to break at the edges
+      &mdash; the first item disabled, the last item disabled, everything disabled but one. Those cases
+      are in the walk by construction, not by luck.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">3. Wrap is not a preference, it is a different algebra</h3>
+    <p>
+      With <code>wrap=false</code> the ends are <strong>absorbing</strong>: arrow past the last enabled
+      item as many times as you like and you stay on it. With <code>wrap=true</code> the moves form a
+      <strong>cyclic group</strong> over the enabled items &mdash; one ArrowRight per enabled item returns
+      you exactly where you started, from every starting point. Both are identities, so both are testable
+      as equations rather than as screenshots.
+    </p>
+    <div class="tblwrap"><table class="num" id="tWrap"></table></div>
+    <p class="note" id="wrapNote"></p>
+    <p class="note">
+      Reversibility is the third identity: ArrowRight then ArrowLeft returns to the same index
+      <em>whenever no end was crossed</em>. The qualifier is load-bearing. Under <code>wrap=false</code>
+      the pair is genuinely not reversible at the ends, because the first press was absorbed and the second
+      one moves; under <code>wrap=true</code> it is not reversible across the seam for the same reason in
+      reverse. Asserting reversibility without the qualifier fails on a <em>correct</em> implementation,
+      which is how the qualifier usually gets deleted instead of the bug.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">4. Typeahead is a search, not a move &mdash; and it has its own edges</h3>
+    <p>
+      Type <em>b</em> in a menu and you expect to land on the next item starting with b. Type it again and
+      you expect the one after that, cycling. Type <em>b</em> then <em>o</em> and you expect
+      &ldquo;Bo&hellip;&rdquo;, not the next item starting with o. So the buffer decides the needle: all
+      the same letter means <em>cycle on that letter</em>, anything else means <em>match this prefix,
+      starting from where you already are</em>.
+    </p>
+    <div class="tblwrap"><table class="num" id="tType"></table></div>
+    <p class="note" id="typeNote"></p>
+    <p class="note">
+      Two consequences worth stating rather than discovering. <strong>Typeahead skips disabled
+      items</strong> like every other move &mdash; a search that lands you somewhere you cannot act is
+      worse than a search that finds nothing. And <strong>typeahead wraps even when the arrows do
+      not</strong>: clamping is a statement about a direction, and a search does not have one. The buffer
+      resets on any navigation key and on an explicit timeout event, which the engine takes as an
+      <em>input</em> rather than reading a clock &mdash; a state machine that reads the clock cannot be
+      walked exhaustively.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">5. aria-activedescendant is the other answer, not the wrong one</h3>
+    <p>
+      There is a second way to make a composite widget one tab stop: focus stays on the container forever
+      and <code>aria-activedescendant</code> names the item that is currently active. It ties roving on the
+      headline number. The difference is where focus actually is.
+    </p>
+    <div class="tblwrap"><table class="num" id="tModels"></table></div>
+    <p class="note">
+      &#128308; <strong>Same tab-stop count, opposite mechanism.</strong> With roving, the item is really
+      focused &mdash; <code>:focus</code> and <code>:focus-visible</code> style it for free and
+      <code>document.activeElement</code> is the thing the user is on. With activedescendant the item is
+      never focused, so you draw the active ring yourself, and <code>document.activeElement</code> is the
+      container: the element the browser thinks is focused and the element the user is on are two different
+      elements, permanently. What that buys is items that never need to be focusable at all, which is why
+      virtualised listboxes and comboboxes reach for it &mdash; a combobox cannot move DOM focus into its
+      list without taking it out of the input the user is typing in.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What this models and what it does not</h3>
+    <p class="note" style="margin-top:0">
+      The engine is the keyboard state machine and nothing else: an item list, an active index, wrap,
+      orientation, a typeahead buffer, and <code>reduce(state, key)</code>. The configurations are
+      enumerated rather than sampled, so there is no generator and no seed, and the counts are exact rather
+      than estimated. Out of scope, each of which is real work in a real widget: applying the resulting
+      <code>tabindex</code> to elements and calling <code>.focus()</code>; items added or removed while the
+      widget is focused, where the active index has to be re-derived and can go stale; RTL, which swaps
+      what ArrowLeft means; two-dimensional grids, where Home/End have both a row meaning and a grid
+      meaning; and Page&nbsp;Up / Page&nbsp;Down. The keystroke figures are counts of engine transitions,
+      not timings &mdash; nothing on this page was measured in a browser.
+    </p>
+  </div>
+</main>
+
+<main id="build" class="wrap stack hidden">
+  <div class="card prose">
+    <h2>How it works</h2>
+    <pre>// the whole pattern, in two lines
+const tabIndexOf = (state, i) =&gt; (i === state.activeIndex ? 0 : -1);
+const next = (items, from, dir, wrap) =&gt; /* first ENABLED index that way */;
+
+// and the whole correctness story, in one
+items.filter((_, i) =&gt; tabIndexOf(state, i) === 0).length === 1</pre>
+    <p class="note">
+      The engine holds no DOM and no clock. Buffer expiry arrives as a <code>Timeout</code> key rather than
+      a <code>setTimeout</code>, so the machine is a pure function of the keys pressed and every reachable
+      state can be enumerated. The demo that puts real <code>tabindex</code> attributes on real buttons
+      lives outside the engine block, where it belongs.
+    </p>
+    <h3>Try it</h3>
+    <p class="note" style="margin-bottom:6px">
+      A real toolbar wired to the engine. Tab into it &mdash; once &mdash; then use the arrows, Home, End
+      and typed letters. Tab again and you leave the whole widget rather than the button.
+    </p>
+    <div id="demo" class="strip" role="toolbar" aria-label="Demo toolbar" style="margin-bottom:8px"></div>
+    <p class="note" id="demoNote">&mdash;</p>
+    <h3>Self-check</h3>
+    <p class="note">Runs on load. Several are <strong>controls</strong>.</p>
+    <div class="sc" id="selftest"></div>
+    <p style="margin-top:20px"><a href="../designfromzero.php">&larr; DesignFromZero</a></p>
+  </div>
+</main>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// ---------------------------------------------------------------------------
+// Roving tabindex, as a state machine.
+//
+// A composite widget - toolbar, listbox, menu, radio group, grid - is ONE tab
+// stop. Exactly one item carries tabindex="0"; every other item carries
+// tabindex="-1"; the arrow keys move which one that is.
+//
+// The engine is reduce(state, key) over an abstract item list. No DOM, no
+// clock, no Math.random, and no generator at all: the configurations are
+// enumerated, so the counts are exact rather than sampled. Buffer expiry
+// arrives as a "Timeout" key, because a machine that reads the clock cannot be
+// walked exhaustively.
+// ---------------------------------------------------------------------------
+
+// Labels chosen so typeahead has something to do: two share a first letter
+// (Bravo / Bold), so "b" cycles and "bo" narrows.
+const NAMES = ["Alpha", "Bravo", "Bold", "Charlie", "Center", "Delta", "Echo", "Foxtrot",
+               "Golf", "Hotel", "India", "Juliet"];
+
+function makeItems(n, disabledIdx) {
+  const dis = {};
+  for (const i of disabledIdx || []) dis[i] = true;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ id: "i" + i, label: NAMES[i % NAMES.length], disabled: dis[i] === true });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// movement, over the ENABLED items only
+// ---------------------------------------------------------------------------
+function firstEnabled(items, which) {
+  if (which === "end") {
+    for (let i = items.length - 1; i >= 0; i--) if (!items[i].disabled) return i;
+    return -1;
+  }
+  for (let i = 0; i < items.length; i++) if (!items[i].disabled) return i;
+  return -1;
+}
+
+function next(items, from, dir, wrap) {
+  const n = items.length;
+  if (n === 0) return -1;
+  if (from < 0) return firstEnabled(items, dir > 0 ? "home" : "end");
+  if (wrap) {
+    for (let k = 1; k <= n; k++) {
+      const j = ((from + dir * k) % n + n) % n;
+      if (!items[j].disabled) return j;
+    }
+    return from;                       // nothing enabled anywhere: stay put
+  }
+  for (let j = from + dir; j >= 0 && j < n; j += dir) if (!items[j].disabled) return j;
+  return from;                         // clamped at the end
+}
+
+// ---------------------------------------------------------------------------
+// which arrow keys this widget answers to. A horizontal toolbar must NOT
+// swallow ArrowDown - the page still has to scroll. "both" is the grid case.
+// ---------------------------------------------------------------------------
+const AXIS = {
+  ArrowLeft:  ["horizontal", -1],
+  ArrowRight: ["horizontal", 1],
+  ArrowUp:    ["vertical", -1],
+  ArrowDown:  ["vertical", 1],
+};
+const handles = (orientation, axis) => orientation === "both" || orientation === axis;
+
+function initState(items, opts) {
+  const o = opts || {};
+  return {
+    items: items,
+    activeIndex: firstEnabled(items, "home"),
+    wrap: o.wrap !== false,
+    orientation: o.orientation || "horizontal",
+    buffer: "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// typeahead: a SEARCH, not a move.
+//   "b"   -> the next item starting with b, cycling
+//   "bb"  -> the one after that; the same letter repeated keeps cycling
+//   "bo"  -> the prefix "bo", matched from where you already are
+// It skips disabled items like every other move, and it wraps even when the
+// arrows clamp, because clamping is about a direction and a search has none.
+// ---------------------------------------------------------------------------
+function typeahead(state, ch) {
+  const buffer = state.buffer + ch.toLowerCase();
+  let same = true;
+  for (let i = 1; i < buffer.length; i++) if (buffer[i] !== buffer[0]) same = false;
+  const needle = same ? buffer[0] : buffer;
+  const offset = needle.length === 1 ? 1 : 0;   // one letter cycles; a prefix holds still
+  const items = state.items, n = items.length;
+  const base = state.activeIndex < 0 ? 0 : state.activeIndex;
+  let found = -1;
+  for (let k = 0; k < n; k++) {
+    const j = ((base + offset + k) % n + n) % n;
+    if (items[j].disabled) continue;
+    if (items[j].label.toLowerCase().indexOf(needle) === 0) { found = j; break; }
+  }
+  return { ...state, activeIndex: found === -1 ? state.activeIndex : found, buffer: buffer };
+}
+
+const isPrintable = (key) => typeof key === "string" && key.length === 1 && key !== " ";
+
+// ---------------------------------------------------------------------------
+// the machine
+// ---------------------------------------------------------------------------
+function reduce(state, key) {
+  if (Object.prototype.hasOwnProperty.call(AXIS, key)) {
+    const axis = AXIS[key][0], dir = AXIS[key][1];
+    if (!handles(state.orientation, axis)) return { ...state, buffer: "" };
+    return { ...state, activeIndex: next(state.items, state.activeIndex, dir, state.wrap), buffer: "" };
+  }
+  if (key === "Home") return { ...state, activeIndex: firstEnabled(state.items, "home"), buffer: "" };
+  if (key === "End") return { ...state, activeIndex: firstEnabled(state.items, "end"), buffer: "" };
+  if (key === "Escape" || key === "Timeout") return { ...state, buffer: "" };
+  if (isPrintable(key)) return typeahead(state, key);
+  return state;                        // Tab, Shift, anything else: not ours
+}
+
+const run = (state, keys) => keys.reduce(reduce, state);
+
+// ---------------------------------------------------------------------------
+// what the widget puts into the page's tab order
+// ---------------------------------------------------------------------------
+const tabIndexOf = (state, i) => (i === state.activeIndex ? 0 : -1);
+const tabStops = (state) => state.items.filter((_, i) => tabIndexOf(state, i) === 0).length;
+// the default: every enabled button is focusable, because buttons are
+const naiveTabStops = (items) => items.filter((it) => !it.disabled).length;
+// the container is the stop; DOM focus never enters the list
+const activeDescendantTabStops = () => 1;
+const enabledCount = (items) => items.filter((it) => !it.disabled).length;
+
+// ---------------------------------------------------------------------------
+// the enumerated configuration set
+// ---------------------------------------------------------------------------
+const PATTERNS = ["none", "first", "last", "firstlast", "alternate", "allbutmid", "allbutfirst", "all"];
+
+function disabledFor(pattern, n) {
+  const all = [];
+  for (let i = 0; i < n; i++) all.push(i);
+  if (pattern === "none") return [];
+  if (pattern === "first") return [0];
+  if (pattern === "last") return [n - 1];
+  if (pattern === "firstlast") return n === 1 ? [0] : [0, n - 1];
+  if (pattern === "alternate") return all.filter((i) => i % 2 === 1);
+  if (pattern === "allbutmid") return all.filter((i) => i !== ((n - 1) >> 1));
+  if (pattern === "allbutfirst") return all.filter((i) => i !== 0);
+  return all;                          // "all": nothing in the widget is focusable
+}
+
+function configs(sizes, orientations) {
+  const out = [];
+  const NS = sizes || [1, 2, 3, 5, 8];
+  const OS = orientations || ["horizontal", "vertical", "both"];
+  for (const n of NS) {
+    for (const pattern of PATTERNS) {
+      for (const wrap of [true, false]) {
+        for (const orientation of OS) {
+          const items = makeItems(n, disabledFor(pattern, n));
+          out.push({ n: n, pattern: pattern, wrap: wrap, orientation: orientation,
+                     items: items, enabled: enabledCount(items) });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// The key alphabet for the walk. "o" only ever appears as a second letter
+// (Bold), and "z" matches nothing at all, which makes it the control.
+const NAV_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Escape", "Timeout"];
+const CHAR_KEYS = ["a", "b", "o", "z"];
+
+// ---------------------------------------------------------------------------
+// Exhaustive walk: every reachable (activeIndex, buffer) state, every key, for
+// one configuration. Buffers are capped by depth so the state space is finite;
+// nothing else is bounded.
+// ---------------------------------------------------------------------------
+function walk(cfg, bufferDepth) {
+  const cap = bufferDepth === undefined ? 2 : bufferDepth;
+  const start = initState(cfg.items, { wrap: cfg.wrap, orientation: cfg.orientation });
+  const seen = {};
+  const keyOf = (s) => s.activeIndex + "|" + s.buffer;
+  const queue = [start];
+  seen[keyOf(start)] = true;
+  let events = 0, invHeld = 0, invBroken = 0, activeDisabled = 0, outOfRange = 0, states = 1;
+  const check = (s) => {
+    const stops = tabStops(s);
+    // a widget with nothing focusable in it contributes ZERO stops, not one
+    if (cfg.enabled === 0 ? stops === 0 : stops === 1) invHeld++; else invBroken++;
+    if (s.activeIndex >= 0 && s.items[s.activeIndex].disabled) activeDisabled++;
+    if (s.activeIndex < -1 || s.activeIndex >= s.items.length) outOfRange++;
+  };
+  check(start);
+  while (queue.length) {
+    const s = queue.shift();
+    const keys = s.buffer.length < cap ? NAV_KEYS.concat(CHAR_KEYS) : NAV_KEYS;
+    for (const k of keys) {
+      const t = reduce(s, k);
+      events++;
+      check(t);
+      const kk = keyOf(t);
+      if (seen[kk] !== true) { seen[kk] = true; states++; queue.push(t); }
+    }
+  }
+  return { events: events, states: states, invHeld: invHeld, invBroken: invBroken,
+           activeDisabled: activeDisabled, outOfRange: outOfRange };
+}
+
+function walkAll(bufferDepth) {
+  const all = configs();
+  const sum = { configs: all.length, live: 0, dead: 0, events: 0, states: 0,
+                invHeld: 0, invBroken: 0, activeDisabled: 0, outOfRange: 0, deadStates: 0 };
+  for (const c of all) {
+    const r = walk(c, bufferDepth);
+    if (c.enabled === 0) { sum.dead++; sum.deadStates += r.invHeld; } else sum.live++;
+    sum.events += r.events; sum.states += r.states;
+    sum.invHeld += r.invHeld; sum.invBroken += r.invBroken;
+    sum.activeDisabled += r.activeDisabled; sum.outOfRange += r.outOfRange;
+  }
+  return sum;
+}
+
+// ---------------------------------------------------------------------------
+// the headline: tab stops as a function of item count
+// ---------------------------------------------------------------------------
+function growth(maxN) {
+  const rows = [];
+  const top = maxN || 50;
+  for (let n = 1; n <= top; n++) {
+    const items = makeItems(n, []);
+    const st = initState(items, { wrap: true, orientation: "horizontal" });
+    rows.push({ n: n, roving: tabStops(st), naive: naiveTabStops(items), ad: activeDescendantTabStops() });
+  }
+  return rows;
+}
+
+function growthSummary(maxN) {
+  const rows = growth(maxN);
+  const rov = rows.map((r) => r.roving), nai = rows.map((r) => r.naive);
+  const distinct = (a) => a.filter((v, i) => a.indexOf(v) === i).length;
+  return {
+    rows: rows,
+    rovingDistinct: distinct(rov),
+    naiveDistinct: distinct(nai),
+    rovingSum: rov.reduce((a, b) => a + b, 0),
+    naiveSum: nai.reduce((a, b) => a + b, 0),
+    rovingMax: Math.max.apply(null, rov),
+    naiveMax: Math.max.apply(null, nai),
+    naiveMonotone: nai.every((v, i) => (i === 0 ? v === 1 : v === nai[i - 1] + 1)),
+  };
+}
+
+// keystrokes, measured by running the machine rather than by arithmetic
+function keysToReach(cfg, target) {
+  const fwd = cfg.orientation === "vertical" ? "ArrowDown" : "ArrowRight";
+  let s = reduce(initState(cfg.items, { wrap: cfg.wrap, orientation: cfg.orientation }), "Home");
+  for (let k = 0; k <= cfg.items.length * 2 + 2; k++) {
+    if (s.activeIndex === target) return k;
+    s = reduce(s, fwd);
+  }
+  return -1;
+}
+
+// ---------------------------------------------------------------------------
+// the identities
+// ---------------------------------------------------------------------------
+// ArrowRight then ArrowLeft is the identity WHENEVER no end was crossed. The
+// qualifier is load-bearing: at the ends the pair is genuinely not reversible,
+// and asserting it there fails on a correct engine.
+function reversibility(cfgs) {
+  let checked = 0, held = 0, broke = 0, skippedBoundary = 0;
+  for (const c of cfgs) {
+    if (c.enabled === 0) continue;
+    const vertical = c.orientation === "vertical";
+    const fwd = vertical ? "ArrowDown" : "ArrowRight";
+    const back = vertical ? "ArrowUp" : "ArrowLeft";
+    for (let i = 0; i < c.items.length; i++) {
+      if (c.items[i].disabled) continue;
+      const s0 = { ...initState(c.items, { wrap: c.wrap, orientation: c.orientation }), activeIndex: i };
+      const s1 = reduce(s0, fwd);
+      // an end was crossed if the move wrapped backwards, or was absorbed
+      const crossed = s1.activeIndex <= i;
+      if (crossed) { skippedBoundary++; continue; }
+      const s2 = reduce(s1, back);
+      checked++;
+      if (s2.activeIndex === i) held++; else broke++;
+    }
+  }
+  return { checked: checked, held: held, broke: broke, skippedBoundary: skippedBoundary };
+}
+
+// wrap=true: one ArrowRight per ENABLED item is the identity. That is the
+// cyclic group, and it is an equation rather than a screenshot.
+function cyclic(cfgs) {
+  let checked = 0, held = 0, broke = 0;
+  for (const c of cfgs) {
+    if (!c.wrap || c.enabled === 0) continue;
+    const fwd = c.orientation === "vertical" ? "ArrowDown" : "ArrowRight";
+    for (let i = 0; i < c.items.length; i++) {
+      if (c.items[i].disabled) continue;
+      let s = { ...initState(c.items, { wrap: c.wrap, orientation: c.orientation }), activeIndex: i };
+      for (let k = 0; k < c.enabled; k++) s = reduce(s, fwd);
+      checked++;
+      if (s.activeIndex === i) held++; else broke++;
+    }
+  }
+  return { checked: checked, held: held, broke: broke };
+}
+
+// wrap=false: the ends absorb, at both ends
+function clamping(cfgs) {
+  let checked = 0, held = 0, broke = 0;
+  for (const c of cfgs) {
+    if (c.wrap || c.enabled === 0) continue;
+    const vertical = c.orientation === "vertical";
+    const fwd = vertical ? "ArrowDown" : "ArrowRight";
+    const back = vertical ? "ArrowUp" : "ArrowLeft";
+    const last = firstEnabled(c.items, "end"), first = firstEnabled(c.items, "home");
+    let s = initState(c.items, { wrap: false, orientation: c.orientation });
+    for (let k = 0; k < c.items.length + 4; k++) s = reduce(s, fwd);
+    checked++; if (s.activeIndex === last) held++; else broke++;
+    for (let k = 0; k < c.items.length + 4; k++) s = reduce(s, back);
+    checked++; if (s.activeIndex === first) held++; else broke++;
+  }
+  return { checked: checked, held: held, broke: broke };
+}
+
+// typeahead never lands on a disabled item, and the buffer resets on every
+// navigation key and on the explicit timeout
+function typeaheadAudit(cfgs) {
+  const SEQS = [["a"], ["b"], ["b", "b"], ["b", "o"], ["z"], ["b", "z"], ["a", "a", "a"]];
+  const RESETTERS = ["Timeout", "Escape", "Home", "End", "ArrowRight", "ArrowLeft"];
+  let landed = 0, onDisabled = 0, resets = 0, resetFailed = 0, noMatchHeld = 0, noMatchMoved = 0;
+  for (const c of cfgs) {
+    if (c.enabled === 0) continue;
+    const base = initState(c.items, { wrap: c.wrap, orientation: c.orientation });
+    for (const seq of SEQS) {
+      const s = run(base, seq);
+      landed++;
+      if (s.activeIndex >= 0 && c.items[s.activeIndex].disabled) onDisabled++;
+      if (seq.length === 1 && seq[0] === "z") {
+        if (s.activeIndex === base.activeIndex) noMatchHeld++; else noMatchMoved++;
+      }
+      for (const k of RESETTERS) {
+        resets++;
+        if (reduce(s, k).buffer !== "") resetFailed++;
+      }
+    }
+  }
+  return { landed: landed, onDisabled: onDisabled, resets: resets, resetFailed: resetFailed,
+           noMatchHeld: noMatchHeld, noMatchMoved: noMatchMoved };
+}
+
+// ---------------------------------------------------------------------------
+// the three implementations, scored on what a keyboard user pays
+// ---------------------------------------------------------------------------
+const MODELS = [
+  { key: "naive", label: "every item focusable - no code at all",
+    stops: (st) => naiveTabStops(st.items), domFocus: true, itemsFocusable: true },
+  { key: "roving", label: "roving tabindex - one item at 0, the rest at -1",
+    stops: (st) => tabStops(st), domFocus: true, itemsFocusable: true },
+  { key: "activedescendant", label: "aria-activedescendant - focus stays on the container",
+    stops: () => activeDescendantTabStops(), domFocus: false, itemsFocusable: false },
+];
+
+function scoreModels(cfg) {
+  const st = initState(cfg.items, { wrap: cfg.wrap, orientation: cfg.orientation });
+  const last = firstEnabled(cfg.items, "end");
+  return MODELS.map((m) => ({
+    key: m.key,
+    label: m.label,
+    stops: m.stops(st),
+    toSkip: m.key === "naive" ? naiveTabStops(cfg.items) : 1,
+    arrowsToLast: m.key === "naive" ? 0 : keysToReach(cfg, last),
+    domFocus: m.domFocus,
+    itemsFocusable: m.itemsFocusable,
+  }));
+}
+
+const ENGINE = {
+  NAMES, makeItems, firstEnabled, next, AXIS, handles, initState, typeahead, isPrintable,
+  reduce, run, tabIndexOf, tabStops, naiveTabStops, activeDescendantTabStops, enabledCount,
+  PATTERNS, disabledFor, configs, NAV_KEYS, CHAR_KEYS, walk, walkAll, growth, growthSummary,
+  keysToReach, reversibility, cyclic, clamping, typeaheadAudit, MODELS, scoreModels,
+};
+if (typeof module !== "undefined" && module.exports) module.exports = ENGINE;
+
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["look", "und", "build"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabLook").classList.toggle("tab-active", name === "look");
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selftest").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+const ALL = ENGINE.configs();
+const LIVE = ALL.filter((c) => c.enabled > 0);
+const WALK = ENGINE.walkAll();
+const GROW = ENGINE.growthSummary(50);
+const REV = ENGINE.reversibility(ALL);
+const CYC = ENGINE.cyclic(ALL);
+const CLAMP = ENGINE.clamping(ALL);
+const TYPE = ENGINE.typeaheadAudit(ALL);
+const CHECKED = WALK.invHeld + WALK.invBroken;
+
+function currentCfg() {
+  const n = parseInt(el("n").value, 10);
+  const pat = el("pat").value;
+  const wrap = el("wrap").value === "1";
+  const items = ENGINE.makeItems(n, ENGINE.disabledFor(pat, n));
+  return { n, pattern: pat, wrap, orientation: "horizontal", items, enabled: ENGINE.enabledCount(items) };
+}
+
+function renderStrip(cfg) {
+  const st = ENGINE.initState(cfg.items, { wrap: cfg.wrap, orientation: cfg.orientation });
+  el("strip").innerHTML = cfg.items.map((it, i) =>
+    '<b class="' + (it.disabled ? "off" : (i === st.activeIndex ? "on" : "")) + '">' +
+    it.label + "<i>" + (it.disabled ? "&mdash;" : ENGINE.tabIndexOf(st, i)) + "</i></b>").join("");
+  el("stripNote").innerHTML =
+    "The small number is each item&rsquo;s <code>tabindex</code>. <b>" + ENGINE.tabStops(st) +
+    "</b> of " + cfg.items.length + " items carries 0" +
+    (cfg.enabled === 0 ? " &mdash; every item is disabled, so the widget correctly contributes none."
+                       : "; the rest carry -1 and Tab cannot reach them.");
+}
+
+function render() {
+  const cfg = currentCfg();
+  el("nv").textContent = cfg.n;
+  renderStrip(cfg);
+  const rows = ENGINE.scoreModels(cfg);
+  table("tMain",
+    ["implementation", "tab stops added", "tabs to get past it", "arrows to the last item",
+     "DOM focus moves", "items must be focusable"],
+    rows.map((r) => ({
+      cls: r.key === "roving" ? "here" : "",
+      cells: [r.label, "<b>" + r.stops + "</b>", r.toSkip,
+        r.key === "naive" ? "&mdash;" : r.arrowsToLast,
+        r.domFocus ? '<span class="ok">yes</span>' : '<span class="warn">no</span>',
+        r.itemsFocusable ? "yes" : '<span class="ok">no</span>'],
+    })));
+  const nv = rows.find((r) => r.key === "naive"), rv = rows.find((r) => r.key === "roving");
+  el("mainNote").innerHTML = cfg.enabled === 0
+    ? "Every item is disabled. All three contribute nothing a keyboard can reach, and roving reports <b>0</b> stops rather than pretending to have one &mdash; the single case where &ldquo;exactly one&rdquo; is the wrong assertion."
+    : "At " + cfg.n + " items with " + cfg.enabled + " enabled, the default markup adds <b>" + nv.stops +
+      "</b> tab stops and roving adds <b>" + rv.stops + "</b>. Drag the item count: only one of those two numbers moves.";
+
+  el("kA").textContent = GROW.rovingMax;
+  el("kB").textContent = GROW.naiveMax;
+  el("kC").textContent = WALK.invHeld.toLocaleString() + " / " + CHECKED.toLocaleString();
+  el("kD").textContent = WALK.activeDisabled;
+}
+el("n").addEventListener("input", render);
+el("pat").addEventListener("change", render);
+el("wrap").addEventListener("change", render);
+render();
+
+table("tGrow", ["items in the widget", "roving", "aria-activedescendant", "default markup", "what grows"],
+  [1, 2, 5, 10, 20, 50].map((n) => {
+    const r = GROW.rows[n - 1];
+    return {
+      cls: n === 50 ? "here" : "",
+      cells: [n + " items", "<b>" + r.roving + "</b>", r.ad, "<b>" + r.naive + "</b>",
+        '<span class="bar" style="max-width:120px"><i style="width:' + (r.naive / GROW.naiveMax * 100) + '%"></i></span>'],
+    };
+  }));
+el("growNote").innerHTML =
+  "Swept over item counts 1&hellip;50, roving takes <b>" + GROW.rovingDistinct +
+  "</b> distinct value across the whole sweep and the default takes <b>" + GROW.naiveDistinct +
+  "</b>. Summed, that is <b>" + GROW.rovingSum + "</b> tab stops against <b>" + GROW.naiveSum +
+  "</b>. The default is exactly linear &mdash; every step is +1, <b>" +
+  (GROW.naiveMonotone ? "confirmed across all 50 sizes" : "NOT confirmed") +
+  "</b> &mdash; and that is the point: the cost tracks a number nobody in the design chose.";
+
+table("tInv", ["assertion", "states checked", "held", "broke", "verdict"],
+  [
+    { cells: ["exactly one item at tabindex 0, after every key",
+              CHECKED.toLocaleString(), WALK.invHeld.toLocaleString(), WALK.invBroken] },
+    { cells: ["the active item is never a disabled item",
+              CHECKED.toLocaleString(), (CHECKED - WALK.activeDisabled).toLocaleString(), WALK.activeDisabled] },
+    { cells: ["the active index is in range, or exactly -1",
+              CHECKED.toLocaleString(), (CHECKED - WALK.outOfRange).toLocaleString(), WALK.outOfRange] },
+  ].map((r) => ({
+    cls: r.cells[3] === 0 ? "" : "here",
+    cells: r.cells.concat([r.cells[3] === 0 ? '<span class="pill good">HOLDS</span>' : '<span class="pill bad">BROKEN</span>']),
+  })));
+el("invNote").innerHTML =
+  "The walk is exhaustive rather than sampled: <b>" + WALK.configs + "</b> enumerated configurations (<b>" +
+  WALK.live + "</b> with something focusable, <b>" + WALK.dead +
+  "</b> with every item disabled), <b>" + WALK.states.toLocaleString() +
+  "</b> distinct reachable states and <b>" + WALK.events.toLocaleString() +
+  "</b> key events. The " + WALK.dead + " all-disabled configurations are scored against a different rule &mdash; " +
+  "<b>zero</b> tab stops rather than one &mdash; because a widget with nothing focusable in it has nothing to focus, " +
+  "and " + WALK.deadStates.toLocaleString() + " of their states were checked under it.";
+
+table("tWrap", ["identity", "checked", "held", "broke", "what it means"],
+  [
+    { cells: ["wrap=true: one ArrowRight per enabled item returns you home", CYC.checked, CYC.held, CYC.broke,
+              "the moves are a cyclic group"] },
+    { cells: ["wrap=false: the ends absorb, at both ends", CLAMP.checked, CLAMP.held, CLAMP.broke,
+              "arrowing past the end is a no-op"] },
+    { cells: ["ArrowRight then ArrowLeft returns to the same index", REV.checked, REV.held, REV.broke,
+              REV.skippedBoundary + " pairs excluded: an end was crossed"] },
+  ].map((r) => ({ cls: r.cells[3] === 0 ? "" : "here", cells: r.cells })));
+el("wrapNote").innerHTML =
+  "<b>" + (CYC.checked + CLAMP.checked + REV.checked).toLocaleString() +
+  "</b> identity checks, <b>" + (CYC.broke + CLAMP.broke + REV.broke) + "</b> broken. The <b>" +
+  REV.skippedBoundary + "</b> excluded reversibility pairs are not a gap &mdash; they are exactly the cases where " +
+  "the identity genuinely does not hold, and a suite that asserts it there is asserting something false.";
+
+table("tType", ["what you type", "where it lands", "buffer after"],
+  (() => {
+    const items = ENGINE.makeItems(8, [1]);
+    const base = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    return [["b"], ["b", "b"], ["b", "o"], ["z"], ["b", "Timeout", "b"]].map((seq) => {
+      const s = ENGINE.run(base, seq);
+      return {
+        cells: [seq.join(" then "),
+          s.activeIndex < 0 ? "nowhere" : items[s.activeIndex].label +
+            (items[s.activeIndex].disabled ? ' <span class="warn">(disabled!)</span>' : ""),
+          '"' + s.buffer + '"'],
+      };
+    });
+  })());
+el("typeNote").innerHTML =
+  "In that table item 2 (<b>Bravo</b>) is disabled, so <code>b</code> steps over it and lands on <b>Bold</b>. " +
+  "Across all " + LIVE.length + " configurations with something focusable, <b>" + TYPE.landed +
+  "</b> typeahead searches landed on a disabled item <b>" + TYPE.onDisabled + "</b> times, and <b>" +
+  TYPE.resets + "</b> buffer-reset checks failed <b>" + TYPE.resetFailed +
+  "</b> times. Typing <code>z</code>, which matches no label at all, left the active item where it was in <b>" +
+  TYPE.noMatchHeld + " of " + (TYPE.noMatchHeld + TYPE.noMatchMoved) + "</b> cases.";
+
+table("tModels", ["", "roving tabindex", "aria-activedescendant"],
+  [
+    ["tab stops the widget adds", "1", "1"],
+    ["DOM focus is on", "the active item", "the container, always"],
+    ["<code>:focus</code> styles the item", '<span class="ok">for free</span>', '<span class="warn">you draw it yourself</span>'],
+    ["<code>document.activeElement</code>", "the item the user is on", "never the item the user is on"],
+    ["items must be focusable", "yes", '<span class="ok">no</span>'],
+    ["works alongside a text input", '<span class="warn">no - focus would leave it</span>', '<span class="ok">yes</span>'],
+    ["typical home", "toolbar, tabs, menu, radio group", "combobox, virtualised listbox"],
+  ].map((r) => ({ cells: r })));
+
+// ---- the live demo. The DOM lives here, outside the engine block. ----
+(function demo() {
+  const items = ENGINE.makeItems(6, [4]);
+  let state = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+  const host = el("demo");
+  function paint(moveFocus) {
+    host.innerHTML = "";
+    items.forEach((it, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = it.label;
+      b.disabled = it.disabled;
+      b.tabIndex = ENGINE.tabIndexOf(state, i);
+      b.style.cssText = "font:inherit;font-size:12px;font-weight:700;padding:6px 11px;border-radius:8px;border:1px solid #cbd5e1;cursor:pointer;" +
+        (i === state.activeIndex ? "background:#0f172a;color:#fff;border-color:#0f172a;" : "background:#fff;color:#0f172a;") +
+        (it.disabled ? "opacity:.4;border-style:dashed;cursor:not-allowed;" : "");
+      b.addEventListener("keydown", (ev) => {
+        const after = ENGINE.reduce(state, ev.key);
+        if (after.activeIndex !== state.activeIndex || after.buffer !== state.buffer) {
+          ev.preventDefault();
+          state = after;
+          paint(true);
+        }
+      });
+      b.addEventListener("click", () => { state = { ...state, activeIndex: i }; paint(true); });
+      host.appendChild(b);
+    });
+    if (moveFocus && host.children[state.activeIndex]) host.children[state.activeIndex].focus();
+    el("demoNote").innerHTML = "One tab stop: <b>" + ENGINE.tabStops(state) +
+      "</b> of " + items.length + " buttons carries <code>tabindex=0</code> (currently <b>" +
+      items[state.activeIndex].label + "</b>). <b>Center</b> is disabled, and the arrows step straight over it.";
+  }
+  paint(false);
+})();
+
+selfCheckPanel((t) => {
+  t("the invariant holds after every key, over the whole walk",
+    WALK.invBroken === 0, WALK.invHeld.toLocaleString() + " states checked");
+  t("the active item is never a disabled item", WALK.activeDisabled === 0);
+  t("the active index is never out of range", WALK.outOfRange === 0);
+  t("the walk is big enough to mean something",
+    WALK.events > 10000 && WALK.states > 500, WALK.events.toLocaleString() + " events");
+  t("CONTROL: an all-disabled widget contributes ZERO stops, not one",
+    WALK.dead > 0 && WALK.deadStates > 0 && WALK.invBroken === 0, WALK.dead + " such configurations");
+
+  t("roving contributes one tab stop at every item count 1..50",
+    GROW.rovingDistinct === 1 && GROW.rovingMax === 1);
+  t("CONTROL: the default markup grows exactly linearly instead",
+    GROW.naiveMonotone && GROW.naiveMax === 50, "1 -> " + GROW.naiveMax);
+  t("...so the sweep costs " + GROW.naiveSum + " tab stops against " + GROW.rovingSum,
+    GROW.naiveSum > GROW.rovingSum * 20, GROW.naiveSum + " vs " + GROW.rovingSum);
+  t("aria-activedescendant ties roving on that number at every size",
+    GROW.rows.every((r) => r.ad === r.roving));
+
+  t("wrap=true is a cyclic group over the enabled items",
+    CYC.broke === 0 && CYC.checked > 0, CYC.checked + " starting points");
+  t("wrap=false clamps at BOTH ends", CLAMP.broke === 0 && CLAMP.checked > 0, CLAMP.checked + " checks");
+  t("ArrowRight then ArrowLeft is the identity away from the ends",
+    REV.broke === 0 && REV.checked > 0, REV.checked + " pairs");
+  t("CONTROL: and some pairs really do cross an end, so the qualifier is not vacuous",
+    REV.skippedBoundary > 0, REV.skippedBoundary + " excluded");
+
+  t("typeahead never lands on a disabled item", TYPE.onDisabled === 0, TYPE.landed + " searches");
+  t("the buffer resets on every navigation key and on Timeout",
+    TYPE.resetFailed === 0, TYPE.resets + " reset checks");
+  t("CONTROL: a letter that matches nothing moves nothing",
+    TYPE.noMatchMoved === 0 && TYPE.noMatchHeld > 0);
+  t("typing the same letter twice moves on rather than sticking", (() => {
+    const items = ENGINE.makeItems(8, []);
+    const b = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    return ENGINE.run(b, ["b"]).activeIndex !== ENGINE.run(b, ["b", "b"]).activeIndex;
+  })());
+  t("...but a two-letter prefix narrows instead of cycling", (() => {
+    const items = ENGINE.makeItems(8, []);
+    const b = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    return items[ENGINE.run(b, ["b", "o"]).activeIndex].label === "Bold";
+  })(), "b then o lands on Bold");
+
+  t("a horizontal toolbar ignores ArrowDown", (() => {
+    const items = ENGINE.makeItems(5, []);
+    const s = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    return ENGINE.reduce(s, "ArrowDown").activeIndex === s.activeIndex;
+  })(), "so the page can still scroll");
+  t("CONTROL: a vertical listbox ignores ArrowRight instead", (() => {
+    const items = ENGINE.makeItems(5, []);
+    const s = ENGINE.initState(items, { wrap: true, orientation: "vertical" });
+    return ENGINE.reduce(s, "ArrowRight").activeIndex === s.activeIndex &&
+           ENGINE.reduce(s, "ArrowDown").activeIndex !== s.activeIndex;
+  })());
+  t("Home and End go to the first and last ENABLED item", (() => {
+    const items = ENGINE.makeItems(6, [0, 5]);
+    const s = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    return ENGINE.reduce(s, "Home").activeIndex === 1 && ENGINE.reduce(s, "End").activeIndex === 4;
+  })());
+  t("the reducer never mutates the state it was handed", (() => {
+    const items = ENGINE.makeItems(5, []);
+    const s = ENGINE.initState(items, { wrap: true, orientation: "horizontal" });
+    const snap = JSON.stringify(s);
+    ENGINE.reduce(ENGINE.reduce(s, "ArrowRight"), "b");
+    ENGINE.reduce(s, "End");
+    return JSON.stringify(s) === snap;
+  })());
+  t("the live demo really has one tab stop in the DOM", (() => {
+    const host = el("demo");
+    const zero = Array.prototype.filter.call(host.children, (b) => b.tabIndex === 0).length;
+    return zero === 1 && host.children.length === 6;
+  })(), "1 of 6 buttons");
+});
+</script>
+</body>
+</html>

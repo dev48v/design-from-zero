@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 78 &mdash; Scroll restoration</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#7c3aed; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  .grid3 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  .grid4 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  @media (min-width:768px){ .grid3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+                            .grid4 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:520px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num tr.here td { background:#eef2ff; font-weight:700; }
+  table.num tr.dim td { color:#94a3b8; }
+  table.num td.txt { text-align:left; font-size:11.5px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:800; }
+  .good { background:#dcfce7; color:#166534; }
+  .stop { background:#fef3c7; color:#92400e; }
+  .bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  select, input[type=range], input[type=text] { border:1px solid #cbd5e1; border-radius:8px; padding:7px 10px; font:inherit; font-size:13px; width:100%; margin-top:4px; background:#fff; }
+  input[type=range] { padding:0; }
+  label.f { font-size:13px; display:block; }
+  .callout { background:#eef2ff; border-left:4px solid var(--accent); padding:14px; border-radius:0 8px 8px 0; }
+  .callout p { font-size:13.5px; margin:0; }
+  a { color:var(--accent); }
+  .prose { max-width:760px; margin:0 auto; }
+  .bar { display:block; height:9px; background:#e0e7ff; border-radius:3px; position:relative; min-width:110px; }
+  .bar i { position:absolute; top:0; left:0; height:9px; background:var(--accent); border-radius:3px; }
+  .sc { font-size:12.5px; line-height:1.6; }
+  .sc div { display:flex; gap:8px; align-items:baseline; }
+  .sc .m { color:#94a3b8; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 78</p>
+    <h1>
+      &#9195; Scroll restoration &mdash; you scroll a feed, tap an item, press Back, and the list is
+      supposed to put you where you were. <strong>THE FEED IS SIMULATED, NOT A BROWSER</strong>: items
+      with real heights, a viewport, a load history and six restore policies, over
+      <strong>600 enumerated journeys</strong> per policy, so every figure is a count and a 0 is a zero.
+      &#128308; <strong>The policy in the most code &mdash; save <code>scrollTop</code>, set it back
+      &mdash; is exact on 600 of 600 journeys when nothing changes, and gets 0 of 600 right the moment
+      three items arrive at the top of the feed.</strong> It is not slightly off: the reader lands a
+      mean of <strong>2.86 items</strong> from where they were and up to <strong>9</strong> at the worst.
+      &#128308; And it passes every property a scroll-restoration test asserts, because those
+      properties are about the number and not about the reader. &#128308; Meanwhile
+      <strong>the policy that FAILS the suite puts the reader on the right item in 600 of 600</strong>
+      &mdash; remembering which item was on top is rejected because it restores to 0 when the reader was
+      part-way down the first post, while being exactly right about the thing that matters.
+    </h1>
+
+    <div class="tabs">
+      <button id="tabLook" class="tab-active" onclick="showTab('look')">&#128065; LOOK</button>
+      <button id="tabUnd" onclick="showTab('und')">&#129504; UNDERSTAND</button>
+      <button id="tabBuild" onclick="showTab('build')">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<main id="look" class="wrap stack">
+  <div class="callout">
+    <p>
+      <strong>Computed in your browser on load.</strong> The engine does not drive a browser &mdash; it
+      models the list: item heights, a viewport, how many pages had loaded, and what arrived at the top
+      while the reader was away. A separate verifier lifts the engine out of this file and re-derives
+      every figure under Node.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Six policies, one journey</h2>
+    <p class="note" style="margin-top:0">
+      Move the slider to change how many items arrived at the top of the feed while the reader was on
+      the item page. At zero, everything that is going to work already works.
+    </p>
+    <div class="grid2" style="margin:14px 0 6px">
+      <label class="f">Items added at the top while they were away: <b id="pv">3</b>
+        <input type="range" id="prepend" min="0" max="8" value="3" />
+      </label>
+      <div>
+        <p class="lbl" style="margin-bottom:2px">WHAT THE READER SEES</p>
+        <p class="note" style="margin:0" id="story"></p>
+      </div>
+    </div>
+    <div class="tblwrap"><table class="num" id="tMain"></table></div>
+    <p class="note">
+      &ldquo;Exact&rdquo; means the same item is on top and the reader is within two pixels of the same
+      place inside it. &ldquo;Items off&rdquo; is what they would actually notice &mdash; a forty-pixel
+      slip is invisible, one whole item is not.
+    </p>
+  </div>
+
+  <div class="grid4">
+    <div class="card"><p class="lbl">POLICIES THAT PASS EVERY PROPERTY</p><p class="big" id="kPass">&mdash;</p>
+      <p class="note">of six</p></div>
+    <div class="card"><p class="lbl">OF THOSE, ACTUALLY CORRECT</p><p class="big warn" id="kCorrect">&mdash;</p>
+      <p class="note">when the feed grew</p></div>
+    <div class="card"><p class="lbl">SAVE-SCROLLTOP, STATIC FEED</p><p class="big ok" id="kStatic">&mdash;</p>
+      <p class="note">exact restores</p></div>
+    <div class="card"><p class="lbl">SAVE-SCROLLTOP, FEED GREW BY 3</p><p class="big warn" id="kGrew">&mdash;</p>
+      <p class="note">exact restores</p></div>
+  </div>
+</main>
+
+<main id="und" class="wrap stack hidden">
+  <div class="card">
+    <h3 style="margin-top:0">1. The properties are true, and they are about the number</h3>
+    <p>
+      A scroll-restoration test can assert three things without a reader in the room: that a position
+      gets set, that it lands inside the document, and that scrolling further before leaving restores
+      further. Every one is a real statement about the code.
+    </p>
+    <div class="tblwrap"><table class="num" id="tProps"></table></div>
+    <p class="note">
+      <strong>Four policies satisfy all of it. Only two of the four are correct</strong> once the feed
+      moves &mdash; and the suite has no way to tell which, because none of the three properties
+      mentions the item the reader was looking at.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">2. A static fixture cannot see the bug</h3>
+    <p>
+      Here is the same policy measured twice: once on a feed that did not change while the reader was
+      away, and once on a feed that gained three items at the top. That is not an edge case &mdash; it
+      is what a feed does.
+    </p>
+    <div class="tblwrap"><table class="num" id="tStatic"></table></div>
+    <p class="note">
+      <strong>Save-<code>scrollTop</code> goes from 600 of 600 to 0 of 600.</strong> A pixel offset is a
+      promise about a coordinate system, and inserting anything above the reader silently redefines it.
+      The test fixture is static because writing a fixture that grows is more work, and that single
+      convenience is what hides the defect.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">3. The suite rejects the policy that works</h3>
+    <p>
+      Remembering <em>which item</em> was on top &mdash; and nothing else &mdash; fails the first
+      property, <em>it sets a scroll position at all</em>. When the reader was part-way down the very
+      first post, this policy restores to 0, and a suite that treats &ldquo;restored nothing&rdquo; as a
+      bug records a failure. It is a genuine failure of a genuine property, on 5 of 400 checks.
+    </p>
+    <div class="tblwrap"><table class="num" id="tIndex"></table></div>
+    <p class="note">
+      And it is right about the item on <strong>600 of 600</strong> journeys, mean distance
+      <strong>0.000 items</strong>. The reader is standing exactly where they were, give or take how far
+      down one post they had scrolled. The suite throws it out and keeps the policy that is a mean of
+      2.86 items wrong.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What this fixture cannot tell you</h3>
+    <p class="note" style="margin-top:0">
+      Two of the six policies &mdash; <code>index-offset</code> and <code>id-offset</code> &mdash; score
+      identically here, 600 of 600 on every setting. They are not the same policy: one finds the item by
+      position, the other by identity, and they come apart when an item is <strong>removed</strong>
+      rather than added. <strong>This fixture never removes anything</strong>, so it cannot distinguish
+      them, and reporting them as one row would hide that. They are listed separately and scored
+      separately for exactly that reason.
+    </p>
+  </div>
+</main>
+
+<main id="build" class="wrap stack hidden">
+  <div class="card prose">
+    <h2>How it works</h2>
+    <p>
+      A feed is a list of heights &mdash; text posts around 90&ndash;160px, image posts 280&ndash;420,
+      the occasional 520&ndash;700 embed &mdash; because a ragged list is the whole reason index-based
+      and pixel-based restoration disagree. A journey records where the reader was as
+      <em>(item, offset into it)</em>, which is the ground truth, and then each policy proposes a scroll
+      position to come back to.
+    </p>
+    <pre>// the one in the most code
+restore: (j) =&gt; j.y            // a NUMBER
+
+// what the reader actually meant
+restore: (j) =&gt; scrollFor(j.items, j.anchor.index + j.prepend, j.anchor.into)</pre>
+    <p class="note">
+      The draws come from a seeded Park-Miller generator rather than <code>Math.random</code>, so every
+      journey is reproducible and a verifier can re-derive the same 600. The draw below <em>n</em> takes
+      the high bits: <code>(nextInt() * n) &gt;&gt;&gt; 31</code> would be wrong in JavaScript, because
+      bitwise operands are coerced to 32 bits and the product overflows that for any <em>n</em> above 1.
+    </p>
+    <h3>Self-check</h3>
+    <p class="note">
+      Runs on load, against the engine above. Several are <strong>controls</strong>: a claim that a
+      policy breaks when the feed grows means nothing without the run where it did not.
+    </p>
+    <div class="sc" id="selfcheck"></div>
+    <p style="margin-top:20px"><a href="../designfromzero.php">&larr; DesignFromZero</a></p>
+  </div>
+</main>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// ---------------------------------------------------------------------------
+// Scroll restoration. You scroll a feed, tap an item, press Back - and the
+// browser is supposed to put you where you were.
+//
+// The engine simulates the LIST, not the browser: a feed of items with known
+// heights, a viewport, a load history, and six restore policies. Every number
+// is a count over an enumerated set of journeys, so a 0 here is a zero rather
+// than "none seen".
+//
+// DOM-free, clock-free, Math.random-free: the pseudo-random draws come from a
+// seeded Park-Miller generator so a verifier can reproduce every journey.
+// ---------------------------------------------------------------------------
+
+class Rng {
+  constructor(seed = 78078) { this.s = seed % 2147483647 || 1; }
+  nextInt() { this.s = (this.s * 48271) % 2147483647; return this.s; }
+  // High bits. NOT `>>> 31`: JS coerces bitwise operands to 32 bits and
+  // nextInt() * n overflows that for any n above 1.
+  below(n) { return Math.floor((this.nextInt() * n) / 2147483648); }
+  between(a, b) { return a + this.below(b - a + 1); }
+}
+
+const VIEWPORT = 800;
+
+// A feed is a list of item heights. Real feeds are ragged - a text post and a
+// post with an image are not the same height - and that raggedness is the
+// whole reason index-based and offset-based restoration disagree.
+function makeFeed(rng, n) {
+  const items = [];
+  for (let i = 0; i < n; i++) {
+    const kind = rng.below(10);
+    // 0-5 text, 6-8 image, 9 tall embed
+    const h = kind < 6 ? rng.between(90, 160) : kind < 9 ? rng.between(280, 420) : rng.between(520, 700);
+    items.push(h);
+  }
+  return items;
+}
+
+function offsets(items) {
+  const off = [0];
+  for (let i = 0; i < items.length; i++) off.push(off[i] + items[i]);
+  return off;
+}
+
+// Which item is at the top of the viewport at a given scroll offset, and how
+// far into it we are. This pair is the ground truth for "where the reader was".
+function locate(items, y) {
+  const off = offsets(items);
+  let i = 0;
+  while (i + 1 < off.length - 1 && off[i + 1] <= y) i++;
+  return { index: i, into: y - off[i] };
+}
+
+function scrollFor(items, index, into) {
+  const off = offsets(items);
+  const i = Math.max(0, Math.min(index, items.length - 1));
+  return off[i] + Math.min(into, items[i]);
+}
+
+// ---------------------------------------------------------------------------
+// A journey: the reader loads pages of the feed, scrolls, opens an item, and
+// comes back. Between leaving and returning the feed may have CHANGED - new
+// items at the top is what a feed does - and it may not have finished loading
+// the pages it had before.
+// ---------------------------------------------------------------------------
+function journey(rng, opts) {
+  const pageSize = opts.pageSize;
+  const pagesLoaded = rng.between(2, opts.maxPages);
+  const total = pageSize * pagesLoaded;
+  const items = makeFeed(rng, total + opts.prepend);
+  // the feed as it was when they left: the last `prepend` items did not exist
+  const before = items.slice(opts.prepend);
+  const y = rng.between(0, Math.max(0, offsets(before)[before.length] - VIEWPORT));
+  const anchor = locate(before, y);
+  return { items, before, prepend: opts.prepend, pageSize, pagesLoaded, y, anchor };
+}
+
+// ---------------------------------------------------------------------------
+// Six restore policies, each described the way it gets written.
+// ---------------------------------------------------------------------------
+const POLICIES = [
+  {
+    key: "none",
+    label: "do nothing - the browser's default on a client-rendered list",
+    restore: () => 0,
+  },
+  {
+    key: "pixel",
+    label: "save scrollTop, set it back",
+    // The one in the most code. It restores a NUMBER, and the number means a
+    // different place once anything has been inserted above.
+    restore: (j) => j.y,
+  },
+  {
+    key: "pixel-after-load",
+    label: "save scrollTop, restore after the first page loads",
+    // Restores against a list that is only pageSize long, so the browser
+    // clamps to the bottom of what exists.
+    restore: (j) => {
+      const loaded = j.items.slice(0, j.prepend + j.pageSize);
+      const max = Math.max(0, offsets(loaded)[loaded.length] - VIEWPORT);
+      return Math.min(j.y, max);
+    },
+  },
+  {
+    key: "index",
+    label: "remember which item was on top, scroll to it",
+    restore: (j) => scrollFor(j.items, j.anchor.index + j.prepend, 0),
+  },
+  {
+    key: "index-offset",
+    label: "remember the item AND how far into it",
+    restore: (j) => scrollFor(j.items, j.anchor.index + j.prepend, j.anchor.into),
+  },
+  {
+    key: "id-offset",
+    label: "remember the item's id and offset, find it again after the load",
+    // The same as index-offset here, and kept separate on purpose: they differ
+    // only when items are REMOVED, which this fixture does not do. Reporting
+    // them as one policy would hide that the fixture cannot tell them apart.
+    restore: (j) => scrollFor(j.items, j.anchor.index + j.prepend, j.anchor.into),
+  },
+];
+
+// How wrong a restore is: the distance between the item that ends up on top
+// and the item that was on top. Measured in ITEMS, because that is what the
+// reader notices - a 40-pixel slip is invisible, one item is not.
+function evaluate(j, y) {
+  const got = locate(j.items, y);
+  const wantIndex = j.anchor.index + j.prepend;
+  return {
+    itemsOff: Math.abs(got.index - wantIndex),
+    pixelsOff: Math.abs(y - scrollFor(j.items, wantIndex, j.anchor.into)),
+    exact: got.index === wantIndex && Math.abs(got.into - j.anchor.into) <= 2,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The assertions a scroll-restoration test actually makes. All three are true
+// statements about the code; none of them looks at whether the reader is
+// standing where they were.
+// ---------------------------------------------------------------------------
+const PROPERTIES = [
+  { key: "restores-something", label: "it sets a scroll position at all", holds: (j, y) => y > 0 || j.y === 0 },
+  { key: "in-range", label: "the restored position is inside the document", holds: (j, y) => y >= 0 && y <= offsets(j.items)[j.items.length] },
+  { key: "monotone", label: "scrolling further before leaving restores further", holds: null },
+];
+
+function propertyResults(policy, seed) {
+  const rng = new Rng(seed);
+  let pass = 0, total = 0;
+  for (let k = 0; k < 200; k++) {
+    const j = journey(rng, { pageSize: 20, maxPages: 5, prepend: 0 });
+    const y = policy.restore(j);
+    total += 2;
+    if (PROPERTIES[0].holds(j, y)) pass++;
+    if (PROPERTIES[1].holds(j, y)) pass++;
+  }
+  // monotonicity, checked as a pair test on the same feed
+  const r2 = new Rng(seed + 1);
+  let mono = 0, monoTotal = 0;
+  for (let k = 0; k < 100; k++) {
+    const j = journey(r2, { pageSize: 20, maxPages: 5, prepend: 0 });
+    const jj = { ...j, y: Math.min(j.y + 400, offsets(j.before)[j.before.length] - VIEWPORT) };
+    jj.anchor = locate(j.before, jj.y);
+    monoTotal++;
+    if (policy.restore(jj) >= policy.restore(j)) mono++;
+  }
+  return { pass, total, mono, monoTotal, allHold: pass === total && mono === monoTotal };
+}
+
+// The real measurement: journeys where the feed grew while they were away.
+function accuracy(policy, seed, prepend) {
+  const rng = new Rng(seed);
+  let exact = 0, within1 = 0, n = 0, sumItems = 0, worst = 0;
+  for (let k = 0; k < 600; k++) {
+    const j = journey(rng, { pageSize: 20, maxPages: 5, prepend });
+    const y = policy.restore(j);
+    const e = evaluate(j, y);
+    n++;
+    if (e.exact) exact++;
+    if (e.itemsOff <= 1) within1++;
+    sumItems += e.itemsOff;
+    if (e.itemsOff > worst) worst = e.itemsOff;
+  }
+  return { n, exact, within1, meanItemsOff: sumItems / n, worst };
+}
+
+function report(prepend = 3) {
+  return POLICIES.map((p) => ({
+    key: p.key,
+    label: p.label,
+    props: propertyResults(p, 4242),
+    acc: accuracy(p, 909, prepend),
+    accStatic: accuracy(p, 909, 0),
+  }));
+}
+
+const ENGINE = {
+  Rng, VIEWPORT, makeFeed, offsets, locate, scrollFor, journey,
+  POLICIES, PROPERTIES, evaluate, propertyResults, accuracy, report,
+};
+if (typeof module !== "undefined" && module.exports) module.exports = ENGINE;
+
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["look", "und", "build"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabLook").classList.toggle("tab-active", name === "look");
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selfcheck").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+const pc = (a, b) => ((a / b) * 100).toFixed(1) + "%";
+
+function render(prepend) {
+  const R = ENGINE.report(prepend);
+  el("pv").textContent = prepend;
+
+  table("tMain",
+    ["policy", "passes the properties", "exact restores", "within one item", "mean items off", "worst"],
+    R.map((p) => ({
+      cls: p.acc.exact === p.acc.n ? "here" : "",
+      cells: [
+        p.label,
+        p.props.allHold ? '<span class="pill good">ALL THREE</span>' : '<span class="pill bad">FAILS ONE</span>',
+        "<b>" + p.acc.exact + " / " + p.acc.n + "</b>",
+        p.acc.within1 + " / " + p.acc.n,
+        p.acc.meanItemsOff.toFixed(3),
+        p.acc.worst,
+      ],
+    })));
+
+  const passing = R.filter((p) => p.props.allHold);
+  const correct = passing.filter((p) => p.acc.exact === p.acc.n);
+  el("kPass").textContent = passing.length;
+  el("kCorrect").textContent = correct.length;
+  el("kCorrect").className = "big " + (correct.length === passing.length ? "ok" : "warn");
+
+  const px = R.find((p) => p.key === "pixel");
+  el("kStatic").textContent = px.accStatic.exact + " / " + px.accStatic.n;
+  el("kGrew").textContent = px.acc.exact + " / " + px.acc.n;
+
+  el("story").innerHTML = prepend === 0
+    ? "Nothing arrived while they were away. <b>Save-<code>scrollTop</code> is exact on every journey</b> &mdash; which is why the bug ships."
+    : "<b>" + prepend + " item" + (prepend === 1 ? "" : "s") + " arrived at the top.</b> Every pixel offset now means a different place, and the reader lands " +
+      px.acc.meanItemsOff.toFixed(2) + " items from where they were on average, up to " + px.acc.worst + ".";
+
+  table("tProps",
+    ["policy", "sets a position", "lands inside the document", "monotone", "verdict"],
+    R.map((p) => ({
+      cls: p.props.allHold ? "here" : "dim",
+      cells: [
+        p.label,
+        p.props.pass >= p.props.total / 2 ? '<span class="ok">yes</span>' : '<span class="warn">no</span>',
+        p.props.pass === p.props.total ? '<span class="ok">yes</span>' : '<span class="warn">no</span>',
+        p.props.mono === p.props.monoTotal ? '<span class="ok">yes</span>' : '<span class="warn">no (' + p.props.mono + "/" + p.props.monoTotal + ")</span>",
+        p.props.allHold ? '<span class="pill good">SUITE ACCEPTS</span>' : '<span class="pill bad">SUITE REJECTS</span>',
+      ],
+    })));
+
+  table("tStatic",
+    ["policy", "static feed - exact", "feed grew by " + Math.max(prepend, 1) + " - exact", "what the difference is"],
+    R.map((p) => ({
+      cls: p.key === "pixel" ? "here" : "",
+      cells: [
+        p.label,
+        p.accStatic.exact + " / " + p.accStatic.n + " (" + pc(p.accStatic.exact, p.accStatic.n) + ")",
+        "<b>" + p.acc.exact + " / " + p.acc.n + "</b> (" + pc(p.acc.exact, p.acc.n) + ")",
+        p.accStatic.exact === p.acc.n && p.acc.exact === p.acc.n
+          ? "unaffected"
+          : p.accStatic.exact > p.acc.exact
+            ? '<span class="warn">the fixture was hiding it</span>'
+            : "broken either way",
+      ],
+    })));
+
+  const idx = R.find((p) => p.key === "index");
+  const best = R.find((p) => p.key === "index-offset");
+  table("tIndex",
+    ["policy", "suite", "right about the item", "exact including the offset", "mean items off"],
+    [idx, px, best].map((p) => ({
+      cls: p.key === "index" ? "here" : "",
+      cells: [
+        p.label,
+        p.props.allHold ? '<span class="pill good">ACCEPTS</span>' : '<span class="pill bad">REJECTS</span>',
+        "<b>" + p.acc.within1 + " / " + p.acc.n + "</b>",
+        p.acc.exact + " / " + p.acc.n,
+        p.acc.meanItemsOff.toFixed(3),
+      ],
+    })));
+
+  return R;
+}
+
+let R = render(3);
+el("prepend").addEventListener("input", (e) => { R = render(parseInt(e.target.value, 10)); });
+
+selfCheckPanel((t) => {
+  const R3 = ENGINE.report(3), R0 = ENGINE.report(0);
+  const px = R3.find((p) => p.key === "pixel");
+  const px0 = R0.find((p) => p.key === "pixel");
+  const idx = R3.find((p) => p.key === "index");
+  const io = R3.find((p) => p.key === "index-offset");
+
+  t("the generator does not alternate on every step", (() => {
+    const r = new ENGINE.Rng(1); const d = [];
+    for (let i = 0; i < 2000; i++) d.push(r.below(2));
+    return d.slice(1).filter((v, i) => v !== d[i]).length < 1999;
+  })());
+  t("a draw below n never returns n", (() => {
+    const r = new ENGINE.Rng(7); let mx = 0;
+    for (let i = 0; i < 5000; i++) mx = Math.max(mx, r.below(97));
+    return mx === 96;
+  })(), "max seen 96");
+  t("the feed rebuilds identically from the same seed",
+    JSON.stringify(ENGINE.makeFeed(new ENGINE.Rng(5), 50)) === JSON.stringify(ENGINE.makeFeed(new ENGINE.Rng(5), 50)));
+  t("locate and scrollFor are inverses", (() => {
+    const items = ENGINE.makeFeed(new ENGINE.Rng(3), 40);
+    for (let y = 0; y < 4000; y += 37) {
+      const a = ENGINE.locate(items, y);
+      if (ENGINE.scrollFor(items, a.index, a.into) !== y) return false;
+    }
+    return true;
+  })());
+
+  t("CONTROL: on a static feed, save-scrollTop is exact every time",
+    px0.acc.exact === px0.acc.n, px0.acc.exact + "/" + px0.acc.n);
+  t("...and gets none right once the feed grows by three",
+    px.acc.exact === 0, px.acc.exact + "/" + px.acc.n);
+  t("save-scrollTop passes all three properties anyway", px.props.allHold);
+  t("four policies pass the suite", R3.filter((p) => p.props.allHold).length === 4);
+  t("only two of those four are correct",
+    R3.filter((p) => p.props.allHold && p.acc.exact === p.acc.n).length === 2);
+
+  t("the index-only policy FAILS the suite", !idx.props.allHold, "on 'sets a position at all', 5 of 400");
+  t("...and is right about the item on every journey",
+    idx.acc.within1 === idx.acc.n, idx.acc.within1 + "/" + idx.acc.n);
+  t("...with a mean distance of exactly zero items", idx.acc.meanItemsOff === 0);
+
+  t("index+offset is exact on every journey", io.acc.exact === io.acc.n);
+  t("id+offset scores identically here - the fixture cannot separate them",
+    JSON.stringify(R3.find((p) => p.key === "id-offset").acc) === JSON.stringify(io.acc));
+  t("doing nothing is wrong on every journey",
+    R3.find((p) => p.key === "none").acc.exact === 0);
+});
+
+</script>
+</body>
+</html>

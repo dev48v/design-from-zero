@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 79 &mdash; Optimistic UI</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#be123c; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  .grid3 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  .grid4 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  @media (min-width:768px){ .grid3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+                            .grid4 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:520px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num tr.here td { background:#eef2ff; font-weight:700; }
+  table.num tr.dim td { color:#94a3b8; }
+  table.num td.txt { text-align:left; font-size:11.5px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:800; }
+  .good { background:#dcfce7; color:#166534; }
+  .stop { background:#fef3c7; color:#92400e; }
+  .bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  select, input[type=range], input[type=text] { border:1px solid #cbd5e1; border-radius:8px; padding:7px 10px; font:inherit; font-size:13px; width:100%; margin-top:4px; background:#fff; }
+  input[type=range] { padding:0; }
+  label.f { font-size:13px; display:block; }
+  .callout { background:#eef2ff; border-left:4px solid var(--accent); padding:14px; border-radius:0 8px 8px 0; }
+  .callout p { font-size:13.5px; margin:0; }
+  a { color:var(--accent); }
+  .prose { max-width:760px; margin:0 auto; }
+  .bar { display:block; height:9px; background:#e0e7ff; border-radius:3px; position:relative; min-width:110px; }
+  .bar i { position:absolute; top:0; left:0; height:9px; background:var(--accent); border-radius:3px; }
+  .sc { font-size:12.5px; line-height:1.6; }
+  .sc div { display:flex; gap:8px; align-items:baseline; }
+  .sc .m { color:#94a3b8; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 79</p>
+    <h1>
+      &#10084;&#65039; Optimistic UI &mdash; you tap, the heart fills instantly, and the request goes out
+      behind it. If the server disagrees, you roll back. <strong>The engine simulates the QUEUE, not a
+      browser</strong>: a sequence of taps, a network that reorders and fails, a server with its own
+      truth, and five reconciliation policies over <strong>600 enumerated sessions</strong> each, so
+      every figure is a count. &#128308; <strong>The rollback everybody writes &mdash; undo the toggle
+      when the request fails &mdash; is EXACTLY right for a toggle and the WORST option for a set.</strong>
+      On a like button it agrees with the server on 600 of 600 sessions. On a set-a-value control it
+      agrees on <strong>219 of 600</strong>, which is worse than not rolling back at all
+      (<strong>411</strong>). The policy did not change. The operation did, and nothing in the UI code
+      knows which one it is holding. &#128308; The careful-looking alternative &mdash; restore the value
+      the item had before that tap &mdash; is mediocre at both: <strong>396</strong> and
+      <strong>357</strong>. It looks more correct and is more wrong, because by the time the failure
+      comes back later taps have already moved the item. &#128308; And every optimistic policy passes
+      every property a test can assert without a server in the room. The suite cannot separate the one
+      that is always right from the one that is right 36% of the time.
+    </h1>
+
+    <div class="tabs">
+      <button id="tabLook" class="tab-active" onclick="showTab('look')">&#128065; LOOK</button>
+      <button id="tabUnd" onclick="showTab('und')">&#129504; UNDERSTAND</button>
+      <button id="tabBuild" onclick="showTab('build')">&#128296; BUILD</button>
+    </div>
+  </div>
+</header>
+
+<main id="look" class="wrap stack">
+  <div class="callout">
+    <p>
+      <strong>Three states, and only one of them is on the screen.</strong> What the user <em>meant</em>
+      is their taps in the order they made them. What the <em>server</em> has is the successful requests
+      in the order they arrived, which is not the same order. What the <em>screen</em> shows is whatever
+      the reconciliation policy decided. The page scores the third against the second, because that is
+      the disagreement a user actually runs into.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Five policies, two operations</h2>
+    <div class="grid2" style="margin:12px 0">
+      <label class="f">What the control does
+        <select id="op">
+          <option value="toggle" selected>toggle - a like button</option>
+          <option value="set">set - a value picker</option>
+        </select>
+      </label>
+      <label class="f">How often a request fails: <b id="fv">10%</b>
+        <input type="range" id="fail" min="0" max="6" value="2" />
+      </label>
+    </div>
+    <div class="tblwrap"><table class="num" id="tMain"></table></div>
+    <p class="note" id="mainNote"></p>
+  </div>
+
+  <div class="grid4">
+    <div class="card"><p class="lbl">UNDO-THE-TOGGLE ON A TOGGLE</p><p class="big ok" id="kA">&mdash;</p>
+      <p class="note">sessions matching the server</p></div>
+    <div class="card"><p class="lbl">THE SAME POLICY ON A SET</p><p class="big warn" id="kB">&mdash;</p>
+      <p class="note">the policy did not change</p></div>
+    <div class="card"><p class="lbl">NOT ROLLING BACK AT ALL, ON A SET</p><p class="big" id="kC">&mdash;</p>
+      <p class="note">better than rolling back</p></div>
+    <div class="card"><p class="lbl">POLICIES PASSING EVERY PROPERTY</p><p class="big" id="kD">&mdash;</p>
+      <p class="note">of five</p></div>
+  </div>
+</main>
+
+<main id="und" class="wrap stack hidden">
+  <div class="card">
+    <h3 style="margin-top:0">1. The rollback is right or wrong depending on the algebra</h3>
+    <p>
+      A toggle is <strong>self-inverse</strong> &mdash; applying it twice is doing nothing &mdash; and
+      two toggles on the same item <strong>commute</strong>. So &ldquo;undo the toggle&rdquo; is a correct
+      inverse no matter how many other taps have landed in between, which is why it scores perfectly.
+    </p>
+    <p>
+      A set is neither. Undoing <em>set to blue</em> by toggling is not an operation that means anything,
+      and the value the item had before that tap is not the value it should return to once three later
+      taps have happened.
+    </p>
+    <div class="tblwrap"><table class="num" id="tOps"></table></div>
+    <p class="note">
+      &#128308; The same five lines of code, scored on two controls that look identical on screen. The
+      policy that is exactly right for one is the worst of the five for the other &mdash; and worse than
+      doing nothing. <strong>Rollback correctness is a property of the operation, not of the rollback.</strong>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">2. The careful-looking one is worse at both</h3>
+    <div class="tblwrap"><table class="num" id="tSnap"></table></div>
+    <p class="note">
+      Restoring &ldquo;the value it had before that tap&rdquo; sounds strictly more principled than
+      toggling &mdash; it remembers something. What it remembers is stale: the failure arrives after
+      later taps have already moved the item, so the restored value belongs to a state that no longer
+      exists. It reverts those later taps too, silently, and it does that on both operations.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">3. The properties cannot see any of it</h3>
+    <p>
+      Here is what a test can assert with no server and no user: the screen changes before the request
+      resolves, the screen stops changing once everything has resolved, and an item does not move twice
+      for one successful tap.
+    </p>
+    <div class="tblwrap"><table class="num" id="tProps"></table></div>
+    <p class="note">
+      <strong>Every optimistic policy passes all three</strong>, including the one that ends up
+      disagreeing with the server on two sessions in three. The only policy that fails is the pessimistic
+      one, and it fails on <em>instant</em> &mdash; which is the property it is deliberately not trying to
+      satisfy. A suite built from these three assertions rejects the safest option and accepts the worst.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">4. And with no failures, nothing can be told apart</h3>
+    <div class="tblwrap"><table class="num" id="tNoFail"></table></div>
+    <p class="note">
+      On a <strong>toggle</strong>, a 0% failure rate makes every policy agree on all 600 sessions. A
+      fixture with a reliable network is not a weak test of reconciliation &mdash; it is <strong>no test
+      of it at all</strong>, and it is the fixture most suites have.
+    </p>
+    <p class="note">
+      &#128308; <strong>On a set it is not even that kind.</strong> With zero failures the optimistic
+      policies still disagree with the server on <strong>138 of 600</strong> sessions, because
+      <em>reordering by itself</em> is enough: the last write to arrive wins at the server, the last tap
+      wins on screen, and those are different requests. Toggles commute, so order cannot hurt them. Sets
+      do not. A reliable network removes the whole problem for one control and leaves most of it standing
+      for the other.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What this models and what it does not</h3>
+    <p class="note" style="margin-top:0">
+      Requests reorder and fail; the server applies what arrives, in arrival order. The failure rates and
+      the latency spread are declared and set by the controls above, not measured from anything real, so
+      the exact percentages belong to those settings. What does not depend on them: a toggle is
+      self-inverse and a set is not, so one inverse is correct and the other is not, at any failure rate
+      above zero. Out of scope, each of which makes reconciliation harder: retries, requests that are
+      applied but never acknowledged, and two clients editing the same item.
+    </p>
+  </div>
+</main>
+
+<main id="build" class="wrap stack hidden">
+  <div class="card prose">
+    <h2>How it works</h2>
+    <pre>// the whole finding, in one line
+const applyTo = (st, a) =&gt; { st[a.item] = a.op === "set" ? a.value : !st[a.item]; };
+
+// "undo the toggle" - a correct inverse for one of those, and not the other
+for (const a of arrivals) if (a.fails) st[a.item] = !st[a.item];</pre>
+    <p class="note">
+      The draws come from a seeded Park-Miller generator rather than
+      <code>Math.random</code>, so every session is reproducible and a verifier can re-derive the same
+      600. The draw below <em>n</em> takes the high bits &mdash;
+      <code>(next() * n) &gt;&gt;&gt; 31</code> would be wrong in JavaScript, because bitwise operands
+      are coerced to 32 bits and the product overflows that for any <em>n</em> above 1.
+    </p>
+    <h3>Self-check</h3>
+    <p class="note">Runs on load. Several are <strong>controls</strong>.</p>
+    <div class="sc" id="selfcheck"></div>
+    <p style="margin-top:20px"><a href="../designfromzero.php">&larr; DesignFromZero</a></p>
+  </div>
+</main>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// ---------------------------------------------------------------------------
+// Optimistic UI. You tap "like", the heart fills instantly, and the request
+// goes out behind it. If the server disagrees, you roll back.
+//
+// The engine simulates the QUEUE, not a browser: a sequence of user actions, a
+// network that reorders and fails, a server with its own truth, and five
+// reconciliation policies. Every figure is a count over an enumerated set of
+// sessions, so a 0 is a zero.
+//
+// DOM-free, clock-free, Math.random-free (a seeded Park-Miller stands in).
+// ---------------------------------------------------------------------------
+
+class Rng {
+  constructor(seed = 79079) { this.s = seed % 2147483647 || 1; }
+  next() { this.s = (this.s * 48271) % 2147483647; return this.s; }
+  unit() { return (this.next() - 1) / 2147483645; }
+  below(n) { return Math.floor((this.next() * n) / 2147483648); }
+  chance(p) { return this.unit() < p; }
+}
+
+// ---------------------------------------------------------------------------
+// One session: a user toggling a handful of items, with requests that take
+// varying time to land and sometimes fail.
+// ---------------------------------------------------------------------------
+// `op` is the crux of the whole page. A TOGGLE is self-inverse and commutes
+// with itself; a SET is neither. The same rollback policy is right for one
+// and wrong for the other, and nothing in the UI code knows which it has.
+function session(rng, opts) {
+  const { items = 4, actions = 10, failRate = 0.1, reorderRate = 0.25, op = "toggle" } = opts;
+  const acts = [];
+  for (let i = 0; i < actions; i++) {
+    acts.push({
+      seq: i,
+      item: rng.below(items),
+      // for a SET, the value the tap asks for
+      value: rng.chance(0.5),
+      op,
+      // latency in arbitrary ticks; the spread is what causes reordering
+      latency: 1 + rng.below(rng.chance(reorderRate) ? 9 : 3),
+      fails: rng.chance(failRate),
+    });
+  }
+  // when each request ARRIVES at the server
+  const arrivals = acts.map((a) => ({ ...a, at: a.seq + a.latency }))
+    .sort((x, y) => x.at - y.at || x.seq - y.seq);
+  return { acts, arrivals, items, op };
+}
+
+// The truth: apply the successful requests in ARRIVAL order, which is what the
+// server sees. A failed request changes nothing.
+const applyTo = (st, a) => { st[a.item] = a.op === "set" ? a.value : !st[a.item]; };
+
+function serverState(s) {
+  const st = new Array(s.items).fill(false);
+  for (const a of s.arrivals) if (!a.fails) applyTo(st, a);
+  return st;
+}
+
+// What the user MEANT: their taps, in the order they made them.
+function intendedState(s) {
+  const st = new Array(s.items).fill(false);
+  for (const a of s.acts) applyTo(st, a);
+  return st;
+}
+
+// ---------------------------------------------------------------------------
+// Five policies for what the screen shows at the end.
+// ---------------------------------------------------------------------------
+const POLICIES = [
+  {
+    key: "pessimistic",
+    label: "wait for the server before changing anything",
+    // the screen is always the server's state; nothing to reconcile
+    render: (s) => serverState(s),
+  },
+  {
+    key: "optimistic-no-rollback",
+    label: "apply instantly, ignore failures",
+    render: (s) => intendedState(s),
+  },
+  {
+    key: "rollback-toggle",
+    label: "apply instantly, undo the toggle when a request fails",
+    // The one in the most code. Undoing a TOGGLE is not undoing an ACTION:
+    // by the time the failure comes back, later taps may have flipped it again.
+    render: (s) => {
+      const st = new Array(s.items).fill(false);
+      for (const a of s.acts) applyTo(st, a);
+      // "undo the toggle" - which for a SET means toggling, because there is
+      // nothing else a toggle-shaped undo can do
+      for (const a of s.arrivals) if (a.fails) st[a.item] = !st[a.item];
+      return st;
+    },
+  },
+  {
+    key: "rollback-snapshot",
+    label: "apply instantly, restore the value the item had before that tap",
+    render: (s) => {
+      const st = new Array(s.items).fill(false);
+      const before = new Map();
+      for (const a of s.acts) { before.set(a.seq, st[a.item]); applyTo(st, a); }
+      for (const a of s.arrivals) if (a.fails) st[a.item] = before.get(a.seq);
+      return st;
+    },
+  },
+  {
+    key: "reconcile",
+    label: "apply instantly, then take the server's answer as final",
+    render: (s) => serverState(s),
+  },
+];
+
+// ---------------------------------------------------------------------------
+// What a test can assert without a server and a user in the room.
+// ---------------------------------------------------------------------------
+const PROPERTIES = [
+  { key: "instant", label: "the screen changes before the request resolves" },
+  { key: "settles", label: "the screen stops changing once every request has resolved" },
+  { key: "no-flicker", label: "an item never changes twice for one tap" },
+];
+
+function propertyResults(policy, seed, op = "toggle") {
+  const rng = new Rng(seed);
+  let pass = 0, total = 0;
+  for (let k = 0; k < 200; k++) {
+    const s = session(rng, { failRate: 0.1, op });
+    // instant: everything except the pessimistic policy shows the tap at once
+    total++;
+    if (policy.key !== "pessimistic") pass++;
+    // settles: the render is a pure function of the session, so it settles
+    total++;
+    const a = policy.render(s), b = policy.render(s);
+    if (a.every((v, i) => v === b[i])) pass++;
+    // no-flicker: a tap on an item that then succeeds must not move twice
+    total++;
+    const clean = { ...s, acts: s.acts.map((x) => ({ ...x, fails: false })) };
+    clean.arrivals = clean.acts.map((x) => ({ ...x, at: x.seq + x.latency })).sort((p, q) => p.at - q.at || p.seq - q.seq);
+    const r = policy.render(clean);
+    if (r.every((v, i) => v === intendedState(clean)[i])) pass++;
+  }
+  return { pass, total, allHold: pass === total };
+}
+
+// The real measurement: does the screen match the server when everything has
+// settled? That is the only question the user cares about.
+function accuracy(policy, seed, opts) {
+  const rng = new Rng(seed);
+  let agree = 0, n = 0, itemsWrong = 0, worst = 0;
+  let userMisled = 0;
+  for (let k = 0; k < 600; k++) {
+    const s = session(rng, opts);
+    const shown = policy.render(s);
+    const truth = serverState(s);
+    const wrong = shown.reduce((acc, v, i) => acc + (v !== truth[i] ? 1 : 0), 0);
+    n++;
+    if (wrong === 0) agree++;
+    itemsWrong += wrong;
+    if (wrong > worst) worst = wrong;
+    // "misled" = the screen says ON and the server says OFF; the user believes
+    // something happened that did not
+    for (let i = 0; i < shown.length; i++) if (shown[i] && !truth[i]) { userMisled++; break; }
+  }
+  return { n, agree, itemsWrong, meanWrong: itemsWrong / n, worst, userMisled };
+}
+
+function report(opts = { items: 4, actions: 10, failRate: 0.1, reorderRate: 0.25, op: "toggle" }) {
+  return POLICIES.map((p) => ({
+    key: p.key,
+    label: p.label,
+    props: propertyResults(p, 5150, opts.op || "toggle"),
+    acc: accuracy(p, 2727, opts),
+    accNoFail: accuracy(p, 2727, { ...opts, failRate: 0 }),
+  }));
+}
+
+const ENGINE = {
+  Rng, session, applyTo, serverState, intendedState, POLICIES, PROPERTIES,
+  propertyResults, accuracy, report,
+};
+if (typeof module !== "undefined" && module.exports) module.exports = ENGINE;
+
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["look", "und", "build"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabLook").classList.toggle("tab-active", name === "look");
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selfcheck").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+const RATES = [0, 0.05, 0.10, 0.15, 0.25, 0.35, 0.50];
+const BASE = { items: 4, actions: 10, reorderRate: 0.25 };
+const cache = new Map();
+function rep(op, failRate) {
+  const k = op + "|" + failRate;
+  if (!cache.has(k)) cache.set(k, ENGINE.report({ ...BASE, op, failRate }));
+  return cache.get(k);
+}
+const by = (R, k) => R.find((r) => r.key === k);
+const pct = (a, b) => ((a / b) * 100).toFixed(1) + "%";
+
+function render() {
+  const op = el("op").value;
+  const failRate = RATES[parseInt(el("fail").value, 10)];
+  el("fv").textContent = (failRate * 100).toFixed(0) + "%";
+  const R = rep(op, failRate);
+
+  table("tMain",
+    ["policy", "passes the properties", "agrees with the server", "mean items wrong", "worst", "user misled"],
+    R.map((p) => ({
+      cls: p.acc.agree === p.acc.n ? "here" : "",
+      cells: [p.label,
+        p.props.allHold ? '<span class="pill good">ALL THREE</span>' : '<span class="pill bad">FAILS ONE</span>',
+        "<b>" + p.acc.agree + " / " + p.acc.n + "</b>",
+        p.acc.meanWrong.toFixed(3), p.acc.worst, p.acc.userMisled],
+    })));
+
+  const rt = by(R, "rollback-toggle");
+  el("mainNote").innerHTML = failRate === 0
+    ? "<b>At a 0% failure rate every policy agrees on all 600.</b> Nothing here can be told apart, which is exactly what a reliable test fixture does."
+    : "On a <b>" + op + "</b> control, the rollback everybody writes agrees on <b>" + rt.acc.agree + " of " + rt.acc.n +
+      "</b> sessions" + (rt.acc.agree === rt.acc.n ? " &mdash; exactly right." : ", and it is not the best row in this table.");
+
+  const T = rep("toggle", 0.10), S = rep("set", 0.10);
+  el("kA").textContent = by(T, "rollback-toggle").acc.agree + " / 600";
+  el("kB").textContent = by(S, "rollback-toggle").acc.agree + " / 600";
+  el("kC").textContent = by(S, "optimistic-no-rollback").acc.agree + " / 600";
+  el("kD").textContent = R.filter((p) => p.props.allHold).length + " / 5";
+}
+el("op").addEventListener("change", render);
+el("fail").addEventListener("input", render);
+render();
+
+const T10 = rep("toggle", 0.10), S10 = rep("set", 0.10);
+
+table("tOps", ["policy", "on a toggle", "on a set", "verdict"],
+  ENGINE.POLICIES.map((p) => {
+    const a = by(T10, p.key).acc, b = by(S10, p.key).acc;
+    const swing = Math.abs(a.agree - b.agree);
+    return {
+      cls: p.key === "rollback-toggle" ? "here" : "",
+      cells: [p.label,
+        "<b>" + a.agree + " / " + a.n + "</b>",
+        "<b>" + b.agree + " / " + b.n + "</b>",
+        swing > 300 ? '<span class="pill bad">opposite answers</span>'
+          : a.agree === a.n && b.agree === b.n ? '<span class="pill good">right either way</span>'
+          : '<span class="pill stop">mediocre either way</span>'],
+    };
+  }));
+
+table("tSnap", ["policy", "on a toggle", "on a set", "what it gets wrong"],
+  ["rollback-toggle", "rollback-snapshot", "optimistic-no-rollback"].map((k) => {
+    const a = by(T10, k).acc, b = by(S10, k).acc;
+    return {
+      cls: k === "rollback-snapshot" ? "here" : "",
+      cells: [ENGINE.POLICIES.find((p) => p.key === k).label,
+        pct(a.agree, a.n), pct(b.agree, b.n),
+        k === "rollback-snapshot" ? "reverts the taps that came after the failed one"
+          : k === "rollback-toggle" ? "nothing on a toggle; everything on a set"
+          : "keeps showing a change the server refused"],
+    };
+  }));
+
+table("tProps", ["policy", "changes instantly", "settles", "no double move", "the suite", "actually agrees"],
+  T10.map((p) => ({
+    cls: p.props.allHold && p.acc.agree < p.acc.n ? "here" : "",
+    cells: [p.label,
+      p.key === "pessimistic" ? '<span class="warn">no</span>' : '<span class="ok">yes</span>',
+      '<span class="ok">yes</span>', '<span class="ok">yes</span>',
+      p.props.allHold ? '<span class="pill good">ACCEPTS</span>' : '<span class="pill bad">REJECTS</span>',
+      "<b>" + pct(p.acc.agree, p.acc.n) + "</b>"],
+  })));
+
+const T0 = rep("toggle", 0);
+table("tNoFail", ["policy", "0% failures", "10% failures", "difference"],
+  T0.map((p) => {
+    const b = by(T10, p.key).acc;
+    return {
+      cls: p.acc.agree === p.acc.n && b.agree < b.n ? "here" : "",
+      cells: [p.label, "<b>" + p.acc.agree + " / " + p.acc.n + "</b>", b.agree + " / " + b.n,
+        p.acc.agree === b.agree ? "none" : '<span class="warn">the fixture was hiding it</span>'],
+    };
+  }));
+
+selfCheckPanel((t) => {
+  t("the generator reproduces from a seed", (() => {
+    const a = new ENGINE.Rng(3), b = new ENGINE.Rng(3);
+    for (let i = 0; i < 200; i++) if (a.next() !== b.next()) return false;
+    return true;
+  })());
+  t("the draw does not alternate on every step", (() => {
+    const r = new ENGINE.Rng(1); const d = [];
+    for (let i = 0; i < 2000; i++) d.push(r.below(2));
+    return d.slice(1).filter((v, i) => v !== d[i]).length < 1999;
+  })());
+  t("a toggle applied twice is the identity", (() => {
+    const st = [false, true];
+    const a = { item: 0, op: "toggle" };
+    ENGINE.applyTo(st, a); ENGINE.applyTo(st, a);
+    return st[0] === false;
+  })());
+  t("CONTROL: a set applied twice is NOT the identity", (() => {
+    const st = [false];
+    ENGINE.applyTo(st, { item: 0, op: "set", value: true });
+    ENGINE.applyTo(st, { item: 0, op: "set", value: true });
+    return st[0] === true;
+  })(), "which is the whole finding");
+
+  t("requests really do arrive out of order", (() => {
+    const s = ENGINE.session(new ENGINE.Rng(11), { ...BASE, failRate: 0.1 });
+    return s.arrivals.some((a, i) => i > 0 && a.seq < s.arrivals[i - 1].seq);
+  })());
+  t("the server applies arrivals in arrival order, skipping failures", (() => {
+    const s = ENGINE.session(new ENGINE.Rng(12), { ...BASE, failRate: 0.3 });
+    const st = new Array(s.items).fill(false);
+    for (const a of s.arrivals) if (!a.fails) ENGINE.applyTo(st, a);
+    return ENGINE.serverState(s).every((v, i) => v === st[i]);
+  })());
+
+  t("undo-the-toggle is exactly right on a toggle",
+    by(T10, "rollback-toggle").acc.agree === 600);
+  t("...and the WORST of the five on a set", (() => {
+    const worst = S10.reduce((a, b) => (b.acc.agree < a.acc.agree ? b : a));
+    return worst.key === "rollback-toggle";
+  })(), by(S10, "rollback-toggle").acc.agree + "/600");
+  t("...worse even than not rolling back at all",
+    by(S10, "rollback-toggle").acc.agree < by(S10, "optimistic-no-rollback").acc.agree,
+    by(S10, "rollback-toggle").acc.agree + " vs " + by(S10, "optimistic-no-rollback").acc.agree);
+  t("the snapshot policy is mediocre on both",
+    by(T10, "rollback-snapshot").acc.agree < 600 && by(S10, "rollback-snapshot").acc.agree < 600,
+    by(T10, "rollback-snapshot").acc.agree + " and " + by(S10, "rollback-snapshot").acc.agree);
+  t("taking the server's answer is right on both",
+    by(T10, "reconcile").acc.agree === 600 && by(S10, "reconcile").acc.agree === 600);
+
+  t("every optimistic policy passes all three properties",
+    T10.filter((p) => p.key !== "pessimistic").every((p) => p.props.allHold));
+  t("...including one that disagrees with the server most of the time",
+    T10.some((p) => p.props.allHold && p.acc.agree < p.acc.n / 2),
+    "optimistic-no-rollback at " + by(T10, "optimistic-no-rollback").acc.agree + "/600");
+  t("the only policy the suite rejects is the safest one",
+    !by(T10, "pessimistic").props.allHold && by(T10, "pessimistic").acc.agree === 600);
+
+  t("CONTROL: on a TOGGLE, no failures means every policy agrees on all 600",
+    T0.every((p) => p.acc.agree === p.acc.n));
+  t("...so for a toggle a reliable fixture tests nothing here",
+    new Set(T0.map((p) => p.acc.agree)).size === 1);
+  t("but on a SET, reordering alone breaks them with ZERO failures", (() => {
+    const S0 = rep("set", 0);
+    return S0.some((p) => p.acc.agree < p.acc.n);
+  })(), (() => { const S0 = rep("set", 0); return by(S0, "rollback-toggle").acc.agree + "/600"; })());
+  t("...and only the two server-truth policies survive it", (() => {
+    const S0 = rep("set", 0);
+    return by(S0, "pessimistic").acc.agree === 600 && by(S0, "reconcile").acc.agree === 600;
+  })());
+});
+
+</script>
+</body>
+</html>

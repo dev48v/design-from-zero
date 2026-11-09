@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 83 &mdash; Presence Cursors</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#0f766e; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:560px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num td.txt { text-align:left; }
+  tr.here td { background:#f0fdfa; font-weight:700; }
+  tr.dim td { color:#94a3b8; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:800; }
+  .pill.good { background:#dcfce7; color:#166534; }
+  .pill.bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  #selftest div { display:grid; grid-template-columns:52px 1fr; gap:8px; font-size:12.5px; padding:3px 0; border-top:1px solid var(--line); align-items:start; }
+  #selftest div span.m { grid-column:2; font-size:11.5px; color:#64748b; }
+  .ctl { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 12px; }
+  .ctl input[type=range] { flex:1; min-width:150px; }
+  .ctl input[type=number] { width:74px; font:inherit; padding:5px 7px; border:1px solid var(--line); border-radius:7px; }
+  .ctl button { font:inherit; font-size:13px; font-weight:700; padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+  .stage { position:relative; height:320px; border:1px solid var(--line); border-radius:12px; overflow:hidden; cursor:crosshair; touch-action:none;
+           background:#fff linear-gradient(#f1f5f9 1px, transparent 1px) 0 0/100% 32px,
+                      linear-gradient(90deg,#f1f5f9 1px, transparent 1px) 0 0/32px 100%; }
+  .cur { position:absolute; left:0; top:0; width:0; height:0; }
+  .cur svg { display:block; filter:drop-shadow(0 1px 1px rgba(15,23,42,.25)); }
+  .tag { position:absolute; left:0; top:0; font-size:11.5px; font-weight:800; color:#fff; padding:2px 8px; border-radius:999px; white-space:nowrap; line-height:1.45; }
+  .stagehint { position:absolute; left:10px; bottom:8px; font-size:11.5px; color:#94a3b8; pointer-events:none; }
+  footer { border-top:1px solid var(--line); margin-top:28px; padding:18px 0 40px; font-size:13px; color:#475569; }
+  footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 83</p>
+    <h1>
+      Presence cursors &mdash; a peer's position arrives about fifteen times a
+      second, so 95% of what you see between those packets is something you
+      made up on purpose.
+    </h1>
+    <div class="tabs">
+      <button id="tabUnd" class="tab-active" onclick="showTab('und')">Understand</button>
+      <button id="tabBuild" onclick="showTab('build')">Build</button>
+      <button id="tabDemo" onclick="showTab('demo')">Demo</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="und" class="stack">
+
+  <div class="card">
+    <h2>Step 1 &mdash; what you are actually building is a clock</h2>
+    <p>
+      A multiplayer cursor looks like a drawing problem and is really a timing
+      problem. Every other person in the file is a stream of sparse position
+      samples that arrive late, out of order, and sometimes not at all, and
+      your job is to turn that stream into something that moves like a hand.
+      Almost nothing in the visible result is data you received &mdash; the data
+      is maybe fifteen positions a second, and the screen redraws sixty times a
+      second. So most frames are yours to invent, and the whole craft of this
+      feature is in how you invent them. Hold that idea and the rest of the
+      page is just consequences of it.
+    </p>
+    <div class="tblwrap"><table class="num" id="tBudget"></table></div>
+    <p class="note">
+      One deterministic replay of the demo, measured: how many frames the
+      renderer drew, and how many of them were backed by a packet that had
+      actually arrived on that frame.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 2 &mdash; why you interpolate instead of teleporting</h2>
+    <p>
+      The lazy version assigns the newest position straight to the cursor
+      element and lets the browser paint it. It works, and it looks broken: the
+      cursor sits perfectly still for a tenth of a second and then jumps sixty
+      pixels, which reads as lag even when the network is fine. The eye is
+      extremely good at spotting a thing that moves in discrete hops, because
+      nothing physical does. Interpolation replaces the hop with a straight
+      line walked over the time between two samples, so the cursor is always
+      moving and never more than a frame's worth of distance from where it
+      should be. The cost is that you are always showing a position the peer
+      has already left &mdash; which is fine, because being smoothly a little
+      behind reads as presence, and being exactly right in lurches reads as a
+      bug.
+    </p>
+    <div class="tblwrap"><table class="num" id="tJump"></table></div>
+    <p class="note">
+      Same replay, same packets. The only difference is whether the frames
+      between two packets are drawn or skipped.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 3 &mdash; why the renderer has to run in the past</h2>
+    <p>
+      To interpolate between two samples you need both of them, and the second
+      one has not arrived yet. The fix is to render on a delayed clock: draw
+      what the world looked like one network trip ago, so the sample you need
+      to interpolate <i>towards</i> is already sitting in the buffer. Pick the
+      delay too small and you run off the end of the buffer on every frame and
+      fall back to holding the last known point, which is exactly the jumping
+      you were trying to remove. Pick it too large and the cursors visibly
+      trail the conversation. One latency, plus the jitter, plus one update
+      interval of headroom is the usual answer, and it is the single number
+      that most changes how this feature feels.
+    </p>
+    <div class="tblwrap"><table class="num" id="tDelay"></table></div>
+    <p class="note">
+      Each row is the whole replay re-run with a different render delay.
+      <code>held</code> means the renderer had nothing in front of it and froze
+      on the last known point; it is the row that teleports.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 4 &mdash; why you throttle what you send</h2>
+    <p>
+      A pointer generates an event per frame and sometimes more, so an
+      unthrottled cursor channel is sixty-plus messages a second per person.
+      Ten people in a file is six hundred messages a second through a socket
+      that also has to carry the actual edits, and the receiving end cannot
+      draw any of it faster than its own refresh anyway. Throttling to
+      somewhere around fifty milliseconds cuts that by three quarters and
+      changes nothing anyone can see, because the interpolator fills the gap.
+      The important detail is that throttling here is not sampling: you keep
+      the newest position in a single slot and overwrite it, so what you
+      finally send is where the pointer <i>is</i>, not where it happened to be
+      at a tick boundary.
+    </p>
+    <div class="tblwrap"><table class="num" id="tThrottle"></table></div>
+    <p class="note">
+      A fixed 16&nbsp;ms clock over one second, so the counts are exact rather
+      than whatever the machine felt like doing that run.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 5 &mdash; why the trailing edge is the half everyone forgets</h2>
+    <p>
+      A leading-edge throttle fires immediately and then ignores everything
+      until the interval is up. If the pointer stops moving inside that window
+      &mdash; which is what happens every time someone finishes a gesture and
+      parks the cursor on a word &mdash; the final position is sitting in the
+      pending slot when the events stop, and nothing ever sends it. The peer's
+      cursor ends up frozen short of where it really is, by up to one
+      interval's worth of travel, and it stays wrong until that person moves
+      again. The trailing edge is the rule that says: if there is a pending
+      sample and the interval has elapsed, send it even though no new event
+      arrived. It costs one timer, and it is the difference between cursors
+      that land where people put them and cursors that are permanently a
+      little bit lost.
+    </p>
+    <div class="tblwrap"><table class="num" id="tTrail"></table></div>
+    <p class="note">
+      The pointer moves to x=220 and stops dead. Leading-edge only never
+      reports it, at all, ever.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 6 &mdash; why the receiver must distrust the order</h2>
+    <p>
+      Latency is not a constant, it is a distribution, so two messages sent
+      64&nbsp;ms apart can arrive in the wrong order. If you append every
+      arriving sample to the buffer in arrival order, one reordered packet puts
+      a point from the past at the head of your timeline, and the interpolator
+      dutifully walks the cursor backwards and then forwards again &mdash; a
+      visible stutter caused by a packet that was otherwise harmless. The fix
+      is that every message carries the sender's timestamp and the buffer
+      rejects anything not strictly newer than its last entry. Dropped packets
+      then need no handling at all beyond this: a gap in the timeline is simply
+      a longer segment to interpolate across, which is why a lossy cursor
+      channel still looks smooth.
+    </p>
+    <div class="tblwrap"><table class="num" id="tNet"></table></div>
+    <p class="note">
+      Seeded transport with a fixed latency floor, uniform jitter and a drop
+      rate. Nothing here calls the global random source, so these numbers are
+      the same on every machine.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 7 &mdash; why presence needs a timeout, not a leave event</h2>
+    <p>
+      The obvious design is that a client sends <code>join</code> when it opens
+      the file and <code>leave</code> when it closes, and the server broadcasts
+      both. It fails in the single most common case: nobody sends
+      <code>leave</code> when the laptop lid shuts, the tunnel drops, the tab
+      is killed, or the process is force-quit. The ghost cursor that lingers
+      for an hour after someone left the meeting is always this bug. Presence
+      has to be derived from evidence rather than announced &mdash; a peer exists
+      while packets keep arriving, and is removed when none has arrived for a
+      few seconds. A <code>leave</code> message is then only an optimisation
+      that makes the disappearance prompt; the timeout is what makes it
+      correct, and this engine has no leave message at all.
+    </p>
+    <div class="tblwrap"><table class="num" id="tEvict"></table></div>
+    <p class="note">
+      One peer stops transmitting at t=1200&nbsp;ms with no goodbye of any
+      kind, and is gone one timeout later.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 8 &mdash; why the colour must come from the id</h2>
+    <p>
+      The tempting implementation is a palette and a counter: the first person
+      to connect is amber, the second is rose, and so on. It survives exactly
+      until someone's connection blips. They drop, the timeout removes them,
+      they reconnect two seconds later, and now they are a different colour
+      &mdash; and so is everybody who joined after them, if you ever compact the
+      list. Colour is identity here, and identity cannot depend on arrival
+      order or on how many other people happen to be in the room. Take the
+      hue straight off a hash of the stable user id &mdash; a continuous wheel
+      rather than eight swatches, because five people in eight slots collide
+      four times out of five &mdash; and the same person is the same colour in
+      every session, on every client, forever, with no coordination between
+      clients at all.
+    </p>
+    <div class="tblwrap"><table class="num" id="tColor"></table></div>
+    <p class="note">
+      The same five peers, with what a join-order palette would have given each
+      of them had one person reconnected first.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 9 &mdash; why the label flips instead of being clipped</h2>
+    <p>
+      The name tag hangs down and to the right of the cursor hotspot, which is
+      correct for about ninety percent of the canvas and wrong at every edge.
+      Near the right border the tag runs off the viewport and the name is cut
+      in half; near the bottom it disappears under the fold. Clipping is the
+      worst option, because a half-visible name is unreadable and still takes
+      the space. The rule is the one a tooltip uses: compute the preferred box,
+      test it against the viewport, flip it to the opposite side of the anchor
+      if it does not fit, and clamp only as a last resort when the tag is wider
+      than the space on either side. The flip has to be per-axis &mdash; a cursor
+      in the bottom-right corner flips both, one at the top-right flips only
+      horizontally.
+    </p>
+    <div class="tblwrap"><table class="num" id="tLabel"></table></div>
+    <p class="note">
+      A 92&times;18 tag in a 640&times;320 viewport, at nine anchor positions.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Step 10 &mdash; why the whole thing has to be replayable</h2>
+    <p>
+      Every component above is time-dependent and most of them are
+      probabilistic, which makes the naive version of this feature untestable:
+      it works on your machine, it is janky on someone else's, and you have no
+      way to tell whether you fixed anything. Pushing the randomness into a
+      seeded generator and the clock into an explicit fixed step turns the
+      entire system into a pure function from (seed, settings) to a list of
+      frames. Now a regression is a changed digest, a tuning decision is a
+      table of numbers instead of an argument, and the self-check at the end of
+      this page can assert real behaviour rather than that nothing threw. It is
+      also why the demo is driven by a counter rather than by a wall clock
+      &mdash; the same replay on a 30&nbsp;Hz screen produces exactly the same
+      positions.
+    </p>
+    <div class="tblwrap"><table class="num" id="tSeed"></table></div>
+    <p class="note">
+      Four seeds, same settings. The digest is an FNV-1a hash over every
+      rendered position of every frame.
+    </p>
+  </div>
+
+</section>
+
+<section id="build" class="stack hidden">
+  <div class="card">
+    <h2>The interpolator</h2>
+    <p>
+      Pure, and the only function that decides what a cursor is doing between
+      two packets. It clamps at both ends rather than extrapolating: guessing
+      past the newest known point assumes a velocity the peer may already have
+      abandoned, so every stop overshoots, and the correction afterwards is
+      more visible than the delay it saved.
+    </p>
+    <pre id="codeSample"></pre>
+  </div>
+
+  <div class="card">
+    <h2>The throttle, with both edges</h2>
+    <p>
+      <code>push</code> never sends; it only overwrites the pending slot.
+      <code>tick</code> is the trailing edge and the only thing that emits,
+      which is why a pointer that stops still reports its final position one
+      interval later.
+    </p>
+    <pre id="codeThrottle"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Presence: arrival as the only evidence</h2>
+    <p>
+      <code>apply</code> refuses any sample that is not newer than the last one
+      it kept, and refuses any message that is not a cursor &mdash; there is no
+      join and no leave in this protocol. <code>evict</code> is the entire
+      lifecycle.
+    </p>
+    <pre id="codeStore"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Identity colour and label placement</h2>
+    <pre id="codeColor"></pre>
+  </div>
+
+  <div class="card">
+    <h2>The seeded transport</h2>
+    <p>
+      Latency floor plus uniform jitter plus a drop roll, all off one seeded
+      generator, with the in-flight queue sorted by arrival time and then by
+      send sequence so delivery is total and reproducible.
+    </p>
+    <pre id="codeNet"></pre>
+  </div>
+
+  <div class="card">
+    <h2>What the settings cost</h2>
+    <p>
+      The same replay swept over the two numbers you will actually argue about
+      in review.
+    </p>
+    <div class="tblwrap"><table class="num" id="tSweep"></table></div>
+  </div>
+</section>
+
+<section id="demo" class="stack hidden">
+  <div class="card">
+    <h2>Four peers, your pointer, one lossy wire</h2>
+    <p>
+      Move inside the box. Your own pointer is throttled, sent through the same
+      simulated wire as everybody else, and drawn back to you out of the
+      receive buffer &mdash; so the cursor labelled <b>You (echo)</b> is a real
+      round-trip, not a local copy. Leave the box and stop moving: your echo is
+      evicted once the timeout expires, with no leave message sent anywhere.
+    </p>
+    <div class="ctl">
+      <span class="lbl" style="margin:0">THROTTLE</span>
+      <input type="range" id="cThrottle" min="0" max="200" step="10" value="50" />
+      <input type="number" id="nThrottle" value="50" readonly /><span class="note" style="margin:0">ms</span>
+    </div>
+    <div class="ctl">
+      <span class="lbl" style="margin:0">LATENCY</span>
+      <input type="range" id="cLat" min="0" max="400" step="10" value="90" />
+      <input type="number" id="nLat" value="90" readonly /><span class="note" style="margin:0">ms + 100 ms jitter</span>
+    </div>
+    <div class="ctl">
+      <span class="lbl" style="margin:0">DROP</span>
+      <input type="range" id="cDrop" min="0" max="60" step="2" value="12" />
+      <input type="number" id="nDrop" value="12" readonly /><span class="note" style="margin:0">%</span>
+    </div>
+    <div class="ctl">
+      <span class="lbl" style="margin:0">RENDER DELAY</span>
+      <input type="range" id="cDelay" min="0" max="500" step="10" value="300" />
+      <input type="number" id="nDelay" value="300" readonly /><span class="note" style="margin:0">ms</span>
+      <button id="btnReset" type="button">Restart replay</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="stagehint">deterministic replay &middot; fixed 16 ms step</div>
+    </div>
+    <div class="tblwrap" style="margin-top:14px"><table class="num" id="tLive"></table></div>
+    <p class="note" id="liveNote"></p>
+  </div>
+
+  <div class="card">
+    <h2>Self-check</h2>
+    <p class="note" style="margin:0 0 10px">
+      Running in your browser now, against the same engine that drives the box
+      above and every table in Understand.
+    </p>
+    <div id="selftest"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0">
+      DesignFromZero &middot; Day 83 &middot; Presence cursors.
+      Tomorrow: the stacked area chart, and the baseline nobody agrees on.
+    </p>
+  </div>
+</footer>
+</div>
+
+<script>
+// ===== ENGINE:BEGIN =====
+// ======================================================================
+// Live multiplayer cursors - the Figma / Notion presence layer.
+//
+// Four parts, none of which touch a screen:
+//
+//   1. a seeded TRANSPORT that models latency, jitter and packet loss
+//   2. a THROTTLE with both a leading and a trailing edge
+//   3. a PRESENCE STORE that interpolates, rejects stale samples, and
+//      evicts peers purely on silence
+//   4. identity COLOUR from a hash, and LABEL placement that flips at the
+//      viewport edges
+//
+// Everything is a pure function of (seed, settings, fixed clock step), so
+// the demo replays identically on every machine.
+// ======================================================================
+const ENGINE = (() => {
+
+  // ------------------------------------------------------ identity colour
+  // Colour is IDENTITY. If it comes from a join counter then a two-second
+  // reconnect makes a person change colour, which is the one thing a
+  // presence colour must never do. So: hash the stable id and take the hue
+  // from the hash. No coordination between clients, no counter, no shared
+  // state at all.
+  //
+  // A HUE WHEEL rather than a list of eight swatches, because eight slots
+  // and five people is a FOUR-IN-FIVE chance that two of them get the same
+  // colour - the birthday problem, landing in the one feature whose entire
+  // job is telling people apart.
+  const HUE_ZONES = ["red", "orange", "yellow", "chartreuse", "green", "spring",
+                     "cyan", "azure", "blue", "violet", "magenta", "rose"];
+  const COLOR = { sat: 70, light: 42 };
+
+  // FNV-1a, then the murmur3 finaliser. The avalanche step matters: raw
+  // FNV-1a over ids that differ only in a trailing character lands them in
+  // neighbouring buckets, so "u-1" and "u-2" would reliably get adjacent
+  // hues. Every intermediate is forced back to unsigned 32-bit, because a
+  // JS bitwise operator hands back a SIGNED integer and a negative hash
+  // makes every downstream modulo wrong.
+  function hash32(s) {
+    s = String(s);
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (h ^ s.charCodeAt(i)) >>> 0;
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    h = (h ^ (h >>> 16)) >>> 0;
+    h = Math.imul(h, 2246822507) >>> 0;
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 3266489909) >>> 0;
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h >>> 0;
+  }
+
+  // HSL -> hex, so the colour is a plain string that works in SVG fill, CSS
+  // background and a table cell without three different code paths.
+  function hslHex(h, s, l) {
+    s /= 100; l /= 100;
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const v = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      return Math.round(255 * v);
+    };
+    const hx = (v) => ("0" + v.toString(16)).slice(-2);
+    return "#" + hx(f(0)) + hx(f(8)) + hx(f(4));
+  }
+
+  function hueName(hue) { return HUE_ZONES[Math.floor(((hue % 360) + 360) % 360 / 30)]; }
+
+  function colorFor(id) {
+    const h = hash32(id);
+    const hue = h % 360;
+    return { hue: hue, name: hueName(hue), hex: hslHex(hue, COLOR.sat, COLOR.light) };
+  }
+
+  // ------------------------------------------------------------- the RNG
+  // mulberry32. Seeded, so "it was janky that one time" becomes a seed you
+  // can hand to somebody else.
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), 1 | t) >>> 0;
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) >>> 0;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // --------------------------------------------------------- the transport
+  // Latency is a floor plus uniform jitter, which is enough to REORDER
+  // packets - the receiver has to cope, and that is the point of modelling
+  // it rather than assuming a constant delay.
+  function makeTransport(cfg) {
+    const c = Object.assign({ seed: 1, latency: 90, jitter: 60, drop: 0.12 }, cfg || {});
+    const rnd = mulberry32(c.seed);
+    const types = Object.create(null);
+    let queue = [], seq = 0, sent = 0, dropped = 0, delivered = 0, reordered = 0, lastAt = -1;
+
+    function send(msg, now) {
+      seq += 1; sent += 1;
+      types[msg.type] = (types[msg.type] || 0) + 1;
+      if (rnd() < c.drop) { dropped += 1; return { seq: seq, dropped: true, at: null }; }
+      const at = now + c.latency + Math.floor(rnd() * (c.jitter + 1));
+      if (at < lastAt) reordered += 1;
+      if (at > lastAt) lastAt = at;
+      queue.push({ at: at, seq: seq, msg: msg });
+      return { seq: seq, dropped: false, at: at };
+    }
+
+    function poll(now) {
+      const out = [], keep = [];
+      for (let i = 0; i < queue.length; i++) {
+        if (queue[i].at <= now) out.push(queue[i]); else keep.push(queue[i]);
+      }
+      queue = keep;
+      out.sort((a, b) => (a.at - b.at) || (a.seq - b.seq));
+      delivered += out.length;
+      return out;
+    }
+
+    function stats() {
+      return { sent: sent, dropped: dropped, delivered: delivered,
+               inFlight: queue.length, reordered: reordered,
+               types: Object.keys(types).sort() };
+    }
+    return { send: send, poll: poll, stats: stats, config: c };
+  }
+
+  // ---------------------------------------------------------- the throttle
+  // push() NEVER sends. It overwrites a single pending slot, so whatever is
+  // finally emitted is where the pointer IS, not where it was at a tick
+  // boundary - throttling a cursor is coalescing, not sampling.
+  //
+  // tick() is the TRAILING EDGE and is the only thing that emits. Call it
+  // every frame. Because it does not need a new event to fire, a pointer
+  // that stops mid-interval still reports its final position one interval
+  // later; a leading-edge-only throttle loses that sample forever and leaves
+  // the remote cursor parked short of where the person actually put it.
+  function makeThrottle(interval) {
+    let pending = null, lastEmit = null, emitted = 0, pushed = 0, coalesced = 0;
+    return {
+      push: function (t, pt) {
+        pushed += 1;
+        if (pending !== null) coalesced += 1;
+        pending = { t: t, x: pt.x, y: pt.y };
+      },
+      tick: function (t) {
+        if (pending === null) return null;
+        if (lastEmit !== null && t - lastEmit < interval) return null;
+        const m = pending;
+        pending = null; lastEmit = t; emitted += 1;
+        return { t: t, x: m.x, y: m.y, sampledAt: m.t };
+      },
+      // pointerleave / blur / tab hide: send the last known position at once
+      // rather than letting the peer's cursor sit one interval behind until
+      // the person comes back.
+      flush: function (t) {
+        if (pending === null) return null;
+        const m = pending;
+        pending = null; lastEmit = t; emitted += 1;
+        return { t: t, x: m.x, y: m.y, sampledAt: m.t, forced: true };
+      },
+      stats: function () {
+        return { pushed: pushed, emitted: emitted, coalesced: coalesced,
+                 pending: pending !== null, interval: interval };
+      }
+    };
+  }
+
+  // ------------------------------------------------------- interpolation
+  // The whole reason a cursor looks alive. Samples arrive maybe fifteen
+  // times a second; the renderer runs sixty. Between two samples we walk the
+  // line between them in proportion to the time elapsed.
+  //
+  // Both ends CLAMP rather than extrapolate. Extrapolating past the newest
+  // sample guesses a velocity the peer may have already abandoned, so every
+  // stop overshoots and then snaps back - a bigger artefact than the delay
+  // it was buying.
+  function sampleAt(samples, renderT) {
+    if (!samples || samples.length === 0) return null;
+    const first = samples[0], last = samples[samples.length - 1];
+    if (renderT <= first.t) return { x: first.x, y: first.y, mode: "wait", u: 0 };
+    if (renderT >= last.t) return { x: last.x, y: last.y, mode: "hold", u: 1 };
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i], b = samples[i + 1];
+      if (renderT >= a.t && renderT <= b.t) {
+        const span = b.t - a.t;
+        const u = span <= 0 ? 1 : (renderT - a.t) / span;
+        return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, mode: "lerp", u: u };
+      }
+    }
+    return { x: last.x, y: last.y, mode: "hold", u: 1 };
+  }
+
+  // ------------------------------------------------------ label placement
+  const CURSOR = { w: 14, h: 18 };
+  function labelWidth(name) { return 20 + String(name).length * 7.2; }
+
+  // Preferred box is down-and-right of the hotspot. Test it against the
+  // viewport, FLIP to the other side of the anchor per axis if it does not
+  // fit, clamp only when the tag cannot fit on either side.
+  function placeLabel(x, y, lw, lh, vw, vh, pad) {
+    pad = (pad === undefined || pad === null) ? 4 : pad;
+    let lx = x + CURSOR.w, ly = y + CURSOR.h, flipX = false, flipY = false;
+    if (lx + lw + pad > vw) { lx = x - lw - 2; flipX = true; }
+    if (ly + lh + pad > vh) { ly = y - lh - 2; flipY = true; }
+    const cx = Math.max(pad, Math.min(lx, vw - lw - pad));
+    const cy = Math.max(pad, Math.min(ly, vh - lh - pad));
+    return { x: cx, y: cy, w: lw, h: lh, flipX: flipX, flipY: flipY,
+             clamped: (cx !== lx) || (cy !== ly) };
+  }
+
+  // ---------------------------------------------------- the presence store
+  // A bounded ring of recent samples per peer, plus lastSeen. There is no
+  // join and no leave: a peer EXISTS while packets arrive and is removed
+  // when none has for `timeout`. That is the only design that survives a
+  // laptop lid closing, because no goodbye message ever gets sent through a
+  // link that is already gone.
+  const MAX_SAMPLES = 8;
+
+  function makeStore() {
+    const peers = new Map();
+
+    function apply(msg, recvAt) {
+      if (!msg || msg.type !== "cursor") {
+        throw new Error("unknown message type: " + (msg && msg.type));
+      }
+      let p = peers.get(msg.id);
+      if (!p) {
+        p = { id: msg.id, name: msg.name, color: colorFor(msg.id),
+              samples: [], lastSeen: recvAt, accepted: 0, rejected: 0, joinedAt: recvAt };
+        peers.set(msg.id, p);
+      }
+      // liveness counts the PACKET. A reordered sample is still proof the
+      // peer is alive, even though we refuse to put it in the timeline.
+      p.lastSeen = recvAt;
+      const last = p.samples.length ? p.samples[p.samples.length - 1] : null;
+      if (last && msg.t <= last.t) { p.rejected += 1; return false; }
+      p.samples.push({ t: msg.t, x: msg.x, y: msg.y });
+      if (p.samples.length > MAX_SAMPLES) p.samples.shift();
+      p.accepted += 1;
+      return true;
+    }
+
+    function evict(now, timeout) {
+      const gone = [];
+      peers.forEach((p, id) => { if (now - p.lastSeen > timeout) gone.push(id); });
+      for (let i = 0; i < gone.length; i++) peers.delete(gone[i]);
+      return gone;
+    }
+
+    function render(renderT, view) {
+      const out = [];
+      peers.forEach((p) => {
+        const s = sampleAt(p.samples, renderT);
+        if (!s) return;
+        const row = { id: p.id, name: p.name, hex: p.color.hex, colorName: p.color.name,
+                      x: s.x, y: s.y, mode: s.mode, label: null };
+        if (view) {
+          row.label = placeLabel(s.x, s.y, labelWidth(p.name), 18, view.vw, view.vh, 4);
+        }
+        out.push(row);
+      });
+      out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return out;
+    }
+
+    return { peers: peers, apply: apply, evict: evict, render: render,
+             size: function () { return peers.size; } };
+  }
+
+  // ----------------------------------------------------------- the replay
+  // Peer paths are pure functions of time. No randomness anywhere except the
+  // seeded transport, so (seed, settings) fully determines every pixel.
+  const PEERS = [
+    { id: "u-maya",   name: "Maya",
+      path: function (t) { return { x: 150 + 120 * Math.sin(t / 900),  y: 110 + 70 * Math.cos(t / 1300) }; } },
+    { id: "u-arjun",  name: "Arjun",
+      path: function (t) { return { x: 330 + 170 * Math.cos(t / 1150), y: 180 + 85 * Math.sin(t / 760) }; } },
+    { id: "u-lena",   name: "Lena",
+      path: function (t) { return { x: 460 + 140 * Math.sin(t / 640),  y: 90 + 60 * Math.sin(t / 1700) }; } },
+    { id: "u-tobias", name: "Tobias",
+      path: function (t) { return { x: 260 + 210 * Math.sin(t / 1900), y: 240 + 55 * Math.cos(t / 520) }; } }
+  ];
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  const DEFAULTS = { steps: 240, step: 16, throttle: 50, latency: 90, jitter: 100,
+                     drop: 0.12, timeout: 1500, delay: 300, seed: 20260083,
+                     vw: 640, vh: 320, silentId: null, silentAt: null };
+
+  function simulate(opts) {
+    const o = Object.assign({}, DEFAULTS, opts || {});
+    const peers = o.peers || PEERS;
+    const store = makeStore();
+    const net = makeTransport({ seed: o.seed, latency: o.latency, jitter: o.jitter, drop: o.drop });
+    const throttles = new Map();
+    for (let i = 0; i < peers.length; i++) throttles.set(peers[i].id, makeThrottle(o.throttle));
+
+    const frames = [], evicted = [], raw = new Map();
+    let applied = 0, rejected = 0, framesWithPacket = 0;
+
+    for (let i = 0; i < o.steps; i++) {
+      const now = i * o.step;
+      let sentThisFrame = 0;
+      for (let k = 0; k < peers.length; k++) {
+        const p = peers[k];
+        if (o.silentId === p.id && o.silentAt !== null && now >= o.silentAt) continue;
+        const pt = p.path(now);
+        const th = throttles.get(p.id);
+        th.push(now, { x: round2(pt.x), y: round2(pt.y) });
+        const m = th.tick(now);
+        if (m) {
+          net.send({ type: "cursor", id: p.id, name: p.name, t: m.t, x: m.x, y: m.y }, now);
+          sentThisFrame += 1;
+        }
+      }
+      const arrived = net.poll(now);
+      for (let a = 0; a < arrived.length; a++) {
+        if (store.apply(arrived[a].msg, now)) applied += 1; else rejected += 1;
+        raw.set(arrived[a].msg.id, { x: arrived[a].msg.x, y: arrived[a].msg.y });
+      }
+      if (arrived.length) framesWithPacket += 1;
+      const gone = store.evict(now, o.timeout);
+      for (let g = 0; g < gone.length; g++) evicted.push({ id: gone[g], at: now });
+
+      const cursors = store.render(now - o.delay, { vw: o.vw, vh: o.vh });
+      const rawShot = [];
+      for (let c = 0; c < cursors.length; c++) {
+        const r = raw.get(cursors[c].id);
+        rawShot.push({ id: cursors[c].id, x: r ? r.x : cursors[c].x, y: r ? r.y : cursors[c].y });
+      }
+      frames.push({ t: now, sent: sentThisFrame, arrived: arrived.length,
+                    cursors: cursors, raw: rawShot });
+    }
+
+    const th = [];
+    throttles.forEach((v, k) => th.push(Object.assign({ id: k }, v.stats())));
+    return { frames: frames, evicted: evicted, net: net.stats(), throttles: th,
+             applied: applied, rejected: rejected, framesWithPacket: framesWithPacket,
+             settings: o, store: store };
+  }
+
+  // Largest distance any cursor moved in a single frame - the number that
+  // decides whether the thing reads as motion or as teleporting.
+  function maxStep(frames, key) {
+    let m = 0;
+    const prev = new Map();
+    for (let i = 0; i < frames.length; i++) {
+      const list = key === "raw" ? frames[i].raw : frames[i].cursors;
+      for (let j = 0; j < list.length; j++) {
+        const c = list[j], q = prev.get(c.id);
+        if (q) m = Math.max(m, Math.hypot(c.x - q.x, c.y - q.y));
+        prev.set(c.id, { x: c.x, y: c.y });
+      }
+    }
+    return m;
+  }
+
+  function modeCounts(frames) {
+    const counts = { lerp: 0, hold: 0, wait: 0 };
+    for (let i = 0; i < frames.length; i++) {
+      for (let j = 0; j < frames[i].cursors.length; j++) counts[frames[i].cursors[j].mode] += 1;
+    }
+    return counts;
+  }
+
+  // FNV-1a over every rendered position of every frame. A changed digest is
+  // a regression; an identical one is proof the replay really is a function.
+  function digest(frames) {
+    let h = 2166136261 >>> 0;
+    function feed(s) {
+      for (let i = 0; i < s.length; i++) {
+        h = (h ^ s.charCodeAt(i)) >>> 0;
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+    }
+    for (let i = 0; i < frames.length; i++) {
+      feed("|" + frames[i].t);
+      for (let j = 0; j < frames[i].cursors.length; j++) {
+        const c = frames[i].cursors[j];
+        feed(";" + c.id + ":" + c.x.toFixed(2) + "," + c.y.toFixed(2) + ":" + c.mode);
+      }
+    }
+    return ("0000000" + (h >>> 0).toString(16)).slice(-8);
+  }
+
+  return { HUE_ZONES: HUE_ZONES, COLOR: COLOR, hslHex: hslHex, hueName: hueName,
+           hash32: hash32, colorFor: colorFor, mulberry32: mulberry32,
+           makeTransport: makeTransport, makeThrottle: makeThrottle, sampleAt: sampleAt,
+           placeLabel: placeLabel, labelWidth: labelWidth, CURSOR: CURSOR,
+           makeStore: makeStore, MAX_SAMPLES: MAX_SAMPLES, PEERS: PEERS,
+           DEFAULTS: DEFAULTS, simulate: simulate, digest: digest,
+           maxStep: maxStep, modeCounts: modeCounts, round2: round2 };
+})();
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["und", "build", "demo"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+  document.getElementById("tabDemo").classList.toggle("tab-active", name === "demo");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selftest").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+const BASE = ENGINE.simulate({});
+
+// ----------------------------------------------------------- UNDERSTAND
+{
+  const f = BASE.frames;
+  const span = (f.length - 1) * BASE.settings.step;
+  const drawn = f.reduce((a, x) => a + x.cursors.length, 0);
+  table("tBudget", ["", "count", "per second"], [
+    { cells: ["replay length", span + " ms", "&mdash;"] },
+    { cells: ["frames rendered", f.length, (f.length / (span / 1000)).toFixed(1)] },
+    { cells: ["packets sent by the 4 peers", BASE.net.sent, (BASE.net.sent / (span / 1000)).toFixed(1)] },
+    { cells: ["packets delivered", BASE.net.delivered, (BASE.net.delivered / (span / 1000)).toFixed(1)] },
+    { cls: "here", cells: ["frames where a packet arrived", BASE.framesWithPacket,
+      (100 * BASE.framesWithPacket / f.length).toFixed(1) + "% of frames"] },
+    { cls: "dim", cells: ["cursor positions drawn", drawn, "most of them invented"] }
+  ]);
+}
+
+{
+  const raw = ENGINE.maxStep(BASE.frames, "raw");
+  const smooth = ENGINE.maxStep(BASE.frames, "lerp");
+  table("tJump", ["drawing strategy", "worst single-frame jump", "reads as"], [
+    { cls: "dim", cells: ["newest packet, assigned straight to the element", raw.toFixed(1) + " px", "teleporting"] },
+    { cls: "here", cells: ["interpolated on a delayed clock", smooth.toFixed(1) + " px", "a hand"] },
+    { cells: ["improvement", (raw / Math.max(smooth, 0.001)).toFixed(1) + "&times; smaller", "same packets"] }
+  ]);
+}
+
+{
+  const rows = [];
+  for (const d of [0, 100, 180, 220, 260, 300]) {
+    const s = ENGINE.simulate({ delay: d });
+    const m = ENGINE.modeCounts(s.frames);
+    const tot = m.lerp + m.hold + m.wait;
+    rows.push({ cls: d === 300 ? "here" : "", cells: [
+      d + " ms", (100 * m.lerp / tot).toFixed(1) + "%",
+      (100 * m.hold / tot).toFixed(1) + "%", (100 * m.wait / tot).toFixed(1) + "%",
+      ENGINE.maxStep(s.frames, "lerp").toFixed(1) + " px"
+    ]});
+  }
+  table("tDelay", ["render delay", "interpolated", "held (ran dry)", "waiting", "worst jump"], rows);
+}
+
+{
+  const rows = [];
+  for (const iv of [0, 16, 33, 50, 100, 200]) {
+    const th = ENGINE.makeThrottle(iv);
+    let emitted = 0, gapMin = Infinity, lastT = null;
+    for (let i = 0; i < 63; i++) {
+      const t = i * 16;
+      th.push(t, { x: i, y: 0 });
+      const m = th.tick(t);
+      if (m) { emitted += 1; if (lastT !== null) gapMin = Math.min(gapMin, t - lastT); lastT = t; }
+    }
+    const st = th.stats();
+    rows.push({ cls: iv === 50 ? "here" : "", cells: [
+      iv + " ms", st.pushed, emitted, st.coalesced,
+      (100 - 100 * emitted / st.pushed).toFixed(0) + "%",
+      gapMin === Infinity ? "&mdash;" : gapMin + " ms"
+    ]});
+  }
+  table("tThrottle", ["interval", "pointer events", "messages sent", "coalesced", "traffic cut", "min gap"], rows);
+}
+
+{
+  // the pointer moves 0 -> 220 and then stops dead inside the window
+  const script = [[0, 0], [12, 60], [24, 130], [36, 190], [48, 220]];
+  const both = ENGINE.makeThrottle(50);
+  let bothLast = null;
+  for (const pair of script) { both.push(pair[0], { x: pair[1], y: 0 }); const m = both.tick(pair[0]); if (m) bothLast = m; }
+  for (let t = 60; t <= 200; t += 16) { const m = both.tick(t); if (m) bothLast = m; }
+
+  // leading edge only: emit on the event or never
+  let leadX = null, leadAt = null;
+  for (const pair of script) {
+    if (leadAt === null || pair[0] - leadAt >= 50) { leadAt = pair[0]; leadX = pair[1]; }
+  }
+  table("tTrail", ["throttle", "last x reported", "truth", "error"], [
+    { cls: "dim", cells: ["leading edge only", leadX, 220, (220 - leadX) + " px, forever"] },
+    { cls: "here", cells: ["leading + trailing edge", bothLast.x, 220, (220 - bothLast.x) + " px"] },
+    { cells: ["the trailing emission landed at", bothLast.t + " ms", "pointer stopped at 48 ms",
+      (bothLast.t - 48) + " ms later"] }
+  ]);
+}
+
+{
+  table("tNet", ["transport", "value", ""], [
+    { cells: ["latency floor / jitter", BASE.settings.latency + " / " + BASE.settings.jitter + " ms", "uniform"] },
+    { cells: ["drop rate configured", (100 * BASE.settings.drop).toFixed(0) + "%", "rolled per packet"] },
+    { cells: ["messages sent", BASE.net.sent, "message types: " + BASE.net.types.join(", ")] },
+    { cls: "dim", cells: ["dropped on the wire", BASE.net.dropped,
+      (100 * BASE.net.dropped / BASE.net.sent).toFixed(1) + "% measured"] },
+    { cells: ["delivered", BASE.net.delivered, "still in flight at the end: " + BASE.net.inFlight] },
+    { cells: ["scheduled to land before an earlier packet", BASE.net.reordered, "pure jitter"] },
+    { cls: "here", cells: ["rejected as not newer than the last sample", BASE.rejected,
+      "accepted into a timeline: " + BASE.applied] }
+  ]);
+}
+
+{
+  const s = ENGINE.simulate({ silentId: "u-lena", silentAt: 1200, steps: 300 });
+  const ev = s.evicted.filter((e) => e.id === "u-lena")[0];
+  const rows = [];
+  const marks = [1184, 1200, 1600, 2400, ev ? ev.at - s.settings.step : 2688, ev ? ev.at : 2704];
+  for (const t of marks) {
+    const f = s.frames[Math.round(t / s.settings.step)];
+    if (!f) continue;
+    const here = f.cursors.some((c) => c.id === "u-lena");
+    rows.push({ cls: here ? "" : "here", cells: [
+      t + " ms", here ? "present" : "<b>evicted</b>",
+      f.cursors.length + " cursors",
+      t < 1200 ? "sending" : "silent for " + (t - 1200) + " ms"
+    ]});
+  }
+  rows.push({ cls: "dim", cells: ["timeout", s.settings.timeout + " ms",
+    "no leave message exists", ev ? "evicted at " + ev.at + " ms" : "&mdash;"] });
+  table("tEvict", ["clock", "Lena", "peers on screen", "state"], rows);
+}
+
+{
+  const ids = ENGINE.PEERS.map((p) => p.id).concat(["u-you"]);
+  // what a fixed join-order palette hands out, before and after one reconnect
+  const JOIN = ["amber", "rose", "violet", "sky", "teal", "lime", "orange", "indigo"];
+  const orderA = {}, orderB = {};
+  ids.forEach((id, i) => { orderA[id] = JOIN[i % JOIN.length]; });
+  const reconnected = ids.filter((x) => x !== "u-lena").concat(["u-lena"]);
+  reconnected.forEach((id, i) => { orderB[id] = JOIN[i % JOIN.length]; });
+  let minSep = 360;
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const d = Math.abs(ENGINE.colorFor(ids[i]).hue - ENGINE.colorFor(ids[j]).hue);
+      minSep = Math.min(minSep, Math.min(d, 360 - d));
+    }
+  }
+  const rows = ids.map((id) => {
+    const c = ENGINE.colorFor(id);
+    return { cls: orderA[id] !== orderB[id] ? "here" : "", cells: [
+      id, ENGINE.hash32(id), c.hue + "&deg; " + c.name,
+      '<span style="color:' + c.hex + ';font-weight:900">' + c.hex + "</span>",
+      orderA[id] === orderB[id] ? orderA[id] : orderA[id] + " &rarr; <b>" + orderB[id] + "</b>"
+    ]};
+  });
+  rows.push({ cls: "dim", cells: ["closest two hues in this room", minSep + "&deg; apart",
+    "&mdash;", "&mdash;", "5 people in a fixed 8-swatch palette collide 4 times in 5"] });
+  table("tColor", ["peer id", "hash32(id)", "hue from the id", "hex", "colour from join order"], rows);
+}
+
+{
+  const vw = 640, vh = 320, lw = 92, lh = 18;
+  const rows = [];
+  const spots = [[20, 20], [320, 20], [620, 20], [20, 160], [320, 160], [620, 160],
+                 [20, 310], [320, 310], [620, 310]];
+  for (const sp of spots) {
+    const L = ENGINE.placeLabel(sp[0], sp[1], lw, lh, vw, vh, 4);
+    const inside = L.x >= 0 && L.y >= 0 && L.x + lw <= vw && L.y + lh <= vh;
+    rows.push({ cls: (L.flipX || L.flipY) ? "here" : "", cells: [
+      "(" + sp[0] + ", " + sp[1] + ")", L.x.toFixed(0) + ", " + L.y.toFixed(0),
+      L.flipX ? "<b>left</b>" : "right", L.flipY ? "<b>above</b>" : "below",
+      inside ? '<span class="pill good">inside</span>' : '<span class="pill bad">clipped</span>'
+    ]});
+  }
+  table("tLabel", ["cursor at", "tag at", "horizontal", "vertical", "viewport"], rows);
+}
+
+{
+  const rows = [];
+  for (const seed of [20260083, 7, 424242, 99991]) {
+    const a = ENGINE.simulate({ seed: seed });
+    const b = ENGINE.simulate({ seed: seed });
+    const da = ENGINE.digest(a.frames), db = ENGINE.digest(b.frames);
+    rows.push({ cls: seed === 20260083 ? "here" : "", cells: [
+      seed, da, db,
+      da === db ? '<span class="pill good">identical</span>' : '<span class="pill bad">drifted</span>',
+      a.net.dropped + " packets dropped"
+    ]});
+  }
+  table("tSeed", ["seed", "digest, run 1", "digest, run 2", "", "transport"], rows);
+}
+
+// --------------------------------------------------------------- BUILD
+el("codeSample").textContent = String(ENGINE.sampleAt);
+el("codeThrottle").textContent = String(ENGINE.makeThrottle);
+el("codeStore").textContent = String(ENGINE.makeStore);
+el("codeColor").textContent = [String(ENGINE.hash32), "", String(ENGINE.colorFor), "",
+                               String(ENGINE.placeLabel)].join("\n");
+el("codeNet").textContent = String(ENGINE.makeTransport);
+
+{
+  const rows = [];
+  for (const th of [16, 50, 100, 200]) {
+    for (const dr of [0, 0.12, 0.35]) {
+      const s = ENGINE.simulate({ throttle: th, drop: dr });
+      const m = ENGINE.modeCounts(s.frames);
+      const tot = m.lerp + m.hold + m.wait;
+      rows.push({ cls: (th === 50 && dr === 0.12) ? "here" : "", cells: [
+        th + " ms @ " + (100 * dr).toFixed(0) + "% loss", s.net.sent, s.net.delivered,
+        (100 * m.hold / tot).toFixed(1) + "%",
+        ENGINE.maxStep(s.frames, "lerp").toFixed(1) + " px"
+      ]});
+    }
+  }
+  table("tSweep", ["throttle @ loss", "sent", "delivered", "frames held", "worst jump"], rows);
+}
+
+// ---------------------------------------------------------------- DEMO
+(function live() {
+  const stage = el("stage");
+  const cfg = { throttle: 50, latency: 90, jitter: 100, drop: 0.12, timeout: 1500, delay: 300 };
+  let store, net, throttles, youThrottle, simTime, pointer, pointerInside, nodes, frames;
+
+  function reset() {
+    store = ENGINE.makeStore();
+    net = ENGINE.makeTransport({ seed: ENGINE.DEFAULTS.seed, latency: cfg.latency,
+                                 jitter: cfg.jitter, drop: cfg.drop });
+    throttles = new Map();
+    for (const p of ENGINE.PEERS) throttles.set(p.id, ENGINE.makeThrottle(cfg.throttle));
+    youThrottle = ENGINE.makeThrottle(cfg.throttle);
+    simTime = 0; frames = 0;
+    pointer = null; pointerInside = false;
+    nodes = new Map();
+    const old = stage.querySelectorAll(".cur,.tag");
+    for (let i = 0; i < old.length; i++) old[i].remove();
+  }
+
+  function bind(id, numId, key, scale) {
+    const r = el(id), n = el(numId);
+    r.addEventListener("input", () => {
+      n.value = r.value;
+      cfg[key] = Number(r.value) * scale;
+      if (key !== "delay") reset();
+    });
+  }
+  bind("cThrottle", "nThrottle", "throttle", 1);
+  bind("cLat", "nLat", "latency", 1);
+  bind("cDrop", "nDrop", "drop", 0.01);
+  bind("cDelay", "nDelay", "delay", 1);
+  el("btnReset").addEventListener("click", reset);
+
+  stage.addEventListener("pointermove", (e) => {
+    const r = stage.getBoundingClientRect();
+    pointer = { x: ENGINE.round2(e.clientX - r.left), y: ENGINE.round2(e.clientY - r.top) };
+    pointerInside = true;
+  });
+  stage.addEventListener("pointerleave", () => {
+    pointerInside = false;
+    const m = youThrottle.flush(simTime);
+    if (m) net.send({ type: "cursor", id: "u-you", name: "You (echo)", t: m.t, x: m.x, y: m.y }, simTime);
+  });
+
+  function draw(cursors) {
+    const seen = new Set();
+    for (const c of cursors) {
+      seen.add(c.id);
+      let node = nodes.get(c.id);
+      if (!node) {
+        const cur = document.createElement("div");
+        cur.className = "cur";
+        cur.innerHTML = '<svg width="20" height="24" viewBox="0 0 20 24"><path d="M2 1 L2 18 L6.6 13.6 L10.2 21 L13.2 19.6 L9.7 12.4 L16.3 12 Z" fill="' +
+          c.hex + '" stroke="#ffffff" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+        const tag = document.createElement("div");
+        tag.className = "tag";
+        tag.style.background = c.hex;
+        tag.textContent = c.name;
+        stage.appendChild(cur); stage.appendChild(tag);
+        node = { cur: cur, tag: tag };
+        nodes.set(c.id, node);
+      }
+      node.cur.style.transform = "translate(" + c.x.toFixed(1) + "px," + c.y.toFixed(1) + "px)";
+      node.tag.style.transform = "translate(" + c.label.x.toFixed(1) + "px," + c.label.y.toFixed(1) + "px)";
+      node.cur.style.opacity = c.mode === "hold" ? "0.7" : "1";
+    }
+    nodes.forEach((node, id) => {
+      if (!seen.has(id)) { node.cur.remove(); node.tag.remove(); nodes.delete(id); }
+    });
+  }
+
+  function tick() {
+    const STEP = 16;
+    simTime += STEP;
+    frames += 1;
+    const r = stage.getBoundingClientRect();
+    const vw = Math.max(240, Math.round(r.width)), vh = Math.max(160, Math.round(r.height));
+    const sx = vw / ENGINE.DEFAULTS.vw, sy = vh / ENGINE.DEFAULTS.vh;
+
+    for (const p of ENGINE.PEERS) {
+      const pt = p.path(simTime);
+      const th = throttles.get(p.id);
+      th.push(simTime, { x: ENGINE.round2(pt.x * sx), y: ENGINE.round2(pt.y * sy) });
+      const m = th.tick(simTime);
+      if (m) net.send({ type: "cursor", id: p.id, name: p.name, t: m.t, x: m.x, y: m.y }, simTime);
+    }
+    if (pointerInside && pointer) {
+      youThrottle.push(simTime, pointer);
+      const m = youThrottle.tick(simTime);
+      if (m) net.send({ type: "cursor", id: "u-you", name: "You (echo)", t: m.t, x: m.x, y: m.y }, simTime);
+    }
+
+    const arrived = net.poll(simTime);
+    for (let i = 0; i < arrived.length; i++) store.apply(arrived[i].msg, simTime);
+    store.evict(simTime, cfg.timeout);
+    const cursors = store.render(simTime - cfg.delay, { vw: vw, vh: vh });
+    draw(cursors);
+
+    if (frames % 15 === 0) {
+      const s = net.stats();
+      const held = cursors.filter((c) => c.mode === "hold").length;
+      table("tLive", ["", "value", ""], [
+        { cells: ["clock", (simTime / 1000).toFixed(1) + " s", "fixed 16 ms step"] },
+        { cells: ["peers on screen", cursors.length, cursors.map((c) => c.name).join(", ") || "&mdash;"] },
+        { cells: ["sent / delivered / dropped", s.sent + " / " + s.delivered + " / " + s.dropped,
+          (100 * s.dropped / Math.max(s.sent, 1)).toFixed(1) + "% loss"] },
+        { cls: "here", cells: ["interpolating / holding", (cursors.length - held) + " / " + held,
+          "holding = the buffer ran dry"] }
+      ]);
+      el("liveNote").textContent =
+        "Throttle " + cfg.throttle + " ms, latency " + cfg.latency + "+" + cfg.jitter +
+        " ms jitter, drop " + (100 * cfg.drop).toFixed(0) + "%, render delay " + cfg.delay +
+        " ms, presence timeout " + cfg.timeout + " ms.";
+    }
+    requestAnimationFrame(tick);
+  }
+
+  reset();
+  requestAnimationFrame(tick);
+})();
+
+selfCheckPanel((t) => {
+  const S = ENGINE.sampleAt;
+  const LINE = [{ t: 0, x: 0, y: 0 }, { t: 100, x: 100, y: 50 }, { t: 200, x: 300, y: 50 }];
+  const RAWJUMP = ENGINE.maxStep(BASE.frames, "raw");
+  const LERPJUMP = ENGINE.maxStep(BASE.frames, "lerp");
+
+  // ---- interpolation
+  t("a sample's own timestamp returns that sample exactly", (() => {
+    for (const s of LINE) { const r = S(LINE, s.t); if (r.x !== s.x || r.y !== s.y) return false; }
+    return true;
+  })(), "no drift at the knots, or the cursor ticks on every packet");
+
+  t("halfway between two samples is the midpoint", (() => {
+    const r = S(LINE, 50);
+    return Math.abs(r.x - 50) < 1e-9 && Math.abs(r.y - 25) < 1e-9 && r.mode === "lerp";
+  })());
+
+  t("interpolated x never moves backwards over monotone samples", (() => {
+    let prev = -Infinity;
+    for (let rt = -40; rt <= 260; rt += 1) {
+      const r = S(LINE, rt);
+      if (r.x < prev - 1e-9) return false;
+      prev = r.x;
+    }
+    return true;
+  })(), "301 render times, x non-decreasing at every one");
+
+  t("a render time before the first sample clamps rather than extrapolating", (() => {
+    const r = S(LINE, -500);
+    return r.x === 0 && r.y === 0 && r.mode === "wait";
+  })());
+
+  t("a render time past the last sample HOLDS, it does not guess ahead", (() => {
+    const r = S(LINE, 5000);
+    return r.x === 300 && r.y === 50 && r.mode === "hold";
+  })(), "extrapolation overshoots every stop and snaps back");
+
+  t("the interpolated point always lies inside its segment's box", (() => {
+    for (let rt = 0; rt <= 200; rt += 0.5) {
+      const r = S(LINE, rt);
+      if (r.x < -1e-9 || r.x > 300 + 1e-9 || r.y < -1e-9 || r.y > 50 + 1e-9) return false;
+    }
+    return true;
+  })());
+
+  t("a zero-length segment does not divide by zero", (() => {
+    const r = ENGINE.sampleAt([{ t: 10, x: 1, y: 1 }, { t: 10, x: 9, y: 9 }], 10);
+    return r !== null && Number.isFinite(r.x) && Number.isFinite(r.y);
+  })());
+
+  t("an empty buffer renders nothing rather than throwing", (() => {
+    return ENGINE.sampleAt([], 100) === null && ENGINE.sampleAt(null, 100) === null;
+  })());
+
+  t("INVERSION: raw packet positions jump far further per frame than interpolated ones", (() => {
+    return RAWJUMP > LERPJUMP * 2;
+  })(), "same packets &mdash; " + RAWJUMP.toFixed(1) + " px vs " + LERPJUMP.toFixed(1) + " px");
+
+  t("a bigger render delay buys fewer frames that ran dry", (() => {
+    const a = ENGINE.modeCounts(ENGINE.simulate({ delay: 0 }).frames);
+    const b = ENGINE.modeCounts(ENGINE.simulate({ delay: 200 }).frames);
+    return b.hold / (b.hold + b.lerp) < a.hold / (a.hold + a.lerp);
+  })(), "this is the whole reason the renderer runs behind the clock");
+
+  // ---- throttle
+  t("the leading edge fires on the very first move", (() => {
+    const th = ENGINE.makeThrottle(50);
+    th.push(0, { x: 1, y: 1 });
+    return th.tick(0) !== null;
+  })());
+
+  t("63 pointer events at 16 ms become exactly 16 messages at a 50 ms throttle", (() => {
+    const th = ENGINE.makeThrottle(50);
+    let n = 0;
+    for (let i = 0; i < 63; i++) { const tt = i * 16; th.push(tt, { x: i, y: 0 }); if (th.tick(tt)) n += 1; }
+    return n === 16 && th.stats().pushed === 63;
+  })(), "a fixed clock, so the count is exact and not machine-dependent");
+
+  t("no two emissions are ever closer together than the interval", (() => {
+    for (const iv of [16, 33, 50, 100, 200]) {
+      const th = ENGINE.makeThrottle(iv);
+      let last = null;
+      for (let i = 0; i < 200; i++) {
+        const tt = i * 16;
+        th.push(tt, { x: i, y: 0 });
+        const m = th.tick(tt);
+        if (m) { if (last !== null && m.t - last < iv) return false; last = m.t; }
+      }
+    }
+    return true;
+  })(), "5 intervals x 200 frames");
+
+  t("an interval of 0 emits on every single tick", (() => {
+    const th = ENGINE.makeThrottle(0);
+    let n = 0;
+    for (let i = 0; i < 40; i++) { th.push(i * 16, { x: i, y: 0 }); if (th.tick(i * 16)) n += 1; }
+    return n === 40;
+  })());
+
+  t("every pushed sample is either sent or explicitly coalesced", (() => {
+    const th = ENGINE.makeThrottle(50);
+    let n = 0;
+    for (let i = 0; i < 63; i++) { const tt = i * 16; th.push(tt, { x: i, y: 0 }); if (th.tick(tt)) n += 1; }
+    const s = th.stats();
+    return s.pushed === n + s.coalesced + (s.pending ? 1 : 0);
+  })(), "63 = 16 sent + 46 coalesced + 1 still pending");
+
+  t("the TRAILING edge delivers the final position after the pointer stops", (() => {
+    const th = ENGINE.makeThrottle(50);
+    let last = null;
+    for (const pair of [[0, 0], [12, 60], [24, 130], [36, 190], [48, 220]]) {
+      th.push(pair[0], { x: pair[1], y: 0 }); const m = th.tick(pair[0]); if (m) last = m;
+    }
+    for (let tt = 60; tt <= 200; tt += 16) { const m = th.tick(tt); if (m) last = m; }
+    return last !== null && last.x === 220;
+  })(), "no further pointer events, and 220 still arrives");
+
+  t("INVERSION: a leading-edge-only throttle loses that final position forever", (() => {
+    let lastAt = null, lastX = null;
+    for (const pair of [[0, 0], [12, 60], [24, 130], [36, 190], [48, 220]]) {
+      if (lastAt === null || pair[0] - lastAt >= 50) { lastAt = pair[0]; lastX = pair[1]; }
+    }
+    return lastX !== 220;
+  })(), "it reports x=0 and stops &mdash; the remote cursor is parked 220 px short of the truth");
+
+  t("flush() sends the pending sample immediately, ignoring the interval", (() => {
+    const th = ENGINE.makeThrottle(500);
+    th.push(0, { x: 1, y: 1 }); th.tick(0);
+    th.push(10, { x: 42, y: 7 });
+    const m = th.flush(11);
+    return m !== null && m.x === 42 && m.forced === true;
+  })(), "pointerleave, blur, tab hide");
+
+  t("flush() with nothing pending sends nothing", (() => {
+    const th = ENGINE.makeThrottle(50);
+    return th.flush(0) === null;
+  })());
+
+  // ---- transport
+  t("every delivered packet arrives within [floor, floor + jitter]", (() => {
+    const net = ENGINE.makeTransport({ seed: 5, latency: 90, jitter: 60, drop: 0.2 });
+    for (let i = 0; i < 200; i++) {
+      const r = net.send({ type: "cursor", id: "a", name: "A", t: i * 16, x: i, y: 0 }, i * 16);
+      if (r.dropped) continue;
+      if (r.at < i * 16 + 90 || r.at > i * 16 + 150) return false;
+    }
+    return true;
+  })(), "200 sends, every arrival inside the modelled window");
+
+  t("sent = dropped + delivered + still in flight", (() => {
+    const s = BASE.net;
+    return s.sent === s.dropped + s.delivered + s.inFlight;
+  })(), BASE.net.sent + " = " + BASE.net.dropped + " + " + BASE.net.delivered + " + " + BASE.net.inFlight);
+
+  t("jitter really does reorder packets in this replay", (() => {
+    return BASE.net.reordered > 0;
+  })(), BASE.net.reordered + " packets scheduled to land before one sent earlier");
+
+  t("a seeded transport delivers the identical packets twice", (() => {
+    const mk = () => {
+      const n = ENGINE.makeTransport({ seed: 11, latency: 50, jitter: 40, drop: 0.3 });
+      const out = [];
+      for (let i = 0; i < 120; i++) {
+        const r = n.send({ type: "cursor", id: "a", name: "A", t: i, x: i, y: 0 }, i * 16);
+        out.push(r.dropped ? "x" : r.at);
+      }
+      return out.join(",");
+    };
+    return mk() === mk();
+  })());
+
+  // ---- the receive buffer
+  t("the store rejects every sample that is not newer than the last kept", (() => {
+    const st = ENGINE.makeStore();
+    st.apply({ type: "cursor", id: "a", name: "A", t: 100, x: 5, y: 5 }, 100);
+    const back = st.apply({ type: "cursor", id: "a", name: "A", t: 60, x: 99, y: 99 }, 110);
+    const same = st.apply({ type: "cursor", id: "a", name: "A", t: 100, x: 77, y: 77 }, 120);
+    const fwd = st.apply({ type: "cursor", id: "a", name: "A", t: 140, x: 9, y: 9 }, 130);
+    const p = st.peers.get("a");
+    return back === false && same === false && fwd === true &&
+           p.rejected === 2 && p.samples.length === 2;
+  })(), "one reordered packet would otherwise walk the cursor backwards");
+
+  t("a rejected sample still counts as proof of life", (() => {
+    const st = ENGINE.makeStore();
+    st.apply({ type: "cursor", id: "a", name: "A", t: 100, x: 5, y: 5 }, 100);
+    st.apply({ type: "cursor", id: "a", name: "A", t: 60, x: 1, y: 1 }, 900);
+    return st.peers.get("a").lastSeen === 900;
+  })(), "liveness is about the packet, not about the timeline");
+
+  t("the sample buffer is bounded", (() => {
+    const st = ENGINE.makeStore();
+    for (let i = 0; i < 200; i++) st.apply({ type: "cursor", id: "a", name: "A", t: i, x: i, y: i }, i);
+    return st.peers.get("a").samples.length === ENGINE.MAX_SAMPLES;
+  })(), "keeping every sample leaks for the whole length of the session");
+
+  // ---- presence lifecycle
+  t("a peer that goes silent is evicted after the timeout", (() => {
+    const s = ENGINE.simulate({ silentId: "u-lena", silentAt: 1200, steps: 300 });
+    return s.evicted.some((e) => e.id === "u-lena");
+  })(), "no leave message was sent &mdash; the lid just closed");
+
+  t("eviction happens strictly AFTER the timeout, never at it", (() => {
+    const st = ENGINE.makeStore();
+    st.apply({ type: "cursor", id: "a", name: "A", t: 0, x: 0, y: 0 }, 0);
+    const at = st.evict(1500, 1500);
+    const after = st.evict(1501, 1500);
+    return at.length === 0 && after.length === 1;
+  })());
+
+  t("peers that are still sending are never evicted", (() => {
+    const s = ENGINE.simulate({ silentId: "u-lena", silentAt: 1200, steps: 300 });
+    return s.evicted.every((e) => e.id === "u-lena") &&
+           s.frames[s.frames.length - 1].cursors.length === 3;
+  })(), "the other three survive the whole replay");
+
+  t("INVERSION: the protocol has no leave message at all", (() => {
+    const onlyCursor = BASE.net.types.length === 1 && BASE.net.types[0] === "cursor";
+    let threw = false;
+    try { ENGINE.makeStore().apply({ type: "leave", id: "a" }, 0); } catch (e) { threw = true; }
+    return onlyCursor && threw;
+  })(), "presence is derived from arriving packets, never announced");
+
+  // ---- identity colour
+  t("colour is stable across an eviction and a rejoin", (() => {
+    const before = ENGINE.colorFor("u-lena").hex;
+    const st = ENGINE.makeStore();
+    st.apply({ type: "cursor", id: "u-lena", name: "Lena", t: 0, x: 0, y: 0 }, 0);
+    st.evict(99999, 1500);
+    if (st.size() !== 0) return false;
+    st.apply({ type: "cursor", id: "u-lena", name: "Lena", t: 1, x: 0, y: 0 }, 100000);
+    return st.peers.get("u-lena").color.hex === before;
+  })(), "Lena is " + ENGINE.colorFor("u-lena").name + " both times");
+
+  t("colour does not depend on the order the peers joined", (() => {
+    const fwd = ENGINE.PEERS.map((p) => ENGINE.colorFor(p.id).name).join(",");
+    const rev = ENGINE.PEERS.slice().reverse().map((p) => ENGINE.colorFor(p.id).name).reverse().join(",");
+    return fwd === rev;
+  })());
+
+  t("the same id gives the same hash and colour across 500 ids", (() => {
+    for (let i = 0; i < 500; i++) {
+      const id = "user-" + i + "-" + ((i * 7919) % 101);
+      if (ENGINE.hash32(id) !== ENGINE.hash32(id)) return false;
+      if (ENGINE.colorFor(id).hex !== ENGINE.colorFor(id).hex) return false;
+    }
+    return true;
+  })());
+
+  t("the hash spreads 500 sequential ids round every zone of the hue wheel", (() => {
+    const buckets = new Array(ENGINE.HUE_ZONES.length).fill(0);
+    for (let i = 0; i < 500; i++) buckets[Math.floor((ENGINE.hash32("user-" + i) % 360) / 30)] += 1;
+    return buckets.every((b) => b > (500 / ENGINE.HUE_ZONES.length) * 0.5);
+  })(), "an unavalanched FNV-1a clumps sequential ids into neighbouring hues");
+
+  t("colorFor returns a well-formed hex colour for 1000 ids", (() => {
+    for (let i = 0; i < 1000; i++) {
+      const c = ENGINE.colorFor("peer-" + i);
+      if (!/^#[0-9a-f]{6}$/.test(c.hex)) return false;
+      if (c.hue < 0 || c.hue > 359 || ENGINE.HUE_ZONES.indexOf(c.name) < 0) return false;
+    }
+    return true;
+  })(), "it is written straight into an SVG fill and a CSS background");
+
+  t("the five peers in the demo are separated by at least 25 degrees of hue", (() => {
+    const ids = ENGINE.PEERS.map((p) => p.id).concat(["u-you"]);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const d = Math.abs(ENGINE.colorFor(ids[i]).hue - ENGINE.colorFor(ids[j]).hue);
+        if (Math.min(d, 360 - d) < 25) return false;
+      }
+    }
+    return true;
+  })(), "a wheel, not eight swatches &mdash; 5 people in 8 slots collide 4 times in 5");
+
+  t("the hash is an unsigned 32-bit integer for every one of 2000 ids", (() => {
+    for (let i = 0; i < 2000; i++) {
+      const h = ENGINE.hash32("peer:" + i);
+      if (!Number.isInteger(h) || h < 0 || h > 4294967295) return false;
+    }
+    return true;
+  })(), "a signed intermediate makes the modulo negative and the lookup undefined");
+
+  t("INVERSION: a join-order palette changes somebody's colour on reconnect", (() => {
+    const ids = ENGINE.PEERS.map((p) => p.id);
+    const JOIN = ["amber", "rose", "violet", "sky", "teal", "lime", "orange", "indigo"];
+    const byOrder = (list) => {
+      const m = {};
+      list.forEach((id, i) => { m[id] = JOIN[i % JOIN.length]; });
+      return m;
+    };
+    const a = byOrder(ids);
+    const b = byOrder(ids.filter((x) => x !== ids[0]).concat([ids[0]]));
+    return ids.some((id) => a[id] !== b[id]);
+  })(), "one person drops and comes back, and four people change colour");
+
+  // ---- label placement
+  t("the tag flips to the left at the right edge", (() => {
+    const L = ENGINE.placeLabel(620, 100, 92, 18, 640, 320, 4);
+    return L.flipX === true && L.flipY === false && L.x < 620;
+  })());
+
+  t("the tag flips above at the bottom edge", (() => {
+    const L = ENGINE.placeLabel(100, 312, 92, 18, 640, 320, 4);
+    return L.flipY === true && L.flipX === false && L.y < 312;
+  })());
+
+  t("the bottom-right corner flips both axes", (() => {
+    const L = ENGINE.placeLabel(632, 316, 92, 18, 640, 320, 4);
+    return L.flipX === true && L.flipY === true;
+  })());
+
+  t("the tag does NOT flip anywhere it comfortably fits", (() => {
+    for (let x = 0; x <= 400; x += 10) {
+      for (let y = 0; y <= 200; y += 10) {
+        const L = ENGINE.placeLabel(x, y, 92, 18, 640, 320, 4);
+        if (L.flipX || L.flipY) return false;
+      }
+    }
+    return true;
+  })(), "861 positions in the comfortable region, not one flip");
+
+  t("the tag stays inside the viewport along every edge", (() => {
+    for (let x = -20; x <= 660; x += 1) {
+      for (const y of [0, 160, 319]) {
+        const L = ENGINE.placeLabel(x, y, 92, 18, 640, 320, 4);
+        if (L.x < 0 || L.y < 0 || L.x + 92 > 640 || L.y + 18 > 320) return false;
+      }
+    }
+    return true;
+  })(), "2043 placements, including anchors outside the box");
+
+  t("a tag wider than the viewport clamps instead of exploding", (() => {
+    const L = ENGINE.placeLabel(300, 100, 900, 18, 640, 320, 4);
+    return Number.isFinite(L.x) && L.clamped === true && L.x === 4;
+  })());
+
+  t("every label in the whole replay is inside the stage", (() => {
+    for (const f of BASE.frames) {
+      for (const c of f.cursors) {
+        if (c.label.x < 0 || c.label.y < 0) return false;
+        if (c.label.x + c.label.w > 640 || c.label.y + c.label.h > 320) return false;
+      }
+    }
+    return true;
+  })(), "240 frames of four moving cursors");
+
+  // ---- replay determinism
+  t("the same seed and settings replay to an identical digest", (() => {
+    return ENGINE.digest(ENGINE.simulate({}).frames) === ENGINE.digest(ENGINE.simulate({}).frames);
+  })(), "digest " + ENGINE.digest(BASE.frames));
+
+  t("a different seed gives a different digest", (() => {
+    return ENGINE.digest(ENGINE.simulate({ seed: 7 }).frames) !== ENGINE.digest(BASE.frames);
+  })(), "otherwise the digest is not watching anything");
+
+  t("no rendered coordinate is ever NaN or infinite", (() => {
+    for (const f of BASE.frames) {
+      for (const c of f.cursors) {
+        if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return false;
+        if (!Number.isFinite(c.label.x) || !Number.isFinite(c.label.y)) return false;
+      }
+    }
+    return true;
+  })(), BASE.frames.length + " frames checked");
+
+  t("the replay really renders cursors rather than an empty stage", (() => {
+    const last = BASE.frames[BASE.frames.length - 1];
+    return last.cursors.length === 4 && BASE.applied > 50;
+  })(), BASE.applied + " samples accepted into timelines");
+});
+</script>
+</body>
+</html>

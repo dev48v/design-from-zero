@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DesignFromZero &middot; Day 81 &mdash; Dynamic Island</title>
+<style>
+  :root { --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --bg:#f8fafc; --accent:#0f766e; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,"Inter",system-ui,sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1152px; margin:0 auto; padding:16px; }
+  @media (min-width:768px){ .wrap { padding:24px; } }
+  header { background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .kicker { font-size:12px; font-weight:800; letter-spacing:.16em; color:var(--accent); margin:0 0 8px; }
+  h1 { font-size:19px; line-height:1.5; font-weight:900; margin:0 0 12px; }
+  @media (min-width:768px){ h1 { font-size:22px; } }
+  h2 { font-size:24px; font-weight:900; margin:0 0 8px; }
+  h3 { font-size:19px; font-weight:800; margin:20px 0 6px; }
+  p { line-height:1.6; margin:0 0 12px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .tabs button { font:inherit; font-size:14px; font-weight:600; padding:8px 20px; border:0; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+  .tabs button.tab-active { background:#0f172a; color:#fff; }
+  .hidden { display:none; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 1px 3px rgba(15,23,42,.12); padding:20px; min-width:0; }
+  .stack > * + * { margin-top:20px; }
+  .grid2 { display:grid; gap:20px; grid-template-columns:minmax(0,1fr); }
+  .grid3 { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
+  @media (min-width:900px){ .grid2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  @media (min-width:768px){ .grid3 { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  .lbl { font-size:12px; font-weight:800; letter-spacing:.1em; color:#64748b; margin:0 0 8px; }
+  .big { font-size:24px; font-weight:900; font-variant-numeric:tabular-nums; margin:0; }
+  .note { font-size:12.5px; color:#475569; margin:8px 0 0; line-height:1.55; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.35; margin:0; white-space:pre; }
+  code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-size:.92em; }
+  .tblwrap { overflow-x:auto; }
+  table.num { border-collapse:collapse; width:100%; min-width:520px; }
+  table.num td, table.num th { padding:4px 9px; font-variant-numeric:tabular-nums; }
+  table.num th { font-size:11px; letter-spacing:.05em; color:#64748b; text-align:right; font-weight:700; }
+  table.num th:first-child, table.num td:first-child { text-align:left; }
+  table.num td { text-align:right; font-size:12.5px; border-top:1px solid var(--line); }
+  table.num td.txt { text-align:left; }
+  tr.here td { background:#f0fdfa; font-weight:700; }
+  tr.dim td { color:#94a3b8; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:800; }
+  .pill.good { background:#dcfce7; color:#166534; }
+  .pill.bad { background:#fee2e2; color:#991b1b; }
+  .ok { color:#166534; font-weight:800; }
+  .warn { color:#991b1b; font-weight:800; }
+  #selftest div { display:grid; grid-template-columns:52px 1fr; gap:8px; font-size:12.5px; padding:3px 0; border-top:1px solid var(--line); align-items:start; }
+  #selftest div span.m { grid-column:2; font-size:11.5px; color:#64748b; }
+  .phone { background:#0b0b0d; border-radius:38px; padding:12px 10px 22px; width:300px; margin:0 auto; box-shadow:0 10px 30px rgba(15,23,42,.25); }
+  .screen { background:linear-gradient(170deg,#1c1f26,#0f1115); border-radius:28px; height:400px; position:relative; overflow:hidden; }
+  .island { position:absolute; left:50%; top:12px; background:#000; overflow:hidden; will-change:width,height; }
+  .island .inner { position:absolute; inset:0; color:#f8fafc; font-size:11px; display:flex; align-items:center; gap:8px; padding:0 12px; white-space:nowrap; }
+  .dotG { width:8px; height:8px; border-radius:50%; background:#22c55e; flex:none; }
+  .ctl { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px; }
+  .ctl button { font:inherit; font-size:13px; font-weight:700; padding:6px 13px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+  .ctl button.on { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .ctl input[type=range] { flex:1; min-width:150px; }
+  .swatch { height:8px; border-radius:4px; background:#0f766e; }
+  footer { border-top:1px solid var(--line); margin-top:28px; padding:18px 0 40px; font-size:13px; color:#475569; }
+  footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker">DESIGNFROMZERO &middot; DAY 81</p>
+    <h1>
+      The Dynamic Island &mdash; a priority queue wearing a rounded rectangle,
+      and the corner radius that gives the whole trick away.
+    </h1>
+    <div class="tabs">
+      <button id="tabLook" class="tab-active" onclick="showTab('look')">Look</button>
+      <button id="tabUnd" onclick="showTab('und')">Understand</button>
+      <button id="tabBuild" onclick="showTab('build')">Build</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="look" class="stack">
+  <div class="card">
+    <h2>One shape, four sizes, and never a decision left to chance</h2>
+    <p>
+      The island is a single black rounded rectangle that changes size. What makes
+      it feel alive is not the animation &mdash; it is that <b>two things can want
+      it at once</b>, and the rules for who gets it are fixed, total and
+      deterministic. A timer finishing does not fight a phone call. The call wins,
+      every time, and the timer waits its turn.
+    </p>
+    <div class="grid2">
+      <div>
+        <div class="phone"><div class="screen"><div class="island" id="isl"><div class="inner" id="islInner"></div></div></div></div>
+        <div class="ctl" style="margin-top:14px;justify-content:center">
+          <button id="bTimer" onclick="toggleAct('timer')">Timer</button>
+          <button id="bMusic" onclick="toggleAct('music')">Music</button>
+          <button id="bCall" onclick="toggleAct('call')">Call</button>
+          <button onclick="expand()">Tap to expand</button>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="grid2">
+          <div><p class="lbl">PRESENTATION</p><p class="big" id="kMode">&mdash;</p><p class="note" id="kModeNote"></p></div>
+          <div><p class="lbl">OWNER</p><p class="big" id="kOwner">&mdash;</p><p class="note" id="kOwnerNote"></p></div>
+        </div>
+        <div class="grid2">
+          <div><p class="lbl">SIZE</p><p class="big" id="kSize">&mdash;</p><p class="note">width &times; height, in points</p></div>
+          <div><p class="lbl">CORNER RADIUS</p><p class="big" id="kR">&mdash;</p><p class="note" id="kRNote"></p></div>
+        </div>
+        <div>
+          <p class="lbl">ACTIVITIES WAITING</p>
+          <div class="tblwrap"><table class="num" id="tQueue"></table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>The corner radius is not a style, it is a constraint</h2>
+    <p>
+      Pick a fixed radius and animate the box from the small pill to the tall
+      expanded card, and the corners visibly change character &mdash; the shape
+      stops reading as the same object and starts reading as a box that grew.
+      The island keeps its corners <b>continuous with the screen's own corner</b>,
+      which means the radius has to be a function of the height, not a constant.
+    </p>
+    <div class="tblwrap"><table class="num" id="tRadius"></table></div>
+    <p class="note" id="radiusNote"></p>
+  </div>
+
+  <div class="card">
+    <h2>Every transition the machine allows, and every one it refuses</h2>
+    <p>
+      Four presentations. Sixteen ordered pairs. The machine permits
+      <span id="legalN">&mdash;</span> of them in one step, and the refusals are the
+      interesting half: you cannot go from <code>minimal</code> straight to
+      <code>expanded</code>, because nothing in a minimal presentation is big enough
+      to be tapped. A resolver that names a far-away target does not get to
+      teleport &mdash; the machine <b>routes</b> through the legal hops, and the last
+      column is the route it takes.
+    </p>
+    <div class="tblwrap"><table class="num" id="tTrans"></table></div>
+  </div>
+</section>
+
+<section id="und" class="stack hidden">
+  <div class="card">
+    <h2>Priority, not recency</h2>
+    <p>
+      The naive model is a stack: whatever started last is on top. It is wrong, and
+      it is wrong in a way users notice immediately &mdash; start a timer during a
+      call and the call disappears. The real model is a <b>priority queue keyed by
+      the kind of activity</b>, with the start time used only to break ties between
+      two activities of equal rank.
+    </p>
+    <div class="tblwrap"><table class="num" id="tPrio"></table></div>
+    <p class="note" id="prioNote"></p>
+  </div>
+
+  <div class="card">
+    <h2>The spring, and why it has to settle exactly</h2>
+    <p>
+      A spring that merely approaches its target is a bug. The island has to arrive
+      at a whole number of points and <b>stop</b>, or the next transition starts
+      from a position that is off by a fraction and the error compounds. The
+      implementation runs a critically damped spring and then <b>snaps</b> once both
+      the distance and the velocity fall under a threshold.
+    </p>
+    <div class="tblwrap"><table class="num" id="tSpring"></table></div>
+    <p class="note" id="springNote"></p>
+  </div>
+
+  <div class="card">
+    <h2>Width and height do not animate independently</h2>
+    <p>
+      Animate them as two separate springs and the island passes through shapes that
+      never existed as a presentation &mdash; briefly wide and tall at once, or thin
+      and short. A single scalar <code>t</code> drives both, so every intermediate
+      frame lies on the straight line between two real presentations.
+    </p>
+    <div class="tblwrap"><table class="num" id="tPath"></table></div>
+    <p class="note" id="pathNote"></p>
+  </div>
+</section>
+
+<section id="build" class="stack hidden">
+  <div class="card">
+    <h2>The machine</h2>
+    <pre id="codeEngine"></pre>
+  </div>
+  <div class="card">
+    <h2>Self-check</h2>
+    <p class="note" style="margin:0 0 10px">
+      Running in your browser now, against the same engine driving the island above.
+    </p>
+    <div id="selftest"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0">
+      DesignFromZero &middot; Day 81 &middot; Dynamic Island.
+      Tomorrow: the Raycast command palette &mdash; ranking, and why recency beats fuzzy score.
+    </p>
+  </div>
+</footer>
+</div>
+
+<script>
+// ===== ENGINE:BEGIN =====
+const ENGINE = (() => {
+
+  // ------------------------------------------------------------ presentations
+  // Four sizes, in points. These are the only shapes that exist; everything the
+  // island ever draws is one of these or a point on a straight line between two.
+  const PRESENTATIONS = {
+    minimal:  { w: 108, h: 36 },
+    compact:  { w: 172, h: 36 },
+    expanded: { w: 352, h: 84 },
+    sheet:    { w: 364, h: 160 }
+  };
+  const ORDER = ["minimal", "compact", "expanded", "sheet"];
+
+  // The screen's own corner radius. The island's corners stay continuous with it,
+  // so the radius is a function of the island's height, never a constant.
+  const SCREEN_R = 28;
+  const MIN_R = 18;
+
+  function radiusFor(h) {
+    if (!(h > 0)) throw new Error("height must be positive");
+    // half the height is the largest radius a rounded rect can carry; clamp it
+    // into [MIN_R, SCREEN_R] so the corners never read as a different family.
+    return Math.min(SCREEN_R, Math.max(MIN_R, h / 2));
+  }
+
+  // ---------------------------------------------------------------- activities
+  // Rank decides who owns the island. Lower rank wins. Ties break on start time,
+  // earliest first, so the ordering is total and never depends on insertion order.
+  const KINDS = {
+    call:   { rank: 0, label: "Call",   presentation: "compact" },
+    timer:  { rank: 1, label: "Timer",  presentation: "compact" },
+    music:  { rank: 2, label: "Music",  presentation: "compact" },
+    charge: { rank: 3, label: "Charge", presentation: "minimal" }
+  };
+
+  function compareActivities(a, b) {
+    const ra = KINDS[a.kind].rank, rb = KINDS[b.kind].rank;
+    if (ra !== rb) return ra - rb;
+    if (a.startedAt !== b.startedAt) return a.startedAt - b.startedAt;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;        // total, never 0 for distinct ids
+  }
+
+  function sortActivities(list) {
+    return list.slice().sort(compareActivities);
+  }
+
+  function owner(list) {
+    if (!list.length) return null;
+    return sortActivities(list)[0];
+  }
+
+  // ---------------------------------------------------------- the state machine
+  // Legal transitions. The refusals carry the design: nothing jumps from minimal
+  // to expanded, because a minimal presentation has no tap target worth hitting,
+  // and nothing collapses from sheet straight to minimal.
+  const TRANSITIONS = {
+    minimal:  ["minimal", "compact"],
+    compact:  ["compact", "minimal", "expanded"],
+    expanded: ["expanded", "compact", "sheet"],
+    sheet:    ["sheet", "expanded"]
+  };
+
+  // The shortest legal route between two presentations. A resolver is stateless
+  // and will happily name a target several steps away; the machine's job is to
+  // walk there one legal hop at a time rather than teleport.
+  function transitionPath(from, to) {
+    if (!(from in TRANSITIONS)) throw new Error("unknown presentation: " + from);
+    if (!(to in PRESENTATIONS)) throw new Error("unknown presentation: " + to);
+    if (from === to) return [from];
+    const prev = { [from]: null };
+    const q = [from];
+    while (q.length) {
+      const x = q.shift();
+      for (const y of TRANSITIONS[x]) {
+        if (y in prev) continue;
+        prev[y] = x;
+        if (y === to) {
+          const path = [y];
+          for (let k = x; k !== null; k = prev[k]) path.unshift(k);
+          return path;
+        }
+        q.push(y);
+      }
+    }
+    throw new Error("no route from " + from + " to " + to);
+  }
+
+  function canTransition(from, to) {
+    if (!(from in TRANSITIONS)) throw new Error("unknown presentation: " + from);
+    if (!(to in PRESENTATIONS)) throw new Error("unknown presentation: " + to);
+    return TRANSITIONS[from].includes(to);
+  }
+
+  // The presentation the machine should be showing, given what is running and
+  // whether the user has expanded it. Expansion only survives while the owner
+  // that was expanded is still the owner.
+  function resolve(state) {
+    const o = owner(state.activities);
+    if (!o) return "minimal";
+    const base = KINDS[o.kind].presentation;
+    if (state.expandedBy !== o.id) return base;
+    return canTransition(base, "expanded") ? "expanded" : base;
+  }
+
+  // Apply an event and return the next state plus the presentation it resolves to.
+  // Pure: never mutates the state it is given.
+  function step(state, event) {
+    const s = { activities: state.activities.slice(), expandedBy: state.expandedBy };
+    if (event.type === "start") {
+      if (s.activities.some((a) => a.id === event.id)) throw new Error("duplicate activity id");
+      if (!(event.kind in KINDS)) throw new Error("unknown kind: " + event.kind);
+      s.activities.push({ id: event.id, kind: event.kind, startedAt: event.at });
+    } else if (event.type === "end") {
+      s.activities = s.activities.filter((a) => a.id !== event.id);
+      if (s.expandedBy === event.id) s.expandedBy = null;
+    } else if (event.type === "expand") {
+      const o = owner(s.activities);
+      s.expandedBy = o ? o.id : null;
+    } else if (event.type === "collapse") {
+      s.expandedBy = null;
+    } else {
+      throw new Error("unknown event: " + event.type);
+    }
+    // An expansion belongs to the activity the user expanded. The moment some
+    // other activity takes the island, that expansion is gone for good - it must
+    // not come back by itself when the interrupting activity ends.
+    const o2 = owner(s.activities);
+    if (s.expandedBy && (!o2 || o2.id !== s.expandedBy)) s.expandedBy = null;
+    return { state: s, presentation: resolve(s) };
+  }
+
+  function run(events) {
+    let s = { activities: [], expandedBy: null };
+    const trace = [{ event: "(start)", presentation: resolve(s), owner: null }];
+    for (const e of events) {
+      const before = resolve(s);
+      const r = step(s, e);
+      s = r.state;
+      const o = owner(s.activities);
+      const route = transitionPath(before, r.presentation);
+      trace.push({
+        event: e.type + (e.kind ? " " + e.kind : "") + (e.id ? " #" + e.id : ""),
+        from: before, presentation: r.presentation,
+        direct: canTransition(before, r.presentation),
+        route,
+        owner: o ? o.kind : null
+      });
+    }
+    return { state: s, trace };
+  }
+
+  // ------------------------------------------------------------------ the spring
+  // Critically damped: no overshoot, no oscillation, and it SNAPS once it is
+  // within EPS of the target with a small enough velocity. Without the snap the
+  // island never actually arrives and the next transition inherits the error.
+  const STIFF = 180, DAMP = 2 * Math.sqrt(180), EPS = 0.01, VEPS = 0.05, DT = 1 / 60;
+
+  function spring(from, to, maxSteps = 600) {
+    let x = from, v = 0;
+    const path = [x];
+    let steps = 0, snapped = false;
+    while (steps < maxSteps) {
+      const a = STIFF * (to - x) - DAMP * v;
+      v += a * DT;
+      x += v * DT;
+      steps++;
+      if (Math.abs(to - x) < EPS && Math.abs(v) < VEPS) { x = to; snapped = true; path.push(x); break; }
+      path.push(x);
+    }
+    return { path, steps, settled: x, snapped, exact: x === to };
+  }
+
+  // A single scalar drives both axes, so every frame lies on the segment between
+  // two real presentations. Two independent springs would not.
+  function framesBetween(fromName, toName, maxSteps = 600) {
+    const A = PRESENTATIONS[fromName], B = PRESENTATIONS[toName];
+    const s = spring(0, 1, maxSteps);
+    return s.path.map((t) => ({
+      t,
+      w: A.w + (B.w - A.w) * t,
+      h: A.h + (B.h - A.h) * t,
+      r: radiusFor(A.h + (B.h - A.h) * t)
+    }));
+  }
+
+  // The control: width and height as two springs that are allowed to differ.
+  // Here the second axis is given a slightly stiffer spring, which is exactly the
+  // sort of thing that happens when two animations are configured separately.
+  function framesIndependent(fromName, toName) {
+    const A = PRESENTATIONS[fromName], B = PRESENTATIONS[toName];
+    const sw = spring(0, 1), sh = springStiff(0, 1);
+    const n = Math.max(sw.path.length, sh.path.length);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const tw = sw.path[Math.min(i, sw.path.length - 1)];
+      const th = sh.path[Math.min(i, sh.path.length - 1)];
+      out.push({ tw, th, w: A.w + (B.w - A.w) * tw, h: A.h + (B.h - A.h) * th });
+    }
+    return out;
+  }
+  function springStiff(from, to, maxSteps = 600) {
+    const K = 260, D = 2 * Math.sqrt(260);
+    let x = from, v = 0; const path = [x]; let steps = 0;
+    while (steps < maxSteps) {
+      const a = K * (to - x) - D * v;
+      v += a * DT; x += v * DT; steps++;
+      if (Math.abs(to - x) < EPS && Math.abs(v) < VEPS) { x = to; path.push(x); break; }
+      path.push(x);
+    }
+    return { path, steps, settled: x };
+  }
+
+  // How far a frame strays from the straight line between the two presentations.
+  function offPathDistance(fromName, toName, frame) {
+    const A = PRESENTATIONS[fromName], B = PRESENTATIONS[toName];
+    const dw = B.w - A.w, dh = B.h - A.h;
+    const len2 = dw * dw + dh * dh;
+    if (len2 === 0) return 0;
+    const px = frame.w - A.w, py = frame.h - A.h;
+    const t = (px * dw + py * dh) / len2;
+    const cx = A.w + dw * t, cy = A.h + dh * t;
+    return Math.hypot(frame.w - cx, frame.h - cy);
+  }
+
+  return {
+    PRESENTATIONS, ORDER, KINDS, TRANSITIONS, SCREEN_R, MIN_R,
+    radiusFor, compareActivities, sortActivities, owner,
+    canTransition, transitionPath, resolve, step, run,
+    spring, springStiff, framesBetween, framesIndependent, offPathDistance,
+    STIFF, DAMP, EPS, VEPS, DT
+  };
+})();
+// ===== ENGINE:END =====
+</script>
+
+<script>
+function showTab(name) {
+  for (const t of ["look", "und", "build"]) document.getElementById(t).classList.toggle("hidden", t !== name);
+  document.getElementById("tabLook").classList.toggle("tab-active", name === "look");
+  document.getElementById("tabUnd").classList.toggle("tab-active", name === "und");
+  document.getElementById("tabBuild").classList.toggle("tab-active", name === "build");
+}
+const el = (id) => document.getElementById(id);
+function table(id, head, rows) {
+  el(id).innerHTML =
+    "<tr>" + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+    rows.map((r) => "<tr" + (r.cls ? ' class="' + r.cls + '"' : "") + ">" +
+      r.cells.map((c, i) => "<td" + (i === 0 ? ' class="txt"' : "") + ">" + c + "</td>").join("") + "</tr>").join("");
+}
+function selfCheckPanel(fn) {
+  const out = []; let n = 0, bad = 0;
+  const t = (label, cond, detail = "") => {
+    n += 1; if (!cond) bad += 1;
+    out.push('<div><span class="' + (cond ? "ok" : "warn") + '">' + (cond ? "PASS" : "FAIL") +
+      '</span><span>' + label + '</span><span class="m">' + detail + "</span></div>");
+  };
+  fn(t);
+  el("selftest").innerHTML =
+    '<p class="note" style="margin:0 0 8px"><b class="' + (bad ? "warn" : "ok") + '">' +
+    (n - bad) + " of " + n + " checks pass</b>" + (bad ? " &mdash; " + bad + " FAILED" : "") + ".</p>" + out.join("");
+}
+
+// ------------------------------------------------------------------- live demo
+let LIVE = { activities: [], expandedBy: null };
+let CLOCK = 0;
+const LABELS = { call: "Incoming call", timer: "Timer 4:21", music: "Now playing", charge: "Charging" };
+
+function toggleAct(kind) {
+  const have = LIVE.activities.find((a) => a.kind === kind);
+  LIVE = ENGINE.step(LIVE, have
+    ? { type: "end", id: have.id }
+    : { type: "start", id: kind + "-" + (++CLOCK), kind, at: CLOCK }).state;
+  paint();
+}
+function expand() { LIVE = ENGINE.step(LIVE, { type: "expand" }).state; paint(); }
+
+function paint() {
+  const pres = ENGINE.resolve(LIVE);
+  const box = ENGINE.PRESENTATIONS[pres];
+  const r = ENGINE.radiusFor(box.h);
+  const o = ENGINE.owner(LIVE.activities);
+
+  const isl = el("isl");
+  isl.style.width = box.w * 0.78 + "px";
+  isl.style.height = box.h * 0.78 + "px";
+  isl.style.borderRadius = r * 0.78 + "px";
+  isl.style.transform = "translateX(-50%)";
+  isl.style.transition = "width .42s cubic-bezier(.2,.8,.2,1), height .42s cubic-bezier(.2,.8,.2,1), border-radius .42s cubic-bezier(.2,.8,.2,1)";
+  el("islInner").innerHTML = o
+    ? '<span class="dotG"></span><span>' + LABELS[o.kind] + "</span>"
+    : "";
+
+  el("kMode").textContent = pres;
+  el("kModeNote").textContent = o ? "resolved from the owner, not from what started last" : "nothing is running";
+  el("kOwner").textContent = o ? ENGINE.KINDS[o.kind].label : "—";
+  el("kOwnerNote").textContent = o ? "rank " + ENGINE.KINDS[o.kind].rank + " of 3" : "the island goes minimal";
+  el("kSize").textContent = box.w + " x " + box.h;
+  el("kR").textContent = r.toFixed(1);
+  el("kRNote").textContent = r === ENGINE.SCREEN_R ? "clamped to the screen radius"
+    : r === ENGINE.MIN_R ? "clamped to the minimum" : "half the height";
+
+  for (const [k, id] of [["timer", "bTimer"], ["music", "bMusic"], ["call", "bCall"]]) {
+    el(id).classList.toggle("on", LIVE.activities.some((a) => a.kind === k));
+  }
+
+  const q = ENGINE.sortActivities(LIVE.activities);
+  table("tQueue", ["activity", "rank", "started", "owns the island?"],
+    q.length ? q.map((a, i) => ({
+      cls: i === 0 ? "here" : "dim",
+      cells: [ENGINE.KINDS[a.kind].label, ENGINE.KINDS[a.kind].rank, "t=" + a.startedAt,
+        i === 0 ? '<span class="pill good">yes</span>' : '<span class="pill bad">waiting</span>']
+    })) : [{ cls: "dim", cells: ["nothing running", "&mdash;", "&mdash;", "&mdash;"] }]);
+}
+
+// ---------------------------------------------------------------- the tables
+{
+  const rows = ENGINE.ORDER.map((name) => {
+    const p = ENGINE.PRESENTATIONS[name];
+    const r = ENGINE.radiusFor(p.h);
+    const naive = 22;
+    return {
+      cls: name === "expanded" ? "here" : "",
+      cells: [name, p.w, p.h, r.toFixed(1), naive.toFixed(1),
+        Math.abs(r - naive).toFixed(1),
+        r === ENGINE.SCREEN_R ? "clamped to the screen" : r === ENGINE.MIN_R ? "clamped to the floor" : "h / 2"]
+    };
+  });
+  table("tRadius", ["presentation", "width", "height", "radius used", "a fixed 22", "how far off",
+    "where the radius came from"], rows);
+  const worst = Math.max(...ENGINE.ORDER.map((n) => Math.abs(ENGINE.radiusFor(ENGINE.PRESENTATIONS[n].h) - 22)));
+  el("radiusNote").innerHTML =
+    "A single fixed radius is wrong by up to <b>" + worst.toFixed(1) +
+    " points</b> across the four presentations - enough that the small pill looks over-rounded and the sheet looks square.";
+}
+
+{
+  let legal = 0;
+  const rows = [];
+  for (const from of ENGINE.ORDER) {
+    for (const to of ENGINE.ORDER) {
+      const ok = ENGINE.canTransition(from, to);
+      if (ok) legal++;
+      rows.push({
+        cls: ok ? "" : "dim",
+        cells: [from + " &rarr; " + to,
+          ok ? '<span class="pill good">allowed</span>' : '<span class="pill bad">refused</span>',
+          ENGINE.transitionPath(from, to).join(" &rarr; "),
+          from === to ? "a no-op, always allowed" :
+          ok ? "one step along the size ladder" : "routed, because it would skip a presentation"]
+      });
+    }
+  }
+  table("tTrans", ["transition", "one step?", "the route the machine takes", "why"], rows);
+  el("legalN").textContent = String(legal);
+}
+
+{
+  const now = 100;
+  const list = [
+    { id: "m1", kind: "music", startedAt: 1 },
+    { id: "t1", kind: "timer", startedAt: 50 },
+    { id: "c1", kind: "call", startedAt: 99 }
+  ];
+  const byRank = ENGINE.sortActivities(list);
+  const byRecency = list.slice().sort((a, b) => b.startedAt - a.startedAt);
+  table("tPrio", ["model", "who owns the island", "what the user sees", "right?"], [
+    { cls: "", cells: ["last one wins (a stack)", ENGINE.KINDS[byRecency[0].kind].label,
+      "the call vanishes when a timer starts", '<span class="pill bad">no</span>'] },
+    { cls: "here", cells: ["lowest rank wins (a priority queue)", ENGINE.KINDS[byRank[0].kind].label,
+      "the call holds the island; the timer waits", '<span class="pill good">yes</span>'] }
+  ]);
+  el("prioNote").innerHTML =
+    "Both models agree while only one activity runs, which is why the stack version ships and then breaks in the field. " +
+    "With music, a timer and a call all live, recency hands the island to <b>" +
+    ENGINE.KINDS[byRecency[0].kind].label + "</b> and priority hands it to <b>" +
+    ENGINE.KINDS[byRank[0].kind].label + "</b>.";
+}
+
+{
+  const pairs = [["minimal", "compact"], ["compact", "expanded"], ["expanded", "sheet"], ["compact", "minimal"]];
+  const rows = pairs.map(([a, b]) => {
+    const s = ENGINE.spring(ENGINE.PRESENTATIONS[a].h, ENGINE.PRESENTATIONS[b].h);
+    return {
+      cls: s.exact ? "here" : "",
+      cells: [a + " &rarr; " + b, ENGINE.PRESENTATIONS[a].h, ENGINE.PRESENTATIONS[b].h,
+        s.steps, (s.steps / 60).toFixed(3) + "s", s.settled.toFixed(6),
+        s.exact ? '<span class="pill good">exact</span>' : '<span class="pill bad">drifting</span>']
+    };
+  });
+  table("tSpring", ["transition", "from", "to", "frames", "duration", "settled at", "landing"], rows);
+  const anyOvershoot = pairs.some(([a, b]) => {
+    const A = ENGINE.PRESENTATIONS[a].h, B = ENGINE.PRESENTATIONS[b].h;
+    return ENGINE.spring(A, B).path.some((x) => (B > A ? x > B + 1e-9 : x < B - 1e-9));
+  });
+  el("springNote").innerHTML =
+    "Critically damped, so <b>no frame overshoots the target</b> " +
+    (anyOvershoot ? "&mdash; except this run found one, which is a bug." : "&mdash; verified across all four transitions.") +
+    " The snap is what makes the final value exact rather than merely close.";
+}
+
+{
+  const single = ENGINE.framesBetween("compact", "sheet");
+  const indep = ENGINE.framesIndependent("compact", "sheet");
+  const offSingle = Math.max(...single.map((f) => ENGINE.offPathDistance("compact", "sheet", f)));
+  const offIndep = Math.max(...indep.map((f) => ENGINE.offPathDistance("compact", "sheet", f)));
+  const sample = [0, 6, 12, 20, 30];
+  table("tPath", ["frame", "one scalar: w x h", "two springs: w x h", "how far off the line"],
+    sample.filter((i) => i < Math.min(single.length, indep.length)).map((i) => ({
+      cls: "",
+      cells: ["#" + i,
+        single[i].w.toFixed(1) + " x " + single[i].h.toFixed(1),
+        indep[i].w.toFixed(1) + " x " + indep[i].h.toFixed(1),
+        ENGINE.offPathDistance("compact", "sheet", indep[i]).toFixed(2)]
+    })));
+  el("pathNote").innerHTML =
+    "One scalar keeps every frame on the line: worst deviation <b>" + offSingle.toFixed(4) +
+    "</b> points. Two independently configured springs wander up to <b>" + offIndep.toFixed(2) +
+    "</b> points off it, through shapes that are not any presentation.";
+}
+
+el("codeEngine").textContent = [
+  "// who owns the island: rank first, start time only to break a tie",
+  String(ENGINE.compareActivities), "",
+  "// the radius is a function of the height, never a constant",
+  String(ENGINE.radiusFor), "",
+  "// the machine: pure, and it refuses what it should refuse",
+  String(ENGINE.resolve), "", String(ENGINE.step)
+].join("\n");
+
+paint();
+
+// --------------------------------------------------------------- the self-check
+selfCheckPanel((t) => {
+  const P = ENGINE.PRESENTATIONS, O = ENGINE.ORDER;
+
+  // --- the shapes
+  t("every presentation has a positive width and height",
+    O.every((n) => P[n].w > 0 && P[n].h > 0), O.length + " presentations");
+
+  t("the presentations are strictly ordered by area", (() => {
+    for (let i = 1; i < O.length; i++) {
+      if (P[O[i]].w * P[O[i]].h <= P[O[i - 1]].w * P[O[i - 1]].h) return false;
+    }
+    return true;
+  })(), O.map((n) => P[n].w * P[n].h).join(" < "));
+
+  // --- the radius
+  t("the radius never exceeds half the height - a rounded rect cannot",
+    O.every((n) => ENGINE.radiusFor(P[n].h) <= P[n].h / 2 + 1e-9));
+
+  t("and never exceeds the screen's own radius",
+    O.every((n) => ENGINE.radiusFor(P[n].h) <= ENGINE.SCREEN_R + 1e-9),
+    "screen radius " + ENGINE.SCREEN_R);
+
+  t("the radius is non-decreasing in height", (() => {
+    let prev = -Infinity;
+    for (let h = 1; h <= 400; h++) {
+      const r = ENGINE.radiusFor(h);
+      if (r < prev - 1e-12) return false;
+      prev = r;
+    }
+    return true;
+  })(), "checked at every integer height from 1 to 400");
+
+  t("a non-positive height throws rather than returning a radius", (() => {
+    for (const bad of [0, -1, NaN]) { try { ENGINE.radiusFor(bad); return false; } catch { } }
+    return true;
+  })());
+
+  t("CONTROL: a fixed radius of 22 is wrong on " +
+    O.filter((n) => Math.abs(ENGINE.radiusFor(P[n].h) - 22) > 0.5).length + " of the 4 presentations",
+    O.some((n) => Math.abs(ENGINE.radiusFor(P[n].h) - 22) > 0.5));
+
+  // --- the ordering is a real total order
+  t("the activity comparator is antisymmetric", (() => {
+    const list = [
+      { id: "a", kind: "call", startedAt: 5 }, { id: "b", kind: "timer", startedAt: 1 },
+      { id: "c", kind: "music", startedAt: 9 }, { id: "d", kind: "timer", startedAt: 1 },
+      { id: "e", kind: "charge", startedAt: 0 }
+    ];
+    for (const x of list) for (const y of list) {
+      const f = ENGINE.compareActivities(x, y), g = ENGINE.compareActivities(y, x);
+      if (x.id === y.id) { if (f !== 0) return false; }
+      else if (Math.sign(f) !== -Math.sign(g)) return false;
+    }
+    return true;
+  })());
+
+  t("and transitive, so sorting is well defined", (() => {
+    const list = [
+      { id: "a", kind: "call", startedAt: 5 }, { id: "b", kind: "timer", startedAt: 1 },
+      { id: "c", kind: "music", startedAt: 9 }, { id: "d", kind: "timer", startedAt: 4 },
+      { id: "e", kind: "charge", startedAt: 0 }
+    ];
+    for (const x of list) for (const y of list) for (const z of list) {
+      if (ENGINE.compareActivities(x, y) < 0 && ENGINE.compareActivities(y, z) < 0) {
+        if (!(ENGINE.compareActivities(x, z) < 0)) return false;
+      }
+    }
+    return true;
+  })());
+
+  t("no two distinct activities ever compare equal", (() => {
+    const list = [
+      { id: "a", kind: "timer", startedAt: 3 }, { id: "b", kind: "timer", startedAt: 3 }
+    ];
+    return ENGINE.compareActivities(list[0], list[1]) !== 0;
+  })(), "same kind, same instant - the id breaks it");
+
+  t("the owner does not depend on the order activities were added", (() => {
+    const base = [
+      { id: "m", kind: "music", startedAt: 1 },
+      { id: "t", kind: "timer", startedAt: 2 },
+      { id: "c", kind: "call", startedAt: 3 }
+    ];
+    const perms = [[0, 1, 2], [2, 1, 0], [1, 0, 2], [2, 0, 1], [0, 2, 1], [1, 2, 0]];
+    const ids = perms.map((p) => ENGINE.owner(p.map((i) => base[i])).id);
+    return new Set(ids).size === 1 && ids[0] === "c";
+  })(), "all 6 orderings give the call");
+
+  t("CONTROL: recency would hand it to the timer instead", (() => {
+    const base = [
+      { id: "m", kind: "music", startedAt: 1 },
+      { id: "c", kind: "call", startedAt: 2 },
+      { id: "t", kind: "timer", startedAt: 3 }
+    ];
+    const recent = base.slice().sort((a, b) => b.startedAt - a.startedAt)[0];
+    return recent.kind === "timer" && ENGINE.owner(base).kind === "call";
+  })());
+
+  // --- the machine
+  t("every presentation can reach every other, eventually", (() => {
+    for (const a of O) {
+      const seen = new Set([a]); const q = [a];
+      while (q.length) {
+        const x = q.shift();
+        for (const y of ENGINE.TRANSITIONS[x]) if (!seen.has(y)) { seen.add(y); q.push(y); }
+      }
+      if (seen.size !== O.length) return false;
+    }
+    return true;
+  })(), "the transition graph is strongly connected");
+
+  t("but not in one step - minimal cannot jump to expanded",
+    !ENGINE.canTransition("minimal", "expanded") && !ENGINE.canTransition("sheet", "minimal"));
+
+  t("every presentation can stay where it is",
+    O.every((n) => ENGINE.canTransition(n, n)));
+
+  t("an unknown presentation throws rather than silently refusing", (() => {
+    try { ENGINE.canTransition("floating", "compact"); return false; } catch { return true; }
+  })());
+
+  t("step() never mutates the state it was handed", (() => {
+    const s = { activities: [{ id: "x", kind: "music", startedAt: 0 }], expandedBy: null };
+    const snapshot = JSON.stringify(s);
+    ENGINE.step(s, { type: "start", id: "y", kind: "call", at: 1 });
+    ENGINE.step(s, { type: "expand" });
+    ENGINE.step(s, { type: "end", id: "x" });
+    return JSON.stringify(s) === snapshot;
+  })());
+
+  t("a duplicate activity id throws", (() => {
+    const s = { activities: [{ id: "x", kind: "music", startedAt: 0 }], expandedBy: null };
+    try { ENGINE.step(s, { type: "start", id: "x", kind: "timer", at: 1 }); return false; } catch { return true; }
+  })());
+
+  t("an unknown event type throws", (() => {
+    try { ENGINE.step({ activities: [], expandedBy: null }, { type: "wiggle" }); return false; } catch { return true; }
+  })());
+
+  t("expansion is dropped when the owner changes underneath it", (() => {
+    const r = ENGINE.run([
+      { type: "start", id: "m", kind: "music", at: 0 },
+      { type: "expand" },
+      { type: "start", id: "c", kind: "call", at: 1 }
+    ]);
+    return r.trace[2].presentation === "expanded" && r.trace[3].presentation === "compact";
+  })(), "music expanded, then a call takes the island");
+
+  t("ending the last activity returns the island to minimal", (() => {
+    const r = ENGINE.run([
+      { type: "start", id: "t", kind: "timer", at: 0 },
+      { type: "end", id: "t" }
+    ]);
+    return r.trace[r.trace.length - 1].presentation === "minimal";
+  })());
+
+  t("an interrupted expansion never comes back by itself", (() => {
+    const r = ENGINE.run([
+      { type: "start", id: "m", kind: "music", at: 0 },
+      { type: "expand" },
+      { type: "start", id: "c", kind: "call", at: 1 },
+      { type: "end", id: "c" }
+    ]);
+    return r.trace[4].presentation === "compact" && r.state.expandedBy === null;
+  })(), "the user expanded music; a call took it; music does not silently reopen");
+
+  t("every hop of every route a run takes is one the machine allows", (() => {
+    const r = ENGINE.run([
+      { type: "start", id: "ch", kind: "charge", at: 0 },
+      { type: "start", id: "m", kind: "music", at: 1 },
+      { type: "expand" },
+      { type: "start", id: "c", kind: "call", at: 2 },
+      { type: "end", id: "c" },
+      { type: "collapse" },
+      { type: "end", id: "m" },
+      { type: "end", id: "ch" }
+    ]);
+    for (const x of r.trace.slice(1)) {
+      for (let i = 1; i < x.route.length; i++) {
+        if (!ENGINE.canTransition(x.route[i - 1], x.route[i])) return false;
+      }
+    }
+    return true;
+  })(), "an 8-event run, every routed hop legal");
+
+  t("CONTROL: and at least one of those was NOT a legal single step", (() => {
+    const r = ENGINE.run([
+      { type: "start", id: "m", kind: "music", at: 0 },
+      { type: "expand" },
+      { type: "end", id: "m" }
+    ]);
+    return r.trace.some((x) => x.direct === false && x.route && x.route.length > 2);
+  })(), "expanded to minimal has to pass through compact");
+
+  t("a route never repeats a presentation", (() => {
+    for (const a of ENGINE.ORDER) for (const b of ENGINE.ORDER) {
+      const p = ENGINE.transitionPath(a, b);
+      if (new Set(p).size !== p.length) return false;
+    }
+    return true;
+  })(), "all 16 ordered pairs");
+
+  t("and a route always starts where you are and ends where you asked", (() => {
+    for (const a of ENGINE.ORDER) for (const b of ENGINE.ORDER) {
+      const p = ENGINE.transitionPath(a, b);
+      if (p[0] !== a || p[p.length - 1] !== b) return false;
+    }
+    return true;
+  })());
+
+  // --- the spring
+  t("the spring lands exactly on its target, not merely near it", (() => {
+    for (const [a, b] of [[36, 84], [84, 36], [36, 160], [160, 36]]) {
+      const s = ENGINE.spring(a, b);
+      if (!s.snapped || s.settled !== b) return false;
+    }
+    return true;
+  })(), "four transitions, all exact");
+
+  t("critically damped - no frame overshoots the target", (() => {
+    for (const [a, b] of [[36, 84], [84, 36], [36, 160], [160, 36]]) {
+      const s = ENGINE.spring(a, b);
+      for (const x of s.path) {
+        if (b > a ? x > b + 1e-9 : x < b - 1e-9) return false;
+      }
+    }
+    return true;
+  })());
+
+  t("the motion is monotone towards the target", (() => {
+    const s = ENGINE.spring(36, 160);
+    for (let i = 1; i < s.path.length; i++) if (s.path[i] < s.path[i - 1] - 1e-12) return false;
+    return true;
+  })());
+
+  t("it settles inside a reasonable number of frames", (() => {
+    const s = ENGINE.spring(36, 160);
+    return s.steps > 1 && s.steps < 120;
+  })(), ENGINE.spring(36, 160).steps + " frames at 60fps");
+
+  t("a transition to where it already is costs one frame", (() => {
+    const s = ENGINE.spring(84, 84);
+    return s.settled === 84 && s.steps <= 2;
+  })());
+
+  // --- the single-scalar path
+  t("one scalar keeps every frame on the segment between two presentations", (() => {
+    const f = ENGINE.framesBetween("compact", "sheet");
+    return f.every((x) => ENGINE.offPathDistance("compact", "sheet", x) < 1e-9);
+  })(), ENGINE.framesBetween("compact", "sheet").length + " frames, all on the line");
+
+  t("CONTROL: two independently tuned springs leave the line", (() => {
+    const f = ENGINE.framesIndependent("compact", "sheet");
+    return f.some((x) => ENGINE.offPathDistance("compact", "sheet", x) > 1);
+  })(), "worst " + Math.max(...ENGINE.framesIndependent("compact", "sheet")
+    .map((x) => ENGINE.offPathDistance("compact", "sheet", x))).toFixed(2) + " points off");
+
+  t("both axes still arrive, even on the control - it is the path that differs", (() => {
+    const f = ENGINE.framesIndependent("compact", "sheet");
+    const last = f[f.length - 1];
+    return Math.abs(last.w - ENGINE.PRESENTATIONS.sheet.w) < 1e-6 &&
+           Math.abs(last.h - ENGINE.PRESENTATIONS.sheet.h) < 1e-6;
+  })(), "which is why this bug survives a screenshot test");
+
+  t("every interpolated frame carries a legal radius", (() => {
+    const f = ENGINE.framesBetween("minimal", "sheet");
+    return f.every((x) => x.r >= ENGINE.MIN_R - 1e-9 && x.r <= ENGINE.SCREEN_R + 1e-9 && x.r <= x.h / 2 + 1e-9);
+  })());
+});
+</script>
+</body>
+</html>
